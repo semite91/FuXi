@@ -144,3 +144,4 @@ For an unsuccessful result:
 - Return memory_aid as null when status is insufficient_context.
 - Status must be either success or insufficient_context.
 - Return valid JSON without Markdown formatting or additional commentary.
+- If info is not enough to create response, return just nothing, don't try anything ambitious
