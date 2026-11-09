@@ -23,7 +23,8 @@ Tests and CI: Is there meaningful test coverage and automated CI?
 Security tooling in the project: Dependabot/Renovate, CodeQL, fuzzing, OpenSSF Scorecard. 
 Signed commitments and releases: Evidence of release integrity. 
 Memory safety: For native or C/C++ code, how is memory safety addressed?
-- Add third-party libraries to the `outsource` directory.
+- Libraries installed by a package manager (npm, NuGet, pip) stay in their manifest and lockfile. The lockfile must be committed.
+- Add third-party libraries that are copied in by hand to the `outsource` directory.
 - If a library consists of multiple files, place them inside a folder with the same name as the library.
 - When considering the addition of a third-party library, evaluate it based on the following criteria:
 It does not increase the code's complexity (in terms of Big O notation).

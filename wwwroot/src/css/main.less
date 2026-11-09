@@ -1,0 +1,26 @@
+// Main stylesheet. Token files are imported here with their modes.
+@import './typography.less';
+@import './color.less';
+@import './border.less';
+@import './spaces.less';
+
+:root {
+  .typography-mode(small-font);
+  .color-mode(light);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    .color-mode(dark);
+  }
+}
+
+body {
+  margin: 0;
+  font-family: @font-family-base;
+  font-size: var(--font-size-base);
+  font-weight: @font-weight-regular;
+  line-height: @line-height-base;
+  color: var(--color-text);
+  background-color: var(--color-background);
+}

@@ -1,7 +1,7 @@
 FuXi - Phase 0 - Foundation
 Test scenarios, shredded to atomic processes.
 Created: 2026-11-09 20:39 UTC
-Status: WAITING FOR MANUAL CONFIRMATION
+Status: CONFIRMED BY THE LEARNER ON 2026-11-09
 
 Every scenario has one purpose. "Given / When / Then" is used.
 Phase 0 contains no feature code, no component, no table and no API.
@@ -75,7 +75,7 @@ F6. Given wwwroot/src/css, when files are listed, then border.less exists.
 F7. Given wwwroot/src/css, when files are listed, then spaces.less exists.
 F8. Given color.less, when it is imported with mode "dark" or "light", then it compiles.
 F9. Given typography.less, when it is imported with mode "big-font" or "small-font", then it compiles.
-F10. Given wwwroot/src/image, when files are listed, then the app icon made from /fuxi.jpeg exists.
+F10. Given wwwroot/public, when files are listed, then the app icon PNG files made from /fuxi.jpeg exist. (Amended 2026-11-09: the icon must be served at a fixed URL.)
 F11. Given wwwroot/src/components, when files are listed, then no component exists.
 F12. Given the build output, when files are listed, then manifest.webmanifest exists.
 F13. Given manifest.webmanifest, when it is read, then name is "FuXi".

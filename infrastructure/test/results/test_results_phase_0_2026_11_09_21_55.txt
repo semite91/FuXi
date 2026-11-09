@@ -1,0 +1,71 @@
+FuXi - Phase 0 - Foundation
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_09_20_39.txt
+Run: 2026-11-09 21:55 UTC, cloud container (Ubuntu 24.04, .NET SDK 10.0.114, PostgreSQL 16.15, Node 22.23.4, Python 3.13.18)
+H1 is a manual scenario: the checklist result was reported to the Learner in the session.
+D6b is an extra check that is not in the scenario file.
+This run was repeated after the code review fixes.
+
+PASS A1 project.md names /wwwroot, not /frontend
+PASS A2 frontend.md names wwwroot/src/components, no wwwroots
+PASS A3 handoff prompt points to standards/
+PASS A4 workflow scenario path
+PASS A5 workflow result path
+PASS A6 workflow step 14 built-in review
+PASS A7 project.md TEST built-in review
+PASS A8 project.md OpenBao is version 2
+PASS A9 outsource only for hand-copied libraries
+PASS B1 /wwwroot exists
+PASS B2 /backend exists
+PASS B3 /rag exists
+PASS B4 scenarios folder exists
+PASS B5 results folder exists
+PASS B6 /frontend does not exist
+PASS B7 new folders and frontend files are snake_case
+PASS C1 .env is ignored
+PASS C2 .env.example is tracked
+PASS C3 .env.example has only empty values
+PASS C4 PostgreSQL connection keys exist
+PASS C5 VAPID keys exist
+PASS C6 test env example is tracked
+PASS C7 .env.test is ignored
+PASS C8 build folders are not listed by git
+PASS C9 no secret value in tracked files
+PASS D1 dotnet --version prints a version
+PASS D2 PostgreSQL accepts a local connection
+PASS D3 setup script runs a second time
+PASS D4 test database exists and is empty
+PASS D5 old table no longer exists
+PASS D6 development database is unchanged
+PASS D6b recreate refuses a non-test database name
+PASS E1 dotnet build: 0 errors, 0 warnings
+PASS E2 dotnet test passes the xUnit smoke test
+PASS E3 smoke test uses FluentAssertions
+PASS E4 EF Core, Npgsql provider and Quartz.NET are referenced
+PASS E5 no table, endpoint or job from later phases
+PASS E6 test env file selects the test database
+PASS F1 npm run build: zero TypeScript errors
+PASS F2 npm test passes the Vitest smoke test
+PASS F3 smoke test uses React Testing Library
+PASS F4 typography.less exists
+PASS F5 color.less exists
+PASS F6 border.less exists
+PASS F7 spaces.less exists
+PASS F8 color.less compiles in dark and light mode
+PASS F9 typography.less compiles in big-font and small-font mode
+PASS F10 app icon PNG files exist in wwwroot/public (amended)
+PASS F11 no component exists
+PASS F12 build output contains manifest.webmanifest
+PASS F13 manifest name is FuXi
+PASS F14 manifest icon points to the FuXi icon
+PASS F15 service worker is registered after page load (real browser)
+PASS F16 service worker has no push or notification click logic
+PASS F17 no CSS code in .ts or .tsx files
+PASS G1 virtual environment installs from the lockfile
+PASS G2 pytest passes one smoke test
+PASS G3 no file from later phases
+PASS G4 lockfile is tracked and unchanged after installation
+PASS H1 security checklist reported before installation
+PASS H2 every library comes from the official registry
+PASS H3 every lockfile is tracked
+PASS H4 no deprecation warning in build and test output
+TOTAL: 63 passed, 0 failed

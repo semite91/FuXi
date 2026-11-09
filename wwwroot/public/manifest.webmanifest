@@ -1,0 +1,25 @@
+{
+  "name": "FuXi",
+  "short_name": "FuXi",
+  "description": "A personal flashcard app that helps one learner build English vocabulary.",
+  "lang": "en",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fcfaee",
+  "theme_color": "#fcfaee",
+  "icons": [
+    {
+      "src": "/fuxi_192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/fuxi_512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

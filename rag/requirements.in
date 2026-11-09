@@ -1,0 +1,2 @@
+# Direct dependencies. After a change, reinstall and regenerate requirements.txt with: pip freeze > requirements.txt
+pytest==9.2.0

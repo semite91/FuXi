@@ -12,12 +12,12 @@ This file is initializer instructor of my project.
   It is a single user app. There is one Learner and no authentication.
   PostgreSQL will be used for relational database.
   Secrets will be stored in a git-ignored .env file. A .env.example file without values will be committed.
-  Secrets will be stored at OpenBao account at v2.
+  At second version of this project, secrets will be moved to OpenBao. First version uses only .env file.
   Project's summary described below:
 
   -- REPOSITORY --
   - Project is a monorepo. Top level folders:
-    /frontend: React PWA
+    /wwwroot: React PWA
     /backend: .NET API, EF Core, Quartz.NET
     /rag: Python FastAPI engine and RAG files
     /infrastructure/test: test scenarios and test results
@@ -406,4 +406,4 @@ This file is initializer instructor of my project.
   - External APIs and Gemini are tested with recorded responses. Live API tests run only when enabled.
   - Test scenarios are saved at /infrastructure/test/scenarios. Test results are saved at /infrastructure/test/results.
   - Test configs are kept at separate env files.
-  - Code quality is checked with Alibaba's Open Code Review in Delegation Mode.
+  - Code quality is checked with Claude Code's built-in code review.
