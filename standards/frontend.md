@@ -5,7 +5,7 @@ description: This file for my frontend coding standards. While coding, you must 
 
 - Never create a component without asking first.
 - I will specify which components to create. If you notice any gaps in terms of design or functionality, or if you identify a need for additional components, please ask.
-- Create components within the `/wwwroots/src/components` directory of the project.
+- Create components within the `wwwroot/src/components` directory of the project.
 - Place each component inside a folder bearing its own name.
 - If a required task can be accomplished using a library already included in the project, use that library instead of writing new code. 
 For example: If you need a button with a hover effect and a frontend library (e.g., "vow") already provides a "button" component, use that.

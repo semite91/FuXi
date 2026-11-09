@@ -1,0 +1,111 @@
+FuXi - Phase 0 - Foundation
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-09 20:39 UTC
+Status: CONFIRMED BY THE LEARNER ON 2026-11-09
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 0 contains no feature code, no component, no table and no API.
+
+==================================================
+A. DOCUMENT CORRECTIONS
+==================================================
+A1. Given project.md, when the repository section is read, then the React PWA folder is /wwwroot and /frontend is not mentioned.
+A2. Given standards/frontend.md, when the component path is read, then it is wwwroot/src/components and the word "wwwroots" does not exist.
+A3. Given standards/workflow.md, when the handoff prompt is read, then it points to standards/standards.md and standards/coding-standards.md.
+A4. Given standards/workflow.md, when the scenario path is read, then it is infrastructure/test/scenarios.
+A5. Given standards/workflow.md, when the result path is read, then it is infrastructure/test/results.
+A6. Given standards/workflow.md, when step 14 is read, then it names the built-in code review instead of Alibaba's Open Code Review.
+A7. Given project.md, when the TEST section is read, then it names the built-in code review instead of Alibaba's Open Code Review.
+A8. Given project.md, when the CONTENT section is read, then OpenBao is described as a version 2 item and .env is the version 1 secret store.
+A9. Given standards/3rd-part-library.md, when the outsource rule is read, then it applies only to libraries copied in by hand.
+
+==================================================
+B. REPOSITORY SKELETON
+==================================================
+B1. Given the repository root, when folders are listed, then /wwwroot exists.
+B2. Given the repository root, when folders are listed, then /backend exists.
+B3. Given the repository root, when folders are listed, then /rag exists.
+B4. Given /infrastructure/test, when folders are listed, then /scenarios exists.
+B5. Given /infrastructure/test, when folders are listed, then /results exists.
+B6. Given the repository root, when folders are listed, then /frontend does not exist.
+B7. Given every new folder and frontend file, when its name is read, then it is snake_case.
+
+==================================================
+C. SECRETS AND IGNORE RULES
+==================================================
+C1. Given a .env file at the repository root, when "git status" runs, then .env is not listed.
+C2. Given the repository, when tracked files are listed, then .env.example is tracked.
+C3. Given .env.example, when every line is read, then every key has an empty value.
+C4. Given .env.example, when keys are read, then the PostgreSQL connection key exists.
+C5. Given .env.example, when keys are read, then the VAPID public key and VAPID private key exist.
+C6. Given the repository, when tracked files are listed, then a separate test env example file is tracked.
+C7. Given a test env file with values, when "git status" runs, then it is not listed.
+C8. Given a build of every part, when "git status" runs, then node_modules, bin, obj, dist, __pycache__ and virtual environment folders are not listed.
+C9. Given all tracked files, when they are searched for secret values, then no secret value is found.
+
+==================================================
+D. ENVIRONMENT SETUP
+==================================================
+D1. Given a fresh cloud container, when the setup script finishes, then "dotnet --version" prints a version.
+D2. Given a fresh cloud container, when the setup script finishes, then a PostgreSQL server accepts a local connection.
+D3. Given the setup script, when it runs a second time, then it finishes without error.
+D4. Given the PostgreSQL server, when the test database recreate command runs, then the test database exists and is empty.
+D5. Given an existing test database with a table, when the recreate command runs, then the table no longer exists.
+D6. Given the development database, when the test database recreate command runs, then the development database is not changed.
+
+==================================================
+E. BACKEND SKELETON (.NET)
+==================================================
+E1. Given /backend, when "dotnet build" runs, then it finishes with zero errors and zero warnings.
+E2. Given /backend, when "dotnet test" runs, then one xUnit smoke test passes.
+E3. Given the smoke test, when it is read, then it uses FluentAssertions.
+E4. Given the backend project, when its packages are read, then EF Core, the PostgreSQL provider and Quartz.NET are referenced.
+E5. Given the backend, when it starts, then no table, endpoint or job from later phases exists.
+E6. Given the backend, when it starts with the test env file, then it reads the test database connection, not the development one.
+
+==================================================
+F. FRONTEND SKELETON (Vite React PWA)
+==================================================
+F1. Given /wwwroot, when "npm run build" runs, then it finishes with zero TypeScript errors.
+F2. Given /wwwroot, when "npm test" runs, then one Vitest smoke test passes.
+F3. Given the smoke test, when it is read, then it uses React Testing Library.
+F4. Given wwwroot/src/css, when files are listed, then typography.less exists.
+F5. Given wwwroot/src/css, when files are listed, then color.less exists.
+F6. Given wwwroot/src/css, when files are listed, then border.less exists.
+F7. Given wwwroot/src/css, when files are listed, then spaces.less exists.
+F8. Given color.less, when it is imported with mode "dark" or "light", then it compiles.
+F9. Given typography.less, when it is imported with mode "big-font" or "small-font", then it compiles.
+F10. Given wwwroot/public, when files are listed, then the app icon PNG files made from /fuxi.jpeg exist. (Amended 2026-11-09: the icon must be served at a fixed URL.)
+F11. Given wwwroot/src/components, when files are listed, then no component exists.
+F12. Given the build output, when files are listed, then manifest.webmanifest exists.
+F13. Given manifest.webmanifest, when it is read, then name is "FuXi".
+F14. Given manifest.webmanifest, when it is read, then the icon points to the FuXi app icon.
+F15. Given the main entry script, when the page finishes loading, then the service worker is registered.
+F16. Given the service worker, when it is read, then it contains no push or notification click logic yet.
+F17. Given every .tsx and .ts file, when it is read, then it contains no CSS code.
+
+==================================================
+G. RAG SKELETON (Python)
+==================================================
+G1. Given /rag, when the virtual environment is created from the dependency file, then installation finishes without error.
+G2. Given /rag, when "pytest" runs, then one smoke test passes.
+G3. Given /rag, when files are listed, then no resource, pipeline, client or engine file from later phases exists.
+G4. Given /rag, when "git status" runs after installation, then the lockfile is tracked and unchanged.
+
+==================================================
+H. THIRD PARTY LIBRARIES
+==================================================
+H1. Given every library added in Phase 0, when the security checklist of standards/3rd-part-library.md is applied, then the result is reported to the Learner before installation.
+H2. Given every library added in Phase 0, when its source is read, then it comes from the official registry.
+H3. Given every package manager, when installation finishes, then its lockfile is committed.
+H4. Given build and test output of every part, when it is read, then no deprecation warning exists.
+
+==================================================
+OUT OF SCOPE FOR PHASE 0
+==================================================
+- Database tables, migrations and Config seed data (Phase 1).
+- API endpoints (Phase 2).
+- VAPID key generation, Quartz.NET job and push logic (Phase 3).
+- Pages, routes, components and services (Phase 4, blocked on Claude Design).
+- RAG resources, embedding, clients and engine (Phase 5).
+- OpenBao and the evaluation module (version 2).
