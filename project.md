@@ -5,24 +5,35 @@ This file is initializer instructor of my project.
 - An ai first development environment will help to develop this project.
 - Ai-first development will be carried out using Claude Code agent harness.
 - Project name will be FuXi.
+- Domain terms are defined at /GLOSSARY.md. Use them as written.
 
 # CONTENT
   This project is customized flashcard app. It is designed to enhance english vocabulary. 
+  It is a single user app. There is one Learner and no authentication.
   PostgreSQL will be used for relational database.
-  Secrets will be stored at OpenBao account. But it will be at v2.
+  Secrets will be stored in a git-ignored .env file. A .env.example file without values will be committed.
+  Secrets will be stored at OpenBao account at v2.
   Project's summary described below:
+
+  -- REPOSITORY --
+  - Project is a monorepo. Top level folders:
+    /frontend: React PWA
+    /backend: .NET API, EF Core, Quartz.NET
+    /rag: Python FastAPI engine and RAG files
+    /infrastructure/test: test scenarios and test results
+  - Docker will not be used. Every part runs directly on local machine. Hosting will be decided later.
 
   -- PWA --
   - It will be PWA app to trigger push notifications.
   - To create PWA, vite will be used. 
-  - Web push API will ve used to trigger push notification.
+  - Web push API will be used to trigger push notification.
   - App icon is at /fuxi.jpeg location.
   - manifest.webmanifest file will be created. It's content will be defined with agent harness.
 
   -- Push notification --
   - The application will send push notifications at specific intervals.
   - Push notification will open app. Page will show flashcard carousel.
-  - Push notification will be fired only available times. This time period will be defined at schedule page.
+  - Push notification will be fired only inside Notification Windows. Notification Windows will be defined at schedule page.
   
 
   -- RAG --
@@ -31,48 +42,66 @@ This file is initializer instructor of my project.
   - RAG resources will be Spotify, Notion, Google Drive, letterboxd - TMDB
   - Connection infos will be delivered during development
   - < RAG purpose >
-  - There will be Settings and Configs pages to define project general parameters and settings.
+  - Settings are part of Config page. There is no separate Settings page.
   - RAG technologies will be defined at next parts.
+
+  -- Words --
+  - Words will be added to database manually by the Learner. There is no add word page or api.
 
   Design, Database, API, push notification and RAG part will be at project.
 
   # DESIGN
   - It will be developed using React and LESS technologies.
   - React project will use Typescript language.
-  - Design will be implemented from Claude Design using /sync-design skill
+  - All frontend pages will be implemented from Claude Design using /sync-design skill
   - Claude Design will be single source of truth
   - Design should only contains LESS and React codes. 
   - HTML will be created from components. Components should only contains visual content like visual interaction, visibility preference.
   - Logical functions like content api request will be at services.
   - App's dashboard should open Words page. Words page will be described at next parts.
+
+    # DESIGN - ROUTES
+    - React Router will be used. There will be a bottom tab bar.
+    - /words: Words page. It is default page.
+    - /flashcard: Flashcard carousel page.
+    - /active: Active Words page.
+    - /schedule: Schedule page.
+    - /config: Config page.
   
     # DESIGN - API CONNECTION
     API - frontend connections described below. 
     There will be apis with same name as described below. 
     APIs' content will be defined at API part.
+    Frontend calls both .NET API and Python FastAPI directly. CORS will be enabled at both APIs.
 
     -- flashcard --
-    - When user clicks to Yes or No buttons at flashcard component's front side. UpdateWordKnownStatus api will be called.
+    - Flashcard page's word data source depends on where user comes from:
+      If user comes from notification, word ids will be taken from notification payload's wordIds value and GetCardWords api will be called.
+      If user comes from Active Words page, data will be taken by GetWordsByActive api.
+    - When user clicks to Yes or No buttons at flashcard component's front side, UpdateWordKnownStatus api will be called and card turns to back side.
     If button text is Yes, isKnown value should be true, if it is no, value should be false.
     - When user opens Word History toggle clicking text and arrow icon at flashcard component's back side, if history is not exists, it should loaded by GetWordHistory api call.
     - When user clicks to reinforcement button next at the top right side of flashcard component's back side, next word should be shown and UpdateIsReinforcement api should be called with true parameter value.
-    - While opening flashcard component. Frontend should be called GetCardWords api with word ids. Word ids will be taken from push notification payload's wordIds value. After getting data, GetWordContent data with array that contains word dd and name fields. This array should be created from GetCardWords' response filtering if Content value is empty. Last, GetWordContent data and GetCardWords data should be merged. The data obtained from GetWordContent will be passed as a parameter to UpdateWordContent when it is called.
-    - While user is moving between carousels, user can move back, but they can see just back side of card. 
-      If user comes last card, right arrow will be hidden
+    - After getting card data, GetWordContent api is called with words whose Content value is empty. Its parameter is word names joined with comma. Last, GetWordContent data and card data should be merged by word. Every generated content will be passed to UpdateWordContent api with word id.
+    - Back side of card shows a loading state until content arrives.
+    - While user is moving between carousels, user can move forward freely. User can move back, but they can see just back side of card. 
+      If user comes last card, right arrow will be hidden and Done screen will be shown.
 
     -- active words --
-    - When user opens Active Words page Frontend should be called GetWordsByActive api. After getting data, GetWordContent data with array that contains word id and name fields. This array should be created from GetCardWords' response filtering if Content value is empty. Last, GetWordContent data and GetCardWords data should be merged. The data obtained from GetWordContent will be passed as a parameter to UpdateWordContent when it is called.
+    - When user opens Active Words page Frontend should be called GetWordsByActive api. Content flow is same as flashcard's GetWordContent flow.
     - If there is no word to display, "Keep working like this; there are no words to review at the moment." text will be visible.
     
     -- config --
     - When user opens Config page, data should be loaded by GetConfigs api call.
     - When user clicks to Config page's save button (It means saves config), if row's Code value is NotificationPeriod, UpdateNotificationPeriod api should be called.
     If it is not, UpdateConfig should be called.
+    - Config page has "Enable notifications" button. Browser asks notification permission only after this button is clicked. Permission state is visible at Config page.
 
     -- schedule --
-    - When user opens schedule page, data should be loaded by GetSchedule api with current month's start and end dates.
-    - When user selects new period from schedule, UpdateSchedule api will be called. If user changed old period, old period value also should be added to api's parameters. New period should be added for every situation as parameter.
-    - When user changes period GetSchedule api should be called with new period's parameters.
+    - When user opens schedule page, data should be loaded by GetSchedule api with current month's start and end date-times.
+    - When user selects new Notification Window from schedule, UpdateSchedule api will be called. If user changes an existing Notification Window, its id will be sent too.
+    - When user changes visible month GetSchedule api should be called with new month's parameters.
+    - Date-times are sent to backend as UTC.
 
     -- words --
     - Words page will gets empty at first.
@@ -84,43 +113,56 @@ This file is initializer instructor of my project.
   InputType value describe below should be enum. Enum options will be CheckboxList, Radiobutton, String, Number, Date.
   Entity Framework will be used to connect PostgreSQL with .NET. Code-first approach will be implemented. So, tables described below.
   Config table's defaults values also described below.  
+  All date-time columns are timestamptz and stored as UTC.
+  All period values are minutes.
 
 
   -- Words --
   Id: Guid, primary_key
   Name: text
   Translation: text
+  Content: text
   IsKnown: bool
+  IsReinforcement: bool
   ShownCount: number
+  KnownCount: number
 
   -- RotatedWords --
   Id: Guid, primary_key
   WordId: Guid, foreign_key
-  IsReinforcement: bool
-  LastShownDate: Date
-  Counter: number
+  LastShownDate: timestamptz, nullable. Null means word is due now.
+  Counter: number. New entry starts with 1.
 
   -- Config --
   Id: Guid, primary_key
   Name: text
   Code: text
+  Value: text. It is parsed according to InputType.
   InputType: enum
 
-    Default values of Config table:
+    Default values of Config table (Name, Code, Value, InputType):
     Rotation Count, RotationCount, 20, number
     Rotation period, RotationPeriod, 15, number
     Reinforcement period, ReinforcementPeriod, 10800, number
+    Notification period, NotificationPeriod, 15, number
 
   -- WordHistory --
   Id: Guid, primary_key
   WordId: Guid, foreign_key
   IsKnown: bool
-  Date: Date
+  Date: timestamptz
 
   -- Schedule --
   Id: Guid, primary_key
-  StartDate: Date
-  EndDate: Date
+  StartDate: timestamptz
+  EndDate: timestamptz
+
+  -- PushSubscription --
+  Id: Guid, primary_key
+  Endpoint: text
+  P256dh: text
+  Auth: text
+  CreatedDate: timestamptz
 
 
   # API
@@ -129,61 +171,79 @@ This file is initializer instructor of my project.
 
   - GetNotificationWords
     It will gets full date as parameter. Filters data from RotatedWords table.
-    If the number of records in the `RotatedWords` table is less than the value specified in the `Value` column of the record in the `Config` table where `Code` is 'RotationCount', then a number of records equal to the difference is added to the `RotatedWords` table. These records are selected randomly from those in the `Words` table for which the `IsKnown` value is `false`.
+    If the number of records in the `RotatedWords` table is less than the value specified in the `Value` column of the record in the `Config` table where `Code` is 'RotationCount', then a number of records equal to the difference is added to the `RotatedWords` table. These records are selected randomly from those in the `Words` table for which the `IsKnown` value is `false` or the `IsReinforcement` value is `true`, and which are not already in `RotatedWords`.
     Second, RotatedWords table should be filtered according to below rule. This filtered list are sent formatting as output model. Rule:
-    If record's IsReinforcement value is false below formula should be used:
-      ((RotatedWords.Counter * RotationPeriod) + RotatedWords.LastShownDate) <= Now
+    If word's IsReinforcement value is false below formula should be used:
+      LastShownDate is null or ((RotatedWords.Counter * RotationPeriod) + RotatedWords.LastShownDate) <= Now
     If this value is true
-      (ReinforcementPeriod + RotatedWords.LastShownDate) <= Now
-    Output model will consist of: Word names joined with comma
+      LastShownDate is null or (ReinforcementPeriod + RotatedWords.LastShownDate) <= Now
+    Output model will be list of Words.Id and Words.Name.
   - GetCardWords
     It gets word ids joined with comma. It splits from comma. This word array are filtered at both RotatedWords and Words tables and merges. Output model should be:
-    Words.Id, Words.Name, Words.Translation, Words.Counter, Words.IsReinforcement, RotationWords.LastShownDate, Words.Content
+    Words.Id, Words.Name, Words.Translation, RotatedWords.Counter, Words.IsReinforcement, RotatedWords.LastShownDate, Words.Content
   - UpdateWordContent
     It takes id as Guid and content as text. It updates Content column of Words entry that filtered by Id using id value.
   - UpdateWordKnownStatus
-    It will gets word id as guid and isKnown as boolean. Entry will be filtered at RotatedWords table by word id. 
-    If isKnown is true entry's Counter value will be increased one, it is not Counter will be 1.
-    Entry will be filtered at RotatedWords table by word id. 
-     This entry's LastShownDate will be updated to now. ShownCounter will be increased one. If isKnown is true, KnownCount will be increased one.
+    It will gets word id as guid and isKnown as boolean. All steps below run in one transaction.
+    RotatedWords entry is filtered by word id. If isKnown is true entry's Counter value will be increased one, it is not Counter will be 1. LastShownDate will be updated to now.
+    Words entry is filtered by word id. ShownCount will be increased one. If isKnown is true, KnownCount will be increased one and IsKnown will be true.
+    A new WordHistory entry is added with word id, isKnown and now.
+    Known words stay at RotatedWords table.
+  - GetWordHistory
+    It takes word id as Guid. It returns WordHistory entries of the word, newest first. Output model: IsKnown, Date.
   - GetWordsByFilter
-    There should be FilterRequest model. It will be consist of Name as text, IsReinforcement and IsKnown as boolean. These 3 fields should be used to filter from Words table. Last filed is IsRotated and it will be boolean. It will filter from RotatedWords table. 
-    First, all filtering process will be done for Words' entries that IsKnown or IsReinforcement value is true. Words table's and RotatedWords table's filtered data will be joined using inner join.
-    IsRotated field will be added to filtered data. This value will be true if this word is exist at RotationWords table.
-    Output model should will be Words.Name, Words.IsReinforcement, Words.IsKnown, LastShownDate, Words.ShownCount, Words.KnownCount, IsRotated.
+    There should be FilterRequest model. It will be consist of Name as text, IsReinforcement and IsKnown as boolean. These 3 fields should be used to filter from Words table. Last field is IsRotated and it will be boolean. It will filter from RotatedWords table. 
+    Empty filter field means any value.
+    Words table and RotatedWords table will be joined using left join.
+    IsRotated field will be added to filtered data. This value will be true if this word is exist at RotatedWords table.
+    Output model should be Words.Name, Words.IsReinforcement, Words.IsKnown, RotatedWords.LastShownDate, Words.ShownCount, Words.KnownCount, IsRotated.
   - GetWordsByActive
-    First, it will find word ids with GetNotificationWords function with current date. Second, GetCardWords function should be called using word ids as parameter. Last data should be returned as response. Output model should be: Words.Id, Words.Name, Words.Translation, Words.Counter, Words.IsReinforcement, RotationWords.LastShownDate, Words.Content
+    First, it will find word ids with GetNotificationWords function with current date. Second, GetCardWords function should be called using word ids as parameter. Last data should be returned as response. Output model should be same as GetCardWords.
   - GetConfigs
-    It gets Config table data. Output model will be ConfigId, Code, Name and Value
+    It gets Config table data. Output model will be ConfigId, Code, Name, Value and InputType
   - GetSchedule
-    It gets period as parameter. Period will be date array, consist of 2 value.
-    Schedule table's data will be filtered by these parameters. Start date should be equal or bigger than first value of period and end date should be equal or smaller than second value of period.
+    It gets period as parameter. Period will be date-time array, consist of 2 value.
+    Schedule table's data will be filtered by overlap: entries whose StartDate is smaller than second value of period and EndDate is bigger than first value of period.
+    Output model: Id, StartDate, EndDate.
   - UpdateSchedule
-    If old_period parameter is not empty. The record where the StartDate equals old_period[0] and the EndDate equals old_period[1] is deleted. A new record is added where the StartDate is new_period[0] and the EndDate is new_period[1].
+    It takes optional id, start date-time and end date-time.
+    If new Notification Window overlaps another entry, request is rejected.
+    If id is not empty, entry with this id is updated. If it is empty, a new entry is added.
+  - DeleteSchedule
+    It takes id as Guid. It deletes Schedule entry with this id.
   - UpdateIsReinforcement
     It takes isReinforcement boolean value and wordId as Guid. It updates IsReinforcement value of Words entry that filtered by Id using wordId value.
+    After updating Words table, the related word's entry is deleted from RotatedWords table.
   - UpdateConfig
     It takes id as Guid and value as text. It updates Value column of Configs entry that filtered by Id using id value.
   - UpdateNotificationPeriod
     First, UpdateConfig function will be ran with id and value parameters. 
-    Quartz.NET's timed task is stopped. Started with new interval. New interval should be value parameter.
+    Quartz.NET's timed task is stopped. Started with new interval. New interval should be value parameter in minutes.
+  - GetVapidPublicKey
+    It returns VAPID public key.
+  - SavePushSubscription
+    It takes Endpoint, P256dh and Auth. It adds a PushSubscription entry. If endpoint already exists, it is not added again.
 
 
   # PUSH NOTIFICATION
   - App will triggers push notification at specific time intervals.
-  - This interval will be at Config table. The Value column of the record with a Code value of "Notification Period".
-  - When task runs, if date and time is not between selected times, push notification won't sent. Selected times are Scheduled table's entries. The time remaining between the StartDate and EndDate in each record is the selected time.
-  - Notification content will be words that joined with comma.
+  - This interval will be at Config table. The Value column of the record with a Code value of "NotificationPeriod".
+  - When task runs, if date and time is not inside any Notification Window, push notification won't sent. Notification Windows are Schedule table's entries. The time between the StartDate and EndDate in each record is a Notification Window.
+  - If GetNotificationWords returns no word, push notification won't sent.
+  - If Learner ignores a notification, same words will be sent again at next run.
+  - Notification payload: title is word names joined with comma, wordIds is word ids joined with comma.
+  - Notification click opens /flashcard with wordIds.
+  - Quartz.NET uses RAM store. Trigger is created from Config at startup.
   - Workflow and order listed below
     Register service worker at main entry script right after page loads
-    Ask permission to user for notification
-    .NET WebPush API will generate VAPID key. It will done once.
-    Page will call subscribe() with VAPID key which will get with api call, and get back a subscription object.
-    Page will send the subscription to backend, which stores it in a database.
+    Learner clicks "Enable notifications" button at Config page. Ask permission to user for notification
+    .NET WebPush API will generate VAPID keys. It will done once. Keys are stored at .env file.
+    Page will call subscribe() with VAPID public key which will get with GetVapidPublicKey api call, and get back a subscription object.
+    Page will send the subscription to backend with SavePushSubscription api, which stores it in a database.
     Quartz.NET will triggers task
-    Backend will sign the message with VAPID ke using WebPush API.
-    Post signed message using WebPushClient.SendNotificationAsync function to the subscription's endpoint.
-    The service worker will wake ape and show the notification.
+    Backend will sign the message with VAPID key using WebPush API.
+    Post signed message using WebPushClient.SendNotificationAsync function to every subscription's endpoint. If endpoint returns 410 Gone, subscription is deleted.
+    The service worker will wake up and show the notification.
   
 
   # RAG
@@ -255,8 +315,7 @@ This file is initializer instructor of my project.
           type: song,
           timestamp
         }
-        chunk type: per song
-        chunk tool: LangChainSplitter
+        chunk type: per song. One document per song, no splitter.
         transformer: Qwen3-Embedding-0.6B
       + letterboxd, TMDB
         metadata: {
@@ -267,8 +326,7 @@ This file is initializer instructor of my project.
           timestamp,
           type: text
         }
-        chunk type: per movie
-        chunk tool: LangChainTextSplitter
+        chunk type: per movie. One document per movie, no splitter.
         transformer: Qwen3-Embedding-0.6B
       + Notion
         metadata: {
@@ -277,7 +335,7 @@ This file is initializer instructor of my project.
           type: text,
           timestamp
         }
-        chunk type: per note
+        chunk type: per note. Only long notes are split.
         chunk tool: LangChainTextSplitter
         transformer: Qwen3-Embedding-0.6B
 
@@ -292,9 +350,11 @@ This file is initializer instructor of my project.
             top_k: 20
             similarity threshold: 0.9
           Replace the part written as {{word}} in the prompt specified below with a word's value.
-          Prompt will be converted to embed using sentence-transformers library and Qwen3-Embedding-0.6B.
-          Using singleton collection object's query method with embedded query, it will get related data
           /prompts/retrieval.txt file's content will be used as prompt.
+          Prompt will be embedded twice:
+            Text collection: sentence-transformers library and Qwen3-Embedding-0.6B.
+            Image collection: CLIP's text encoder.
+          Using singleton collection object's query method with each embedded query, it will get related data
           It will retrieve embeds from both image (CLIP's), text (Qwen's) collection. It will return 2 collections.
 
         + generate
@@ -308,9 +368,9 @@ This file is initializer instructor of my project.
     - It will consist of only generate function
     - Response methods will be story, picture, quote, music, movie reference.
     - Response method will be chosen randomly.
-    - Response will create using Google AI Studio API and gemini-3.8-flash model
+    - Response will create using Google AI Studio API and gemini-3.8-flash model. Model name and search tool name will be verified with current Gemini docs before coding.
     - Model will keep as parameter
-    - If response method is image or music, /prompts/llm_web.txt file's content will be used as prompt and google_search_retrieval tool will be added to tools option of Google AI Studio API. 
+    - If response method is picture or music, /prompts/llm_web.txt file's content will be used as prompt and google_search_retrieval tool will be added to tools option of Google AI Studio API. 
       If it is not, /prompts/llm.txt file's content will be used.
 
 
@@ -333,3 +393,17 @@ This file is initializer instructor of my project.
       + Update_Collections
         It will trigger embedding_pipeline with mode update argument
         It will update rag_client's Singleton collection object
+
+
+  # TEST
+  - Test Driven Development will be used. Workflow is at /standards/workflow.md.
+  - Test frameworks:
+    .NET: xUnit and FluentAssertions
+    Frontend: Vitest and React Testing Library
+    Python: pytest
+  - Database tests use a separate local PostgreSQL test database. It is recreated before test run.
+  - Time based rules are tested with a fake clock (.NET TimeProvider).
+  - External APIs and Gemini are tested with recorded responses. Live API tests run only when enabled.
+  - Test scenarios are saved at /infrastructure/test/scenarios. Test results are saved at /infrastructure/test/results.
+  - Test configs are kept at separate env files.
+  - Code quality is checked with Alibaba's Open Code Review in Delegation Mode.
