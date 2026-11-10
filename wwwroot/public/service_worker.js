@@ -1,4 +1,4 @@
-// FuXi service worker. Push and notification click handling are added in Phase 3.
+// FuXi service worker. Push and notification click handling are added in Phase 4.
 
 self.addEventListener('install', () => {
   self.skipWaiting();
