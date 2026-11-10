@@ -1,0 +1,149 @@
+FuXi - Phase 1 - Database
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_10_08_18.txt
+Run: 2026-11-10 07:56 UTC, Windows 11 (.NET SDK 10.0.403). PostgreSQL is not installed.
+This run was repeated after the code review fixes R1-R5.
+
+Totals: dotnet test 79 tests, 51 passed, 0 failed, 28 skipped.
+The 28 skipped tests are the PostgreSQL tests in DatabaseTests. They skip because .env.test does not exist.
+They run once the PostgreSQL todo on issue #3 is done.
+
+Status legend:
+PASS     the scenario is verified.
+MODEL    the rule is verified in the EF Core design-time model and the generated migration;
+         the same scenario against a live database is PENDING.
+PENDING  the scenario needs PostgreSQL and has not run yet.
+
+==================================================
+A. LIBRARIES AND TOOLS
+==================================================
+PASS A1 vetting of Microsoft.EntityFrameworkCore.Design and dotnet-ef reported to the Learner before installation
+PASS A2 dotnet-ef pinned to 10.0.14 in backend/dotnet-tools.json
+PASS A3 Microsoft.EntityFrameworkCore.Design locked in packages.lock.json
+PASS A4 Design package has PrivateAssets all
+
+==================================================
+B. MIGRATIONS
+==================================================
+PASS    B1 one migration, 20261110055523_Initial
+PASS    B2 has-pending-model-changes reports no change
+PENDING B3 startup applies all migrations to an empty database
+PENDING B4 second startup applies nothing again
+PENDING B5 __EFMigrationsHistory lists the initial migration
+PASS    B6 migration script creates Words, RotatedWords, Config, WordHistory, Schedule, PushSubscription
+
+==================================================
+C. WORDS TABLE
+==================================================
+PASS    C1 columns
+PASS    C2 Id is uuid primary key with gen_random_uuid() default
+PASS    C3 Name, Translation, Content are text
+PASS    C4 IsKnown, IsReinforcement are boolean
+PASS    C5 ShownCount, KnownCount are integer
+PASS    C6 Content is nullable
+PASS    C7 Name and Translation are not nullable
+PENDING C8 INSERT with only Name and Translation succeeds
+PENDING C9 inserted Word gets a generated uuid
+MODEL   C10 IsKnown and IsReinforcement default to false
+MODEL   C11 ShownCount and KnownCount default to 0
+MODEL   C12 Content is null when not given
+MODEL   C13 Name is not unique
+
+==================================================
+D. ROTATEDWORDS TABLE
+==================================================
+PASS    D1 columns
+PASS    D2 Id is uuid primary key
+PASS    D3 LastShownDate is nullable timestamptz
+PASS    D4 Counter is integer
+MODEL   D5 Counter defaults to 1
+MODEL   D6 WordId foreign key to Words
+MODEL   D7 WordId unique index
+MODEL   D8 cascade delete from Words
+
+==================================================
+E. CONFIG TABLE AND SEED DATA
+==================================================
+PASS    E1 columns
+PASS    E2 Id is uuid primary key
+PASS    E3 InputType is text
+MODEL   E4 exactly 4 seed rows
+MODEL   E5 RotationCount seed row
+MODEL   E6 RotationPeriod seed row
+MODEL   E7 ReinforcementPeriod seed row
+MODEL   E8 NotificationPeriod seed row
+MODEL   E9 Code unique index
+PASS    E10 InputType members CheckboxList, Radiobutton, String, Number, Date
+PENDING E11 every InputType member round-trips
+PENDING E12 changed seed Value is kept after restart
+
+==================================================
+F. WORDHISTORY TABLE
+==================================================
+PASS    F1 columns
+PASS    F2 Id is uuid primary key
+PASS    F3 Date is timestamptz
+MODEL   F4 WordId foreign key to Words
+MODEL   F5 cascade delete from Words
+
+==================================================
+G. SCHEDULE TABLE
+==================================================
+PASS    G1 columns
+PASS    G2 StartDate and EndDate are not nullable timestamptz
+PENDING G3 EndDate after StartDate is accepted
+MODEL   G4 EndDate equal to StartDate is rejected (CK_Schedule_EndDate_After_StartDate)
+MODEL   G5 EndDate before StartDate is rejected
+PENDING G6 overlapping Notification Windows are accepted
+
+==================================================
+H. PUSHSUBSCRIPTION TABLE
+==================================================
+PASS H1 columns
+PASS H2 Endpoint, P256dh, Auth are text
+PASS H3 CreatedDate is timestamptz
+
+==================================================
+I. DATE-TIME HANDLING
+==================================================
+PENDING I1 UTC DateTimeOffset round-trips with offset zero
+PENDING I2 non-zero offset is stored as the same UTC instant
+
+==================================================
+J. TEST SETUP AND QUALITY
+==================================================
+PENDING J1 database tests use the database named in .env.test
+PENDING J2 database tests set FUXI_ENV_FILE
+PENDING J3 tests start from an empty database
+PASS    J4 dotnet build: 0 errors, 0 warnings
+PASS    J5 dotnet test: 51 passed, 0 failed (28 skipped, see above)
+PASS    J6 Phase 0 smoke tests still pass (4 of 4)
+PASS    J7 new classes, properties and DB objects are PascalCase
+PASS    J8 new backend folders are snake_case (database, entities, configurations, migrations)
+PASS    J9 no secret value in tracked files
+
+==================================================
+K. OUT OF SCOPE CHECKS
+==================================================
+PASS K1 no API endpoint
+PASS K2 no Quartz.NET job
+PASS K3 no repository or service class
+
+==================================================
+CODE REVIEW (built-in, high)
+==================================================
+10 findings. The Learner approved fixing R1-R5:
+FIXED R1 TestDatabase restores the environment when its constructor throws
+FIXED R2 every key of .env.test is restored, including the VAPID keys
+FIXED R3 one EnvironmentScope helper replaces the copied restore code in SmokeTests and TestDatabase
+FIXED R4 the design-time factory uses the real .env connection when an env file exists
+FIXED R5 one AddFuXiDatabase registration is used by Program.cs and the tests
+Not changed, by decision:
+N1 no unique index on PushSubscription.Endpoint (Learner decision Q2; Phase 2 checks duplicates)
+N2 Counter 0 is stored as 1 (the spec never allows 0)
+N3 no retry when PostgreSQL is down at startup (local single-user app)
+N4 ModelOnlyContext stays separate from the design-time factory (the factory now changes env vars)
+N5 each database test recreates the database (revisit in a later phase if slow)
+
+Other changes during the run:
+- Microsoft.EntityFrameworkCore.Relational 10.0.14 was added as an explicit reference (approved by the Learner)
+  to fix the MSB3277 version conflict between FuXi.Api and FuXi.Api.Tests.

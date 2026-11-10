@@ -28,4 +28,22 @@ public static class EnvironmentFile
 
         Env.Load(path);
     }
+
+    /// <summary>True when FUXI_ENV_FILE is set or a .env file exists in or above the current directory.</summary>
+    public static bool IsAvailable() =>
+        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(PATH_VARIABLE)) || HasDefaultFileAbove();
+
+    // Same search as Env.TraversePath(): the current directory, then each parent.
+    private static bool HasDefaultFileAbove()
+    {
+        for (var directory = new DirectoryInfo(Directory.GetCurrentDirectory()); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, DEFAULT_FILE_NAME)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

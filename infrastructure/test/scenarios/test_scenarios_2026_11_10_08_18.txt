@@ -1,0 +1,123 @@
+FuXi - Phase 1 - Database
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-10 05:18 UTC
+Status: CONFIRMED BY THE LEARNER ON 2026-11-10
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 1 contains tables, migrations and Config seed data. It contains no API, no job and no page.
+Database scenarios run against the recreated _test database with FUXI_ENV_FILE set.
+
+==================================================
+A. LIBRARIES AND TOOLS
+==================================================
+A1. Given Microsoft.EntityFrameworkCore.Design and dotnet-ef, when they are vetted, then the security checklist result of each is reported to the Learner before installation.
+A2. Given the backend, when the tool manifest is read, then dotnet-ef is pinned to one exact version.
+A3. Given the backend, when the lockfiles are read, then Microsoft.EntityFrameworkCore.Design is locked.
+A4. Given the Design package, when the published API is built, then it is not part of the runtime output (PrivateAssets all).
+
+==================================================
+B. MIGRATIONS
+==================================================
+B1. Given the backend, when the migrations folder is listed, then one initial migration exists.
+B2. Given the model and the migrations, when "dotnet ef migrations has-pending-model-changes" runs, then no change is pending.
+B3. Given an empty database, when the API starts, then all migrations are applied.
+B4. Given a database that is already up to date, when the API starts a second time, then it starts without error and no migration is applied again.
+B5. Given an applied database, when the __EFMigrationsHistory table is read, then it lists the initial migration.
+B6. Given the migration, when its SQL is generated, then the table names are Words, RotatedWords, Config, WordHistory, Schedule and PushSubscription.
+
+==================================================
+C. WORDS TABLE
+==================================================
+C1. Given the Words table, when its columns are read, then they are Id, Name, Translation, Content, IsKnown, IsReinforcement, ShownCount and KnownCount.
+C2. Given the Words table, when Id is read, then it is uuid and the primary key.
+C3. Given the Words table, when Name, Translation and Content are read, then they are text.
+C4. Given the Words table, when IsKnown and IsReinforcement are read, then they are boolean.
+C5. Given the Words table, when ShownCount and KnownCount are read, then they are integer.
+C6. Given the Words table, when Content is read, then it is nullable.
+C7. Given the Words table, when Name and Translation are read, then they are not nullable.
+C8. Given an INSERT with only Name and Translation, when it runs, then it succeeds.
+C9. Given a Word inserted with only Name and Translation, when it is read, then Id is a generated uuid.
+C10. Given a Word inserted with only Name and Translation, when it is read, then IsKnown and IsReinforcement are false.
+C11. Given a Word inserted with only Name and Translation, when it is read, then ShownCount and KnownCount are 0.
+C12. Given a Word inserted with only Name and Translation, when it is read, then Content is null.
+C13. Given an existing Word, when a second Word with the same Name is inserted, then it succeeds.
+
+==================================================
+D. ROTATEDWORDS TABLE
+==================================================
+D1. Given the RotatedWords table, when its columns are read, then they are Id, WordId, LastShownDate and Counter.
+D2. Given the RotatedWords table, when Id is read, then it is uuid and the primary key.
+D3. Given the RotatedWords table, when LastShownDate is read, then it is timestamptz and nullable.
+D4. Given the RotatedWords table, when Counter is read, then it is integer.
+D5. Given a RotatedWords entry inserted without Counter, when it is read, then Counter is 1.
+D6. Given a WordId that does not exist in Words, when a RotatedWords entry is inserted, then it is rejected by the foreign key.
+D7. Given a Word that has a RotatedWords entry, when a second entry with the same WordId is inserted, then it is rejected by the unique index.
+D8. Given a Word that has a RotatedWords entry, when the Word is deleted, then its RotatedWords entry is deleted.
+
+==================================================
+E. CONFIG TABLE AND SEED DATA
+==================================================
+E1. Given the Config table, when its columns are read, then they are Id, Name, Code, Value and InputType.
+E2. Given the Config table, when Id is read, then it is uuid and the primary key.
+E3. Given the Config table, when InputType is read, then it is text.
+E4. Given an applied database, when Config is read, then it has exactly 4 rows.
+E5. Given an applied database, when the row with Code RotationCount is read, then Name is "Rotation Count", Value is "20" and InputType is "Number".
+E6. Given an applied database, when the row with Code RotationPeriod is read, then Name is "Rotation period", Value is "15" and InputType is "Number".
+E7. Given an applied database, when the row with Code ReinforcementPeriod is read, then Name is "Reinforcement period", Value is "10800" and InputType is "Number".
+E8. Given an applied database, when the row with Code NotificationPeriod is read, then Name is "Notification period", Value is "15" and InputType is "Number".
+E9. Given a Config row, when a second row with the same Code is inserted, then it is rejected by the unique index.
+E10. Given the InputType enum, when its members are read, then they are CheckboxList, Radiobutton, String, Number and Date.
+E11. Given every InputType member, when a Config row is saved and read back through EF Core, then the same member is returned.
+E12. Given a seeded Config Value changed by the Learner, when the API starts again, then the changed Value is kept.
+
+==================================================
+F. WORDHISTORY TABLE
+==================================================
+F1. Given the WordHistory table, when its columns are read, then they are Id, WordId, IsKnown and Date.
+F2. Given the WordHistory table, when Id is read, then it is uuid and the primary key.
+F3. Given the WordHistory table, when Date is read, then it is timestamptz.
+F4. Given a WordId that does not exist in Words, when a WordHistory entry is inserted, then it is rejected by the foreign key.
+F5. Given a Word that has WordHistory entries, when the Word is deleted, then its WordHistory entries are deleted.
+
+==================================================
+G. SCHEDULE TABLE
+==================================================
+G1. Given the Schedule table, when its columns are read, then they are Id, StartDate and EndDate.
+G2. Given the Schedule table, when StartDate and EndDate are read, then they are timestamptz and not nullable.
+G3. Given an EndDate after StartDate, when a Schedule entry is inserted, then it succeeds.
+G4. Given an EndDate equal to StartDate, when a Schedule entry is inserted, then it is rejected by the check constraint.
+G5. Given an EndDate before StartDate, when a Schedule entry is inserted, then it is rejected by the check constraint.
+G6. Given two overlapping Notification Windows, when both are inserted, then the database accepts both (overlap is left to Phase 2).
+
+==================================================
+H. PUSHSUBSCRIPTION TABLE
+==================================================
+H1. Given the PushSubscription table, when its columns are read, then they are Id, Endpoint, P256dh, Auth and CreatedDate.
+H2. Given the PushSubscription table, when Endpoint, P256dh and Auth are read, then they are text.
+H3. Given the PushSubscription table, when CreatedDate is read, then it is timestamptz.
+
+==================================================
+I. DATE-TIME HANDLING
+==================================================
+I1. Given a UTC DateTimeOffset, when it is saved and read back through EF Core, then the same instant is returned with offset zero.
+I2. Given a DateTimeOffset with a non-zero offset, when it is saved, then it is stored as the same instant in UTC.
+
+==================================================
+J. TEST SETUP AND QUALITY
+==================================================
+J1. Given the database tests, when they run, then they use the database named in .env.test and not the development database.
+J2. Given the database tests, when they run, then they set FUXI_ENV_FILE.
+J3. Given the test database, when the recreate script runs before the tests, then the tests start from an empty database.
+J4. Given the backend, when "dotnet build" runs, then it finishes with zero errors and zero warnings.
+J5. Given the backend, when "dotnet test" runs, then every test passes.
+J6. Given the Phase 0 smoke tests, when "dotnet test" runs, then they still pass.
+J7. Given every new class, property and DB object, when it is read, then its name is PascalCase.
+J8. Given every new backend folder, when it is read, then its name is snake_case.
+J9. Given the source, when it is searched, then no secret value exists in any tracked file.
+
+==================================================
+K. OUT OF SCOPE CHECKS
+==================================================
+K1. Given the backend, when endpoints are listed, then no API endpoint exists.
+K2. Given the backend, when Quartz.NET jobs are listed, then no job exists.
+K3. Given the backend, when it is searched, then no repository or service class exists.
