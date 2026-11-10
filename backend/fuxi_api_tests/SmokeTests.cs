@@ -31,9 +31,7 @@ public sealed class SmokeTests : IDisposable
         """;
 
     private readonly string envFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.env");
-    private readonly Dictionary<string, string?> originalValues = CHANGED_VARIABLES.ToDictionary(
-        name => name,
-        Environment.GetEnvironmentVariable);
+    private readonly EnvironmentScope environment = new(CHANGED_VARIABLES);
 
     [Fact]
     public void TestProjectRuns()
@@ -78,11 +76,7 @@ public sealed class SmokeTests : IDisposable
 
     public void Dispose()
     {
-        foreach (var (name, value) in originalValues)
-        {
-            Environment.SetEnvironmentVariable(name, value);
-        }
-
+        environment.Dispose();
         File.Delete(envFilePath);
     }
 }
