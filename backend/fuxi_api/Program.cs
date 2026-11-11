@@ -4,13 +4,22 @@ using FuXi.Api.Database;
 EnvironmentFile.Load();
 
 var builder = WebApplication.CreateBuilder(args);
-
-// Fails fast when the database configuration is incomplete.
-var connectionString = DatabaseSettings.BuildConnectionString(builder.Configuration);
-builder.Services.AddFuXiDatabase(connectionString);
+builder.Services.AddFuXiDatabase();
+builder.Services.AddFuXiApi();
 
 var app = builder.Build();
 
-DatabaseMigration.Apply(app.Services);
+// Fails fast when the database or CORS configuration is incomplete.
+app.Configuration.ValidateFuXiConfiguration();
+
+app.UseExceptionHandler();
+app.UseStatusCodePages();
+app.UseCors();
+app.MapFuXiApi();
+
+if (DatabaseMigration.IsEnabled(app.Configuration))
+{
+    DatabaseMigration.Apply(app.Services);
+}
 
 app.Run();

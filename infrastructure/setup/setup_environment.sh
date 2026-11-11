@@ -13,6 +13,9 @@ readonly DEFAULT_DB_PORT="5432"
 readonly DEFAULT_DB_USER="fuxi"
 readonly DEFAULT_DB_NAME="fuxi"
 readonly TEST_DB_SUFFIX="_test"
+readonly CORS_ORIGINS_KEY="FUXI_CORS_ORIGINS"
+# The Vite development server of the frontend.
+readonly DEFAULT_CORS_ORIGINS="http://localhost:5173"
 readonly PASSWORD_BYTES=24
 readonly PRIVATE_FILE_UMASK=077
 readonly REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -55,6 +58,7 @@ FUXI_DB_PORT=${DEFAULT_DB_PORT}
 FUXI_DB_NAME=${database_name}
 FUXI_DB_USER=${user}
 FUXI_DB_PASSWORD=${password}
+${CORS_ORIGINS_KEY}=${DEFAULT_CORS_ORIGINS}
 VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
 ENV
@@ -62,12 +66,15 @@ ENV
 }
 
 # The test env file reuses the role of the development env file.
+# Env files from before the API existed get the origins they lack.
 create_env_files() {
-  local env_file="${REPOSITORY_ROOT}/.env" user password
+  local env_file="${REPOSITORY_ROOT}/.env" test_env_file="${REPOSITORY_ROOT}/.env.test" user password
   create_env_file "${env_file}" "${DEFAULT_DB_NAME}" "${DEFAULT_DB_USER}" "$(openssl rand -hex "${PASSWORD_BYTES}")"
   user="$(require_env_value "${env_file}" FUXI_DB_USER)"
   password="$(require_env_value "${env_file}" FUXI_DB_PASSWORD)"
-  create_env_file "${REPOSITORY_ROOT}/.env.test" "${DEFAULT_DB_NAME}${TEST_DB_SUFFIX}" "${user}" "${password}"
+  create_env_file "${test_env_file}" "${DEFAULT_DB_NAME}${TEST_DB_SUFFIX}" "${user}" "${password}"
+  ensure_env_value "${env_file}" "${CORS_ORIGINS_KEY}" "${DEFAULT_CORS_ORIGINS}"
+  ensure_env_value "${test_env_file}" "${CORS_ORIGINS_KEY}" "${DEFAULT_CORS_ORIGINS}"
 }
 
 # Creates or updates the role and creates the development database.

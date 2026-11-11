@@ -85,7 +85,10 @@ public sealed class TestDatabase : IDisposable
         return new FuXiDbContext(options);
     }
 
-    /// <summary>Builds the same container shape the API uses at startup.</summary>
+    /// <summary>
+    /// Builds a container that holds only the database, registered for the test connection string.
+    /// The API startup registers more and builds its connection string from the configuration.
+    /// </summary>
     public ServiceProvider CreateServices()
     {
         var services = new ServiceCollection();

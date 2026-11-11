@@ -21,11 +21,6 @@ public sealed class ConfigConfiguration : IEntityTypeConfiguration<Config>
     private const string REINFORCEMENT_PERIOD_NAME = "Reinforcement period";
     private const string NOTIFICATION_PERIOD_NAME = "Notification period";
 
-    private const string ROTATION_COUNT_CODE = "RotationCount";
-    private const string ROTATION_PERIOD_CODE = "RotationPeriod";
-    private const string REINFORCEMENT_PERIOD_CODE = "ReinforcementPeriod";
-    private const string NOTIFICATION_PERIOD_CODE = "NotificationPeriod";
-
     private const string ROTATION_COUNT_VALUE = "20";
     private const string ROTATION_PERIOD_VALUE = "15";
     private const string REINFORCEMENT_PERIOD_VALUE = "10800";
@@ -42,10 +37,10 @@ public sealed class ConfigConfiguration : IEntityTypeConfiguration<Config>
 
     private static Config[] SeedRows() =>
     [
-        NumberSetting(ROTATION_COUNT_ID, ROTATION_COUNT_NAME, ROTATION_COUNT_CODE, ROTATION_COUNT_VALUE),
-        NumberSetting(ROTATION_PERIOD_ID, ROTATION_PERIOD_NAME, ROTATION_PERIOD_CODE, ROTATION_PERIOD_VALUE),
-        NumberSetting(REINFORCEMENT_PERIOD_ID, REINFORCEMENT_PERIOD_NAME, REINFORCEMENT_PERIOD_CODE, REINFORCEMENT_PERIOD_VALUE),
-        NumberSetting(NOTIFICATION_PERIOD_ID, NOTIFICATION_PERIOD_NAME, NOTIFICATION_PERIOD_CODE, NOTIFICATION_PERIOD_VALUE),
+        NumberSetting(ROTATION_COUNT_ID, ROTATION_COUNT_NAME, ConfigCodes.ROTATION_COUNT, ROTATION_COUNT_VALUE),
+        NumberSetting(ROTATION_PERIOD_ID, ROTATION_PERIOD_NAME, ConfigCodes.ROTATION_PERIOD, ROTATION_PERIOD_VALUE),
+        NumberSetting(REINFORCEMENT_PERIOD_ID, REINFORCEMENT_PERIOD_NAME, ConfigCodes.REINFORCEMENT_PERIOD, REINFORCEMENT_PERIOD_VALUE),
+        NumberSetting(NOTIFICATION_PERIOD_ID, NOTIFICATION_PERIOD_NAME, ConfigCodes.NOTIFICATION_PERIOD, NOTIFICATION_PERIOD_VALUE),
     ];
 
     private static Config NumberSetting(string id, string name, string code, string value) =>

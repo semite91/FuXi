@@ -306,7 +306,7 @@ S3. [NOW] Given FUXI_CORS_ORIGINS, when a request comes from another origin, the
 S4. [NOW] Given a missing or empty FUXI_CORS_ORIGINS, when the API starts, then it stops with a message that names the key.
 S5. [NOW] Given .env.example and .env.test.example, when they are read, then both contain FUXI_CORS_ORIGINS without a value.
 S6. [NOW] Given the API, when its services are read, then no antiforgery service is used.
-S7. [NOW] Given the API, when a request arrives over HTTP, then it is redirected to HTTPS.
+S7. REMOVED on 2026-11-12 by the Learner's decision after the code review. HTTPS redirection is left to hosting, which is decided later.
 S8. [NOW] Given every query in the services, when the code is read, then no SQL text is built from request values.
 
 ==================================================
