@@ -1,0 +1,332 @@
+FuXi - Phase 2 - API
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-11 13:17 UTC
+Status: CONFIRMED BY THE LEARNER ON 2026-11-11
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 2 contains the API endpoints and their backend logic. It contains no Quartz.NET job, no push sending, no VAPID key generation and no page.
+"Now" always comes from a fake clock (.NET TimeProvider) in tests.
+
+Marks:
+[DB]  the scenario needs PostgreSQL. Its test is written, and it is skipped until .env.test exists.
+[NOW] the scenario runs without PostgreSQL.
+
+==================================================
+A. LIBRARIES AND TEST SETUP
+==================================================
+A1. [NOW] Given Microsoft.AspNetCore.Mvc.Testing and Microsoft.Extensions.TimeProvider.Testing, when they are vetted, then the security checklist result of each is reported to the Learner before installation.
+A2. [NOW] Given the test project, when its lockfile is read, then both libraries are locked.
+A3. [NOW] Given the API project, when its references are read, then neither test library is referenced by it.
+A4. [NOW] Given the test host, when the API starts with the startup migration switched off, then it starts without a database.
+A5. [NOW] Given the API outside tests, when it starts, then the startup migration still runs.
+A6. [NOW] Given the API, when "now" is needed, then it is read from the registered TimeProvider.
+
+==================================================
+B. ROUTES AND CONVENTIONS
+==================================================
+B1. [NOW] Given the API, when its routes are listed, then GET routes exist for /api/GetCardWords, /api/GetWordsByActive, /api/GetWordHistory, /api/GetWordsByFilter, /api/GetConfigs, /api/GetSchedule and /api/GetVapidPublicKey.
+B2. [NOW] Given the API, when its routes are listed, then POST routes exist for /api/UpdateWordContent, /api/UpdateWordKnownStatus, /api/UpdateIsReinforcement, /api/UpdateConfig, /api/UpdateNotificationPeriod, /api/UpdateSchedule and /api/SavePushSubscription.
+B3. [NOW] Given the API, when its routes are listed, then a DELETE route exists for /api/DeleteSchedule.
+B4. [NOW] Given the API, when its routes are listed, then no route exists for GetNotificationWords.
+B5. [NOW] Given the API, when its routes are listed, then it has exactly 15 routes.
+B6. [NOW] Given any JSON response, when its property names are read, then they are camelCase.
+B7. [NOW] Given any error response, when its body is read, then it is in the ProblemDetails format.
+B8. [NOW] Given a GET route, when it is called with POST, then the answer is 405.
+
+==================================================
+C. GETNOTIFICATIONWORDS (INTERNAL FUNCTION)
+==================================================
+Top-up of the Rotation
+C1. [DB] Given RotationCount 20 and 17 RotatedWords entries, when the function runs, then 3 entries are added.
+C2. [DB] Given RotationCount 20 and 20 RotatedWords entries, when the function runs, then no entry is added.
+C3. [DB] Given RotationCount 20 and 22 RotatedWords entries, when the function runs, then no entry is added and no entry is removed.
+C4. [DB] Given a Word with IsKnown false and IsReinforcement false that is not in the Rotation, when a top-up is needed, then the Word can be added.
+C5. [DB] Given a Word with IsKnown true and IsReinforcement true that is not in the Rotation, when a top-up is needed, then the Word can be added.
+C6. [DB] Given a Word with IsKnown true and IsReinforcement false that is not in the Rotation, when a top-up is needed, then the Word is never added.
+C7. [DB] Given a Word that is already in the Rotation, when a top-up is needed, then no second entry is added for it.
+C8. [DB] Given 3 missing entries and only 2 Words that can be added, when the function runs, then 2 entries are added.
+C9. [DB] Given missing entries and no Word that can be added, when the function runs, then no entry is added and no error is raised.
+C10. [DB] Given an added entry, when it is read, then its Counter is 1.
+C11. [DB] Given an added entry, when it is read, then its LastShownDate is null.
+C12. [DB] Given more Words that can be added than missing entries, when the function runs many times on the same data, then the chosen Words are not always the same.
+
+Due rule
+C13. [DB] Given a Rotation entry with LastShownDate null, when the function runs, then its Word is returned.
+C14. [DB] Given a Word with IsReinforcement false, Counter 2, RotationPeriod 15 and LastShownDate 30 minutes before the given date, when the function runs, then the Word is returned.
+C15. [DB] Given the same Word with LastShownDate 29 minutes before the given date, when the function runs, then the Word is not returned.
+C16. [DB] Given a Word with IsReinforcement true, ReinforcementPeriod 10800 and LastShownDate 10800 minutes before the given date, when the function runs, then the Word is returned.
+C17. [DB] Given the same Reinforced Word with LastShownDate 10799 minutes before the given date, when the function runs, then the Word is not returned.
+C18. [DB] Given a Reinforced Word with Counter 5, when the function runs, then Counter is not used in its due rule.
+C19. [DB] Given a Known Word that is in the Rotation and Due, when the function runs, then the Word is returned.
+C20. [DB] Given an entry added by the top-up in the same run, when the function returns, then its Word is in the result.
+C21. [DB] Given the function, when the due rule runs, then "now" is the date given as parameter.
+C22. [DB] Given changed RotationPeriod and ReinforcementPeriod values in Config, when the function runs, then the changed values are used.
+C23. [DB] Given the result, when one item is read, then it contains only the Word's Id and Name.
+C24. [DB] Given no Due Word, when the function runs, then an empty list is returned.
+
+==================================================
+D. GETCARDWORDS
+==================================================
+D1. [DB] Given two Word ids joined with a comma, when the API is called, then both Words are returned.
+D2. [DB] Given one Word id, when the API is called, then one Word is returned.
+D3. [DB] Given a returned item, when it is read, then it contains Id, Name, Translation, Counter, IsReinforcement, LastShownDate and Content.
+D4. [DB] Given a returned item, when Counter and LastShownDate are read, then they come from the Word's RotatedWords entry.
+D5. [DB] Given a Word id that is not in the Rotation, when the API is called, then that Word is left out of the result.
+D6. [DB] Given a Word id that does not exist, when the API is called, then it is left out of the result and no error is raised.
+D7. [DB] Given the same Word id twice in the list, when the API is called, then the Word is returned once.
+D8. [NOW] Given a list with a value that is not a Guid, when the API is called, then the answer is 400.
+D9. [NOW] Given an empty or missing list, when the API is called, then the answer is 400.
+D10. [DB] Given several ids, when the API is called, then the Words are returned in the order of the ids.
+
+==================================================
+E. GETWORDSBYACTIVE
+==================================================
+E1. [DB] Given Due Words, when the API is called, then exactly the Words that GetNotificationWords returns for the current date are returned.
+E2. [DB] Given a returned item, when it is read, then it has the same fields as a GetCardWords item.
+E3. [DB] Given a Rotation that is not full, when the API is called, then the top-up of GetNotificationWords runs.
+E4. [DB] Given no Due Word, when the API is called, then an empty list is returned with 200.
+E5. [DB] Given the API, when it needs the current date, then it uses the fake clock.
+
+==================================================
+F. UPDATEWORDKNOWNSTATUS
+==================================================
+F1. [DB] Given a Word in the Rotation with Counter 3, when isKnown is true, then Counter is 4.
+F2. [DB] Given a Word in the Rotation with Counter 3, when isKnown is false, then Counter is 1.
+F3. [DB] Given a Word in the Rotation, when the API is called, then LastShownDate is now.
+F4. [DB] Given a Word with ShownCount 5, when isKnown is true, then ShownCount is 6.
+F5. [DB] Given a Word with ShownCount 5, when isKnown is false, then ShownCount is 6.
+F6. [DB] Given a Word with KnownCount 2, when isKnown is true, then KnownCount is 3.
+F7. [DB] Given a Word with KnownCount 2, when isKnown is false, then KnownCount is 2.
+F8. [DB] Given a Word with IsKnown false, when isKnown is true, then IsKnown is true.
+F9. [DB] Given a Word with IsKnown false, when isKnown is false, then IsKnown is false.
+F10. [DB] Given a Word with IsKnown true, when isKnown is false, then IsKnown stays true.
+F11. [DB] Given a Word in the Rotation, when the API is called, then one WordHistory entry is added with the Word's id.
+F12. [DB] Given the added WordHistory entry, when it is read, then its IsKnown equals the sent isKnown.
+F13. [DB] Given the added WordHistory entry, when it is read, then its Date is now.
+F14. [DB] Given a Word in the Rotation, when isKnown is true, then the Word's RotatedWords entry still exists.
+F15. [DB] Given a Word id that does not exist, when the API is called, then the answer is 404.
+F16. [DB] Given a Word that exists and is not in the Rotation, when the API is called, then the answer is 404.
+F17. [DB] Given a Word that exists and is not in the Rotation, when the API is called, then the Word is not changed and no WordHistory entry is added.
+F18. [DB] Given a failure while the WordHistory entry is saved, when the API is called, then the changes to RotatedWords and Words are rolled back.
+F19. [NOW] Given a word id that is not a Guid, when the API is called, then the answer is 400.
+F20. [NOW] Given a request without isKnown, when the API is called, then the answer is 400.
+
+==================================================
+G. GETWORDHISTORY
+==================================================
+G1. [DB] Given a Word with three WordHistory entries, when the API is called, then three items are returned.
+G2. [DB] Given a Word with several WordHistory entries, when the API is called, then the newest is first.
+G3. [DB] Given a returned item, when it is read, then it contains only IsKnown and Date.
+G4. [DB] Given two Words with history, when the API is called for one, then no entry of the other Word is returned.
+G5. [DB] Given a Word without history, when the API is called, then an empty list is returned with 200.
+G6. [DB] Given a Word id that does not exist, when the API is called, then the answer is 404.
+G7. [NOW] Given a word id that is not a Guid, when the API is called, then the answer is 400.
+
+==================================================
+H. UPDATEWORDCONTENT
+==================================================
+H1. [DB] Given a Word, when the API is called with content, then the Word's Content is the sent content.
+H2. [DB] Given a Word, when the API is called, then no other column of the Word changes.
+H3. [DB] Given two Words, when the API is called for one, then the other Word is not changed.
+H4. [DB] Given content with quotes and SQL keywords, when the API is called, then it is stored as plain text and no other statement runs.
+H5. [DB] Given a Word id that does not exist, when the API is called, then the answer is 404.
+H6. [NOW] Given an id that is not a Guid, when the API is called, then the answer is 400.
+H7. [NOW] Given empty or missing content, when the API is called, then the answer is 400.
+
+==================================================
+I. UPDATEISREINFORCEMENT
+==================================================
+I1. [DB] Given a Word with IsReinforcement false, when the API is called with true, then IsReinforcement is true.
+I2. [DB] Given a Word with IsReinforcement true, when the API is called with false, then IsReinforcement is false.
+I3. [DB] Given a Word in the Rotation, when the API is called with true, then its RotatedWords entry is deleted.
+I4. [DB] Given a Word in the Rotation, when the API is called with false, then its RotatedWords entry is deleted.
+I5. [DB] Given a Word that is not in the Rotation, when the API is called, then IsReinforcement is updated and no error is raised.
+I6. [DB] Given two Words in the Rotation, when the API is called for one, then the other Word's RotatedWords entry still exists.
+I7. [DB] Given a Word, when the API is called, then its WordHistory entries still exist.
+I8. [DB] Given a failure while the RotatedWords entry is deleted, when the API is called, then IsReinforcement is not changed.
+I9. [DB] Given a Word id that does not exist, when the API is called, then the answer is 404.
+I10. [NOW] Given a wordId that is not a Guid, when the API is called, then the answer is 400.
+I11. [NOW] Given a request without isReinforcement, when the API is called, then the answer is 400.
+
+==================================================
+J. GETWORDSBYFILTER
+==================================================
+Name
+J1. [DB] Given the Words "run", "Runner", "overrun" and "brunch", when Name is "run", then "run", "Runner" and "overrun" are returned.
+J2. [DB] Given the same Words, when Name is "run", then "brunch" is not returned, because it neither starts nor ends with "run".
+J3. [DB] Given the Word "Runner", when Name is "RUN", then "Runner" is returned.
+J4. [DB] Given the Words "100%" and "1000", when Name is "100%", then only "100%" is returned.
+J5. [DB] Given the Words "a_c" and "abc", when Name is "a_c", then only "a_c" is returned.
+J6. [NOW] Given a Name that contains only spaces, when the filter is read, then Name counts as empty.
+
+Other fields
+J7. [DB] Given IsReinforcement true, when the API is called, then only Words with IsReinforcement true are returned.
+J8. [DB] Given IsReinforcement false, when the API is called, then only Words with IsReinforcement false are returned.
+J9. [DB] Given IsKnown true, when the API is called, then only Words with IsKnown true are returned.
+J10. [DB] Given IsKnown false, when the API is called, then only Words with IsKnown false are returned.
+J11. [DB] Given IsRotated true, when the API is called, then only Words in the Rotation are returned.
+J12. [DB] Given IsRotated false, when the API is called, then only Words outside the Rotation are returned.
+J13. [DB] Given an empty field and one filled field, when the API is called, then the empty field does not limit the result.
+J14. [DB] Given two filled fields, when the API is called, then only Words that match both are returned.
+
+Result
+J15. [NOW] Given a filter whose four fields are all empty, when the API is called, then an empty list is returned with 200.
+J16. [DB] Given a returned item, when it is read, then it contains Name, IsReinforcement, IsKnown, LastShownDate, ShownCount, KnownCount and IsRotated.
+J17. [DB] Given a returned Word in the Rotation, when it is read, then IsRotated is true and LastShownDate comes from its RotatedWords entry.
+J18. [DB] Given a returned Word outside the Rotation, when it is read, then IsRotated is false and LastShownDate is null.
+J19. [DB] Given many matching Words, when the API is called, then all of them are returned without pagination.
+J20. [DB] Given several matching Words, when the API is called, then they are ordered by Name.
+J21. [DB] Given no matching Word, when the API is called, then an empty list is returned with 200.
+J22. [NOW] Given IsKnown with a value that is not a boolean, when the API is called, then the answer is 400.
+
+==================================================
+K. GETCONFIGS
+==================================================
+K1. [DB] Given the seeded database, when the API is called, then four items are returned.
+K2. [DB] Given a returned item, when it is read, then it contains ConfigId, Code, Name, Value and InputType.
+K3. [DB] Given a returned item, when InputType is read, then it is the member name as text, such as "Number".
+K4. [DB] Given a changed Config Value, when the API is called, then the changed Value is returned.
+
+==================================================
+L. UPDATECONFIG
+==================================================
+L1. [DB] Given the RotationCount row, when the API is called with "25", then its Value is "25".
+L2. [DB] Given a Config row, when the API is called, then its Name, Code and InputType do not change.
+L3. [DB] Given two Config rows, when the API is called for one, then the other row is not changed.
+L4. [DB] Given a Number row, when the value is "abc", then the answer is 400 and the Value is not changed.
+L5. [DB] Given a Number row, when the value is "0", then the answer is 400 and the Value is not changed.
+L6. [DB] Given a Number row, when the value is "-5", then the answer is 400 and the Value is not changed.
+L7. [DB] Given a Number row, when the value is "1.5", then the answer is 400 and the Value is not changed.
+L8. [DB] Given a Config id that does not exist, when the API is called, then the answer is 404.
+L9. [NOW] Given an id that is not a Guid, when the API is called, then the answer is 400.
+L10. [NOW] Given an empty or missing value, when the API is called, then the answer is 400.
+
+==================================================
+M. UPDATENOTIFICATIONPERIOD
+==================================================
+M1. [DB] Given the NotificationPeriod row, when the API is called with "30", then its Value is "30".
+M2. [DB] Given the NotificationPeriod row, when the API is called with "30", then the timer is restarted once with an interval of 30 minutes.
+M3. [DB] Given the NotificationPeriod row, when the API is called, then the Value is saved before the timer is restarted.
+M4. [DB] Given the NotificationPeriod row, when the value is "abc", then the answer is 400, the Value is not changed and the timer is not restarted.
+M5. [DB] Given the NotificationPeriod row, when the value is "0", then the answer is 400, the Value is not changed and the timer is not restarted.
+M6. [DB] Given the id of another Config row, when the API is called, then the answer is 400, the row is not changed and the timer is not restarted.
+M7. [DB] Given a Config id that does not exist, when the API is called, then the answer is 404 and the timer is not restarted.
+M8. [NOW] Given an id that is not a Guid, when the API is called, then the answer is 400 and the timer is not restarted.
+M9. [NOW] Given the API, when its services are read, then INotificationTimer is registered with an implementation that does nothing.
+M10. [NOW] Given the do-nothing timer, when it is restarted, then no error is raised.
+
+==================================================
+N. GETSCHEDULE
+==================================================
+N1. [DB] Given a Notification Window inside the period, when the API is called, then it is returned.
+N2. [DB] Given a Notification Window that starts before the period and ends inside it, when the API is called, then it is returned.
+N3. [DB] Given a Notification Window that starts inside the period and ends after it, when the API is called, then it is returned.
+N4. [DB] Given a Notification Window that starts before the period and ends after it, when the API is called, then it is returned.
+N5. [DB] Given a Notification Window that ends before the period starts, when the API is called, then it is not returned.
+N6. [DB] Given a Notification Window that starts after the period ends, when the API is called, then it is not returned.
+N7. [DB] Given a Notification Window whose EndDate equals the first period value, when the API is called, then it is not returned.
+N8. [DB] Given a Notification Window whose StartDate equals the second period value, when the API is called, then it is not returned.
+N9. [DB] Given a returned item, when it is read, then it contains Id, StartDate and EndDate.
+N10. [DB] Given a returned item, when its dates are read, then they are UTC.
+N11. [DB] Given several returned items, when the list is read, then it is ordered by StartDate.
+N12. [NOW] Given a period with one value, when the API is called, then the answer is 400.
+N13. [NOW] Given a period with three values, when the API is called, then the answer is 400.
+N14. [NOW] Given a period whose first value is not before its second value, when the API is called, then the answer is 400.
+N15. [NOW] Given a period value that is not a date-time, when the API is called, then the answer is 400.
+
+==================================================
+O. UPDATESCHEDULE
+==================================================
+Add
+O1. [DB] Given no id, a start and a later end, when the API is called, then a new Schedule entry is added.
+O2. [DB] Given an added entry, when the response is read, then it contains the new entry's Id.
+O3. [DB] Given a start and end with a non-zero offset, when the API is called, then the same instants are stored as UTC.
+
+Update
+O4. [DB] Given the id of an existing entry, when the API is called, then that entry has the new StartDate and EndDate.
+O5. [DB] Given the id of an existing entry, when the API is called, then the entry keeps its Id and no new entry is added.
+O6. [DB] Given an id that does not exist, when the API is called, then the answer is 404 and no entry is added.
+
+Overlap
+O7. [DB] Given a window 10:00-12:00, when a new window 11:00-13:00 is sent, then the answer is 409 and nothing is stored.
+O8. [DB] Given a window 10:00-12:00, when a new window 09:00-11:00 is sent, then the answer is 409 and nothing is stored.
+O9. [DB] Given a window 10:00-12:00, when a new window 10:30-11:30 is sent, then the answer is 409 and nothing is stored.
+O10. [DB] Given a window 10:00-12:00, when a new window 09:00-13:00 is sent, then the answer is 409 and nothing is stored.
+O11. [DB] Given a window 10:00-12:00, when a new window 12:00-14:00 is sent, then it is accepted.
+O12. [DB] Given a window 10:00-12:00, when a new window 08:00-10:00 is sent, then it is accepted.
+O13. [DB] Given a window 10:00-12:00, when the same window is edited to 10:00-13:00, then it is accepted, because its old range is replaced.
+O14. [DB] Given the windows 10:00-12:00 and 14:00-16:00, when the first is edited to 11:00-15:00, then the answer is 409 and the first window is not changed.
+
+Input
+O15. [NOW] Given an end equal to the start, when the API is called, then the answer is 400.
+O16. [NOW] Given an end before the start, when the API is called, then the answer is 400.
+O17. [NOW] Given a missing start or end, when the API is called, then the answer is 400.
+O18. [NOW] Given an id that is not a Guid, when the API is called, then the answer is 400.
+
+==================================================
+P. DELETESCHEDULE
+==================================================
+P1. [DB] Given an existing Schedule entry, when the API is called with its id, then the entry is deleted.
+P2. [DB] Given two Schedule entries, when the API is called for one, then the other entry still exists.
+P3. [DB] Given an id that does not exist, when the API is called, then the answer is 404.
+P4. [NOW] Given an id that is not a Guid, when the API is called, then the answer is 400.
+
+==================================================
+Q. GETVAPIDPUBLICKEY
+==================================================
+Q1. [NOW] Given an empty VAPID_PUBLIC_KEY, when the API is called, then the fixed placeholder key is returned with 200.
+Q2. [NOW] Given the placeholder key, when it is decoded from base64url, then it is 65 bytes long and starts with byte 4, which is the format of a P-256 public key.
+Q3. [NOW] Given a filled VAPID_PUBLIC_KEY, when the API is called, then that value is returned.
+Q4. [NOW] Given a filled VAPID_PRIVATE_KEY, when the API is called, then the private key is not part of the response.
+Q5. [NOW] Given the placeholder key, when the code is read, then it is one named constant.
+
+==================================================
+R. SAVEPUSHSUBSCRIPTION
+==================================================
+R1. [DB] Given a valid Endpoint, P256dh and Auth, when the API is called, then one PushSubscription entry is added.
+R2. [DB] Given the added entry, when it is read, then Endpoint, P256dh and Auth equal the sent values.
+R3. [DB] Given the added entry, when it is read, then CreatedDate is now.
+R4. [DB] Given an Endpoint that already exists, when the API is called, then no entry is added and the answer is 200.
+R5. [DB] Given an Endpoint that already exists, when the API is called, then the existing entry is not changed.
+R6. [NOW] Given a missing or empty Endpoint, P256dh or Auth, when the API is called, then the answer is 400.
+R7. [NOW] Given an Endpoint that is not an absolute URL, when the API is called, then the answer is 400.
+R8. [NOW] Given an Endpoint that starts with http://, when the API is called, then the answer is 400.
+R9. [NOW] Given an Endpoint on fcm.googleapis.com, updates.push.services.mozilla.com, a host under notify.windows.com or a host under push.apple.com, when it is checked, then it is allowed.
+R10. [NOW] Given an Endpoint on another host, when the API is called, then the answer is 400.
+R11. [NOW] Given an Endpoint on fcm.googleapis.com.example.com, when the API is called, then the answer is 400.
+R12. [NOW] Given an Endpoint whose host is an IP address or localhost, when the API is called, then the answer is 400.
+R13. [NOW] Given the allowed hosts, when the code is read, then they are one named constant list.
+
+==================================================
+S. SECURITY
+==================================================
+S1. [NOW] Given FUXI_CORS_ORIGINS with one origin, when a request comes from that origin, then the response allows it.
+S2. [NOW] Given FUXI_CORS_ORIGINS with two origins joined with a comma, when a request comes from the second origin, then the response allows it.
+S3. [NOW] Given FUXI_CORS_ORIGINS, when a request comes from another origin, then the response does not allow it.
+S4. [NOW] Given a missing or empty FUXI_CORS_ORIGINS, when the API starts, then it stops with a message that names the key.
+S5. [NOW] Given .env.example and .env.test.example, when they are read, then both contain FUXI_CORS_ORIGINS without a value.
+S6. [NOW] Given the API, when its services are read, then no antiforgery service is used.
+S7. REMOVED on 2026-11-12 by the Learner's decision after the code review. HTTPS redirection is left to hosting, which is decided later.
+S8. [NOW] Given every query in the services, when the code is read, then no SQL text is built from request values.
+
+==================================================
+T. STRUCTURE AND QUALITY
+==================================================
+T1. [NOW] Given the backend, when the code is read, then the endpoints are in four groups: words, config, schedule and push.
+T2. [NOW] Given the backend, when the code is read, then each group calls one service class.
+T3. [NOW] Given the backend, when the code is read, then no repository class exists and the services use FuXiDbContext directly.
+T4. [NOW] Given every read query, when the code is read, then it uses AsNoTracking and projects only the output fields.
+T5. [NOW] Given the backend, when "dotnet build" runs, then it has 0 errors and 0 warnings.
+T6. [NOW] Given the backend, when "dotnet test" runs, then no test fails.
+T7. [NOW] Given the Phase 0 and Phase 1 tests, when "dotnet test" runs, then they still pass or skip as before.
+T8. [NOW] Given the new classes, methods and DTOs, when they are read, then they are PascalCase and the new folders are snake_case.
+T9. [NOW] Given the tracked files, when they are read, then no secret value is in them.
+T10. [NOW] Given the model and the migrations, when "dotnet ef migrations has-pending-model-changes" runs, then no change is pending.
+
+==================================================
+U. OUT OF SCOPE CHECKS
+==================================================
+U1. [NOW] Given the backend, when the code is read, then no Quartz.NET job or trigger exists.
+U2. [NOW] Given the backend, when the code is read, then no push message is sent.
+U3. [NOW] Given the backend, when the code is read, then no VAPID key is generated.
+U4. [NOW] Given the frontend, when its files are compared with main, then no page, route, component or service is added.

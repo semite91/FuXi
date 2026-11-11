@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using FluentAssertions;
 using FuXi.Api.Database;
 using FuXi.Api.Database.Entities;
@@ -26,12 +25,6 @@ public sealed class ModelTests : IDisposable
     private const string CHECK_CONSTRAINT_NAME = "CK_Schedule_EndDate_After_StartDate";
     private const string CHECK_CONSTRAINT_SQL = "\"EndDate\" > \"StartDate\"";
     private const string REPOSITORY_SUFFIX = "Repository";
-    private const string SERVICE_SUFFIX = "Service";
-    private const string SOURCE_PATTERN = "*.cs";
-    private const string BACKEND_FOLDER = "backend";
-    private const string API_FOLDER = "fuxi_api";
-    private const string BUILD_OUTPUT_FOLDER = "obj";
-    private const string ENDPOINT_MAPPING_PATTERN = @"\.Map(Get|Post|Put|Patch|Delete|Methods|Group|Controllers|Fallback)\b";
     private static readonly string[] TIMESTAMPTZ_TYPES = ["timestamp with time zone", "timestamptz"];
 
     private readonly FuXiDbContext context = ModelOnlyContext.Create();
@@ -337,12 +330,10 @@ public sealed class ModelTests : IDisposable
     }
 
     [Fact]
-    public void NoApiEndpointExists()
+    public void NoControllerExists()
     {
-        // K1
+        // K1 until Phase 2: no endpoint at all. Since Phase 2 the endpoints are minimal APIs, so only controllers stay out.
         ApiTypes().Where(type => typeof(ControllerBase).IsAssignableFrom(type)).Should().BeEmpty();
-        ApiSourceFiles().Where(path => Regex.IsMatch(File.ReadAllText(path), ENDPOINT_MAPPING_PATTERN))
-            .Should().BeEmpty();
     }
 
     [Fact]
@@ -353,13 +344,10 @@ public sealed class ModelTests : IDisposable
     }
 
     [Fact]
-    public void NoRepositoryOrServiceClassExists()
+    public void NoRepositoryClassExists()
     {
-        // K3
-        ApiTypes()
-            .Where(type => type.Name.EndsWith(REPOSITORY_SUFFIX, StringComparison.Ordinal)
-                || type.Name.EndsWith(SERVICE_SUFFIX, StringComparison.Ordinal))
-            .Should().BeEmpty();
+        // K3 until Phase 2, now Phase 2 scenario T3: the services use FuXiDbContext directly.
+        ApiTypes().Where(type => type.Name.EndsWith(REPOSITORY_SUFFIX, StringComparison.Ordinal)).Should().BeEmpty();
     }
 
     public void Dispose() => context.Dispose();
@@ -415,13 +403,4 @@ public sealed class ModelTests : IDisposable
     }
 
     private static IEnumerable<Type> ApiTypes() => typeof(Program).Assembly.GetTypes();
-
-    private static IEnumerable<string> ApiSourceFiles()
-    {
-        var apiFolder = RepositoryRoot.Combine(BACKEND_FOLDER, API_FOLDER);
-        var buildOutput = Path.Combine(apiFolder, BUILD_OUTPUT_FOLDER) + Path.DirectorySeparatorChar;
-
-        return Directory.EnumerateFiles(apiFolder, SOURCE_PATTERN, SearchOption.AllDirectories)
-            .Where(path => !path.StartsWith(buildOutput, StringComparison.OrdinalIgnoreCase));
-    }
 }
