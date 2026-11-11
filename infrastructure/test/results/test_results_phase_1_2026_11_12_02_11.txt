@@ -1,0 +1,154 @@
+FuXi - Phase 1 - Database
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_10_08_18.txt
+Run: 2026-11-11 23:11 UTC, Ubuntu 24.04 (.NET SDK 10.0.115), PostgreSQL 16.15 on 127.0.0.1:5432.
+This run replaces the MODEL and PENDING statuses of test_results_phase_1_2026_11_10_07_56.txt.
+PostgreSQL was installed with infrastructure/setup/setup_environment.sh, which also made .env and .env.test.
+
+Totals: dotnet build 0 warnings, 0 errors.
+        dotnet test 306 tests, 306 passed, 0 failed, 0 skipped (Phase 0, 1 and 2 together).
+The 28 PostgreSQL tests of DatabaseTests ran against the fuxi_test database and passed.
+
+Status legend:
+PASS     the scenario is verified.
+PASS-DB  the scenario was MODEL or PENDING before and is now verified against the live PostgreSQL database.
+
+==================================================
+A. LIBRARIES AND TOOLS
+==================================================
+PASS    A1 vetting of Microsoft.EntityFrameworkCore.Design and dotnet-ef reported to the Learner before installation
+PASS    A2 dotnet-ef pinned to 10.0.14 in backend/dotnet-tools.json
+PASS    A3 Microsoft.EntityFrameworkCore.Design locked in packages.lock.json
+PASS    A4 Design package has PrivateAssets all
+
+==================================================
+B. MIGRATIONS
+==================================================
+PASS    B1 one migration, 20261110055523_Initial
+PASS    B2 has-pending-model-changes reports no change
+PASS-DB B3 startup applies all migrations to an empty database
+PASS-DB B4 second startup applies nothing again
+PASS-DB B5 __EFMigrationsHistory lists the initial migration
+PASS    B6 migration script creates Words, RotatedWords, Config, WordHistory, Schedule, PushSubscription
+
+==================================================
+C. WORDS TABLE
+==================================================
+PASS    C1 columns
+PASS    C2 Id is uuid primary key with gen_random_uuid() default
+PASS    C3 Name, Translation, Content are text
+PASS    C4 IsKnown, IsReinforcement are boolean
+PASS    C5 ShownCount, KnownCount are integer
+PASS    C6 Content is nullable
+PASS    C7 Name and Translation are not nullable
+PASS-DB C8 INSERT with only Name and Translation succeeds
+PASS-DB C9 inserted Word gets a generated uuid
+PASS-DB C10 IsKnown and IsReinforcement default to false
+PASS-DB C11 ShownCount and KnownCount default to 0
+PASS-DB C12 Content is null when not given
+PASS-DB C13 Name is not unique
+
+==================================================
+D. ROTATEDWORDS TABLE
+==================================================
+PASS    D1 columns
+PASS    D2 Id is uuid primary key
+PASS    D3 LastShownDate is nullable timestamptz
+PASS    D4 Counter is integer
+PASS-DB D5 Counter defaults to 1
+PASS-DB D6 WordId foreign key to Words
+PASS-DB D7 WordId unique index
+PASS-DB D8 cascade delete from Words
+
+==================================================
+E. CONFIG TABLE AND SEED DATA
+==================================================
+PASS    E1 columns
+PASS    E2 Id is uuid primary key
+PASS    E3 InputType is text
+PASS-DB E4 exactly 4 seed rows
+PASS-DB E5 RotationCount seed row
+PASS-DB E6 RotationPeriod seed row
+PASS-DB E7 ReinforcementPeriod seed row
+PASS-DB E8 NotificationPeriod seed row
+PASS-DB E9 Code unique index
+PASS    E10 InputType members CheckboxList, Radiobutton, String, Number, Date
+PASS-DB E11 every InputType member round-trips
+PASS-DB E12 changed seed Value is kept after restart
+
+==================================================
+F. WORDHISTORY TABLE
+==================================================
+PASS    F1 columns
+PASS    F2 Id is uuid primary key
+PASS    F3 Date is timestamptz
+PASS-DB F4 WordId foreign key to Words
+PASS-DB F5 cascade delete from Words
+
+==================================================
+G. SCHEDULE TABLE
+==================================================
+PASS    G1 columns
+PASS    G2 StartDate and EndDate are not nullable timestamptz
+PASS-DB G3 EndDate after StartDate is accepted
+PASS-DB G4 EndDate equal to StartDate is rejected (CK_Schedule_EndDate_After_StartDate)
+PASS-DB G5 EndDate before StartDate is rejected
+PASS-DB G6 overlapping Notification Windows are accepted
+
+==================================================
+H. PUSHSUBSCRIPTION TABLE
+==================================================
+PASS    H1 columns
+PASS    H2 Endpoint, P256dh, Auth are text
+PASS    H3 CreatedDate is timestamptz
+
+==================================================
+I. DATE-TIME HANDLING
+==================================================
+PASS-DB I1 UTC DateTimeOffset round-trips with offset zero
+PASS-DB I2 non-zero offset is stored as the same UTC instant
+
+==================================================
+J. TEST SETUP AND QUALITY
+==================================================
+PASS-DB J1 database tests use the database named in .env.test
+PASS-DB J2 database tests set FUXI_ENV_FILE
+PASS-DB J3 tests start from an empty database
+PASS    J4 dotnet build: 0 errors, 0 warnings
+PASS    J5 dotnet test: 306 passed, 0 failed, 0 skipped
+PASS    J6 Phase 0 smoke tests still pass (4 of 4)
+PASS    J7 new classes, properties and DB objects are PascalCase
+PASS    J8 new backend folders are snake_case (database, entities, configurations, migrations)
+PASS    J9 no secret value in tracked files
+
+==================================================
+K. OUT OF SCOPE CHECKS
+==================================================
+PASS    K1 no API endpoint
+PASS    K2 no Quartz.NET job
+PASS    K3 no repository or service class
+
+K1 and K3 were true when Phase 1 ended. Phase 2 added endpoints and services and rewrote these two guards
+to "no controller" and "no repository class", which pass in this run.
+
+==================================================
+SUMMARY
+==================================================
+PASS 39, PASS-DB 32, of 71 confirmed scenarios. Nothing is pending.
+
+==================================================
+LIVE CHECKS OUTSIDE DOTNET TEST
+==================================================
+PASS the setup script finishes without error on a second run and leaves .env and .env.test unchanged (mode 600)
+PASS the recreate script removes a leftover table from fuxi_test and does not change the fuxi database
+PASS the recreate script refuses the development env file ("FUXI_DB_NAME must end with _test")
+PASS the API started on the empty fuxi database, created the six tables and listed 20261110055523_Initial
+PASS a second API start applied nothing again; __EFMigrationsHistory has 1 row and Config has 4 rows
+PASS an INSERT of 60 Words with only Name and Translation succeeded with the database defaults
+PASS "dotnet ef migrations has-pending-model-changes" reports no change
+
+Notes:
+- On the first start against an empty database, EF Core logs one "Failed executing DbCommand" line for
+  __EFMigrationsHistory. This is its check for a table that does not exist yet, and the migration then runs.
+- The sample Words of the live check were deleted afterwards. The fuxi database holds the schema and the 4 Config rows.
+- The PostgreSQL todo on issue #3 names the Windows machine. This run was made in the Linux cloud environment,
+  so PostgreSQL still has to be installed on Windows before the tests can run there.
