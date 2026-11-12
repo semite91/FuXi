@@ -285,13 +285,15 @@ public sealed class WordService(FuXiDbContext database, TimeProvider timeProvide
         return query
             .OrderBy(row => row.Word.Name)
             .Select(row => new FilteredWord(
+                row.Word.Id,
                 row.Word.Name,
                 row.Word.IsReinforcement,
                 row.Word.IsKnown,
                 row.Rotated!.LastShownDate,
                 row.Word.ShownCount,
                 row.Word.KnownCount,
-                row.Rotated != null));
+                row.Rotated != null,
+                (int?)row.Rotated!.Counter));
     }
 
     // Makes %, _ and \ match themselves in a LIKE pattern.

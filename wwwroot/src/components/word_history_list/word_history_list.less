@@ -1,0 +1,42 @@
+@import (reference) '../../css/tokens.less';
+
+.word-history-list {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+
+  th {
+    padding: @space-medium 0;
+    border-top: @border-soft;
+    border-bottom: @border-soft;
+    text-align: left;
+    font-size: var(--font-size-small);
+    font-weight: @font-weight-medium;
+    color: var(--color-text-muted);
+  }
+
+  td {
+    padding: @space-medium 0;
+    border-bottom: @border-soft;
+    font-size: var(--font-size-cell);
+    font-weight: @font-weight-regular;
+  }
+}
+
+.word-history-list__answer {
+  &--yes,
+  &--no {
+    display: inline-flex;
+    align-items: center;
+    gap: @space-xsmall;
+    font-weight: @font-weight-medium;
+  }
+
+  &--yes {
+    color: var(--color-yes);
+  }
+
+  &--no {
+    color: var(--color-no);
+  }
+}

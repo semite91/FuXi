@@ -1,0 +1,107 @@
+// The token files without any output, for component stylesheets:
+// @import (reference) '../../css/tokens.less';
+@import './typography.less';
+@import './color.less';
+@import './border.less';
+@import './spaces.less';
+
+// Shared control looks.
+.control-reset() {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.focus-ring() {
+  &:focus-visible {
+    outline: @focus-outline;
+    outline-offset: @focus-outline-offset;
+  }
+}
+
+.visually-hidden() {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.primary-button() {
+  .control-reset();
+  .focus-ring();
+  height: @size-control;
+  padding: 0 @space-page;
+  border-radius: @border-radius-control;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: var(--font-size-base);
+  font-weight: @font-weight-bold;
+  transition: background-color @transition-fast;
+
+  &:hover {
+    background: var(--color-accent-hover);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.secondary-button() {
+  .control-reset();
+  .focus-ring();
+  height: @size-control;
+  padding: 0 @space-large;
+  border: @border-default;
+  border-radius: @border-radius-control;
+  background: var(--color-surface);
+  font-size: var(--font-size-base);
+  font-weight: @font-weight-medium;
+  transition: background-color @transition-fast;
+
+  &:hover {
+    background: var(--color-hover);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.text-input() {
+  width: 100%;
+  height: @size-input;
+  box-sizing: border-box;
+  padding: 0 @space-medium;
+  border: @border-input;
+  border-radius: @border-radius-control;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-base);
+  font-weight: @font-weight-regular;
+}
+
+.field-label() {
+  display: block;
+  margin-bottom: @space-xsmall;
+  font-size: var(--font-size-small);
+  font-weight: @font-weight-medium;
+  color: var(--color-text-muted);
+}
+
+.page-title() {
+  margin: 0 0 @space-xlarge;
+  padding: 0 @space-xsmall;
+  font-size: var(--font-size-title);
+  line-height: @line-height-tight;
+  font-weight: @font-weight-bold;
+  letter-spacing: @letter-spacing-title;
+}

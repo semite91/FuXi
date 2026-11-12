@@ -1,0 +1,74 @@
+import ConfigEditDialog from '../components/config_edit_dialog/config_edit_dialog';
+import ConfigTable from '../components/config_table/config_table';
+import NotificationPermission from '../components/notification_permission/notification_permission';
+import PageCard from '../components/page_card/page_card';
+import StatusMessage from '../components/status_message/status_message';
+import { APP_TEXTS, CONFIG_TEXTS, PERMISSION_TEXTS } from '../constants/texts';
+import { useConfigs } from '../hooks/use_configs';
+import { useNotificationPermission } from '../hooks/use_notification_permission';
+import type { InputType } from '../services/config_service';
+
+const NUMBER_TYPE: InputType = 'Number';
+const DATE_TYPE: InputType = 'Date';
+const ASKABLE_PERMISSION = 'default';
+
+/** Every InputType without its own input is edited as text. */
+const inputTypeOf = (inputType: InputType) => {
+  if (inputType === NUMBER_TYPE) {
+    return 'number';
+  }
+
+  return inputType === DATE_TYPE ? 'date' : 'text';
+};
+
+const ConfigPage = () => {
+  const configs = useConfigs();
+  const notification = useNotificationPermission();
+  const { editing } = configs;
+
+  return (
+    <PageCard title={CONFIG_TEXTS.title}>
+
+      {configs.status === 'loading' && <StatusMessage text={APP_TEXTS.loading} />}
+      {configs.status === 'error' && <StatusMessage kind="error" text={configs.loadError} />}
+      {configs.status === 'loaded' && (
+        <ConfigTable
+          label={CONFIG_TEXTS.title}
+          nameLabel={CONFIG_TEXTS.name}
+          valueLabel={CONFIG_TEXTS.value}
+          editColumnLabel={CONFIG_TEXTS.edit}
+          rows={configs.configs.map((config) => ({
+            id: config.configId,
+            name: config.name,
+            value: config.value,
+            editLabel: `${CONFIG_TEXTS.edit} ${config.name}`,
+          }))}
+          onEdit={configs.edit}
+        />
+      )}
+
+      <NotificationPermission
+        stateText={PERMISSION_TEXTS[notification.permission]}
+        buttonLabel={PERMISSION_TEXTS.enable}
+        isDisabled={notification.permission !== ASKABLE_PERMISSION}
+        onEnable={() => void notification.enable()}
+      />
+
+      {editing && (
+        <ConfigEditDialog
+          title={editing.config.name}
+          inputType={inputTypeOf(editing.config.inputType)}
+          value={editing.draft}
+          saveLabel={CONFIG_TEXTS.save}
+          closeLabel={APP_TEXTS.closeDialog}
+          onChange={configs.changeDraft}
+          onSave={() => void configs.save()}
+          onClose={configs.cancel}
+          notice={editing.error === '' ? undefined : <StatusMessage kind="error" text={editing.error} />}
+        />
+      )}
+    </PageCard>
+  );
+};
+
+export default ConfigPage;

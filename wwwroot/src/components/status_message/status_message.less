@@ -1,0 +1,32 @@
+@import (reference) '../../css/tokens.less';
+
+.status-message {
+  margin: 0;
+
+  &--message {
+    max-width: 260px;
+    text-align: center;
+    font-size: var(--font-size-message);
+    line-height: @line-height-message;
+    font-weight: @font-weight-bold;
+    letter-spacing: -0.01em;
+  }
+
+  &--note {
+    padding: @space-xlarge @space-xsmall;
+    font-size: var(--font-size-text);
+    font-weight: @font-weight-medium;
+    color: var(--color-text-muted);
+  }
+
+  &--error {
+    padding: @space-small @space-xsmall;
+    font-size: var(--font-size-text);
+    font-weight: @font-weight-medium;
+    color: var(--color-no);
+  }
+
+  &--hidden {
+    .visually-hidden();
+  }
+}

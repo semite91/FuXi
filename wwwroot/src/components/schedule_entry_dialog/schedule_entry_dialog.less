@@ -1,0 +1,38 @@
+@import (reference) '../../css/tokens.less';
+
+.schedule-entry-dialog__field {
+  label {
+    .field-label();
+  }
+
+  input {
+    .text-input();
+
+    &:disabled {
+      background: var(--color-background);
+      color: var(--color-text-muted);
+    }
+  }
+}
+
+.schedule-entry-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: @space-small;
+}
+
+.schedule-entry-dialog__cancel {
+  .secondary-button();
+}
+
+.schedule-entry-dialog__save {
+  .primary-button();
+  padding: 0 @space-xlarge;
+}
+
+.schedule-entry-dialog__delete {
+  .secondary-button();
+  margin-right: auto;
+  border-color: var(--color-no);
+  color: var(--color-no);
+}

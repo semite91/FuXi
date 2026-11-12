@@ -14,8 +14,14 @@ readonly DEFAULT_DB_USER="fuxi"
 readonly DEFAULT_DB_NAME="fuxi"
 readonly TEST_DB_SUFFIX="_test"
 readonly CORS_ORIGINS_KEY="FUXI_CORS_ORIGINS"
-# The Vite development server of the frontend.
+# The Vite dev server and the preview of the build (vite.config.ts APP_PORT).
 readonly DEFAULT_CORS_ORIGINS="http://localhost:5173"
+readonly API_URL_KEY="VITE_FUXI_API_URL"
+# The address that "dotnet run" listens on.
+readonly DEFAULT_API_URL="http://localhost:5000"
+readonly RAG_URL_KEY="VITE_FUXI_RAG_URL"
+# The address of the FastAPI engine.
+readonly DEFAULT_RAG_URL="http://localhost:8000"
 readonly PASSWORD_BYTES=24
 readonly PRIVATE_FILE_UMASK=077
 readonly REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -59,6 +65,8 @@ FUXI_DB_NAME=${database_name}
 FUXI_DB_USER=${user}
 FUXI_DB_PASSWORD=${password}
 ${CORS_ORIGINS_KEY}=${DEFAULT_CORS_ORIGINS}
+${API_URL_KEY}=${DEFAULT_API_URL}
+${RAG_URL_KEY}=${DEFAULT_RAG_URL}
 VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
 ENV
@@ -66,7 +74,7 @@ ENV
 }
 
 # The test env file reuses the role of the development env file.
-# Env files from before the API existed get the origins they lack.
+# Env files from before the API or the frontend existed get the keys they lack.
 create_env_files() {
   local env_file="${REPOSITORY_ROOT}/.env" test_env_file="${REPOSITORY_ROOT}/.env.test" user password
   create_env_file "${env_file}" "${DEFAULT_DB_NAME}" "${DEFAULT_DB_USER}" "$(openssl rand -hex "${PASSWORD_BYTES}")"
@@ -75,6 +83,11 @@ create_env_files() {
   create_env_file "${test_env_file}" "${DEFAULT_DB_NAME}${TEST_DB_SUFFIX}" "${user}" "${password}"
   ensure_env_value "${env_file}" "${CORS_ORIGINS_KEY}" "${DEFAULT_CORS_ORIGINS}"
   ensure_env_value "${test_env_file}" "${CORS_ORIGINS_KEY}" "${DEFAULT_CORS_ORIGINS}"
+  local file
+  for file in "${env_file}" "${test_env_file}"; do
+    ensure_env_value "${file}" "${API_URL_KEY}" "${DEFAULT_API_URL}"
+    ensure_env_value "${file}" "${RAG_URL_KEY}" "${DEFAULT_RAG_URL}"
+  done
 }
 
 # Creates or updates the role and creates the development database.

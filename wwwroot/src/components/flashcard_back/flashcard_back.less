@@ -1,0 +1,126 @@
+@import (reference) '../../css/tokens.less';
+
+.flashcard-back {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0 -@space-xsmall;
+}
+
+.flashcard-back__reinforcement {
+  position: absolute;
+  top: @space-large;
+  right: @space-large;
+}
+
+.flashcard-back__main {
+  flex: 1 0 auto;
+  display: flex;
+  align-items: center;
+  gap: @space-xsmall;
+  padding-top: @space-section;
+}
+
+.flashcard-back__arrow-space {
+  flex: none;
+  width: @size-control;
+}
+
+.flashcard-back__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.flashcard-back__translation {
+  margin: 0;
+  font-size: var(--font-size-translation);
+  line-height: 1.12;
+  font-weight: @font-weight-bold;
+  letter-spacing: @letter-spacing-title;
+  overflow-wrap: anywhere;
+}
+
+.flashcard-back__content {
+  width: 100%;
+  margin-top: @space-large;
+  font-size: var(--font-size-text);
+  line-height: 1.55;
+  font-weight: @font-weight-regular;
+  text-align: left;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+
+  p {
+    margin: 0;
+    padding: 0;
+  }
+}
+
+.flashcard-back__dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: @space-small;
+  margin-top: @space-page;
+}
+
+.flashcard-back__dot {
+  width: @size-dot;
+  height: @size-dot;
+  border-radius: @border-radius-round;
+  background: var(--color-dot);
+
+  &--current {
+    background: var(--color-accent);
+  }
+}
+
+.flashcard-back__done {
+  .primary-button();
+  margin-top: @space-xlarge;
+}
+
+.flashcard-back__history {
+  flex: 1 1 0;
+  min-height: @size-control;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.flashcard-back__history-toggle {
+  .control-reset();
+  .focus-ring();
+  align-self: flex-start;
+  height: @size-control;
+  padding: 0 @space-medium;
+  display: flex;
+  align-items: center;
+  gap: @space-xsmall;
+  font-size: var(--font-size-base);
+  font-weight: @font-weight-medium;
+  color: var(--color-text-soft);
+
+  &:hover {
+    color: var(--color-text);
+  }
+}
+
+.flashcard-back__history-icon {
+  transition: transform 0.25s ease;
+
+  &--open {
+    transition: transform 0.25s ease;
+    transform: rotate(180deg);
+  }
+}
+
+.flashcard-back__history-list {
+  margin-top: @space-small;
+  padding: 0 @space-small;
+}

@@ -1,0 +1,41 @@
+@import (reference) '../../css/tokens.less';
+
+.config-table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th {
+    padding: @space-small @space-xsmall;
+    border-top: @border-soft;
+    border-bottom: @border-soft;
+    text-align: left;
+    font-size: var(--font-size-small);
+    font-weight: @font-weight-medium;
+    color: var(--color-text-muted);
+  }
+
+  td {
+    height: @size-row;
+    padding: @space-xsmall;
+    border-bottom: @border-soft;
+    font-size: var(--font-size-cell);
+    overflow-wrap: anywhere;
+
+    &:last-child {
+      width: @size-control;
+    }
+  }
+}
+
+.config-table__name {
+  font-weight: @font-weight-medium;
+}
+
+.config-table__value {
+  font-weight: @font-weight-regular;
+  color: var(--color-text-value);
+}
+
+.config-table__hidden {
+  .visually-hidden();
+}

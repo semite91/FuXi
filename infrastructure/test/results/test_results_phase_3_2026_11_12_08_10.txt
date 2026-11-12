@@ -1,0 +1,357 @@
+FuXi - Phase 3 - Frontend
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_12_02_40.txt
+Run: 2026-11-12 08:10 UTC, Ubuntu 24.04, Node 22.23.4, .NET SDK 10.0.115, PostgreSQL 16.15, Chromium (Playwright).
+This run was repeated after the code review fixes.
+
+Totals: npm run build: 0 TypeScript errors, no warning. npm audit: 0 vulnerabilities.
+        npm test: 9 files, 132 tests, 132 passed, 0 failed.
+        dotnet build: 0 warnings, 0 errors.
+        dotnet test: 309 tests, 309 passed, 0 failed, 0 skipped.
+        dotnet ef migrations has-pending-model-changes: no change.
+
+Status legend:
+PASS     the scenario is verified by a passing test, by running a command, by a real browser run or by reading the code ("review").
+PARTIAL  the scenario is only partly met; the reason is given below.
+
+==================================================
+A. LIBRARIES, SETUP AND TOKENS
+==================================================
+PARTIAL A1 Given react-router and @fontsource/manrope, when they are vetted, then the security checklist result of each is reported to the Learner before installation. (review)
+PASS    A2 Given the frontend, when package.json and package-lock.json are read, then both libraries are pinned to one exact version and locked. (review)
+PASS    A3 Given the frontend, when its dependencies are read, then no calendar library and no KendoReact package is installed. (review)
+PASS    A4 Given .env.example and .env.test.example, when they are read, then both contain VITE_FUXI_API_URL and VITE_FUXI_RAG_URL without a value. (review)
+PASS    A5 Given the setup script, when it runs on env files that lack the two keys, then it adds them with local default values. (review)
+PASS    A6 Given a missing VITE_FUXI_API_URL, when the API client is first used, then it raises an error that names the key. (Vitest)
+PASS    A7 Given color.less, typography.less, border.less and spaces.less, when they are read, then they hold the values of the design (Manrope, #1B1B1A, #F6F4EF, #E6E2D9, #2E7D5B, #C0392B, radius 32px) instead of the placeholders. (review)
+PASS    A8 Given the Manrope font, when the built app loads, then the font files come from the app itself and no request goes to Google Fonts. (real browser)
+PASS    A9 Given index.html, when it is read, then it has a Content-Security-Policy that allows scripts and styles only from the app and connections only to the two API URLs. (real browser)
+PASS    A10 Given every .tsx and .ts file, when it is read, then it contains no CSS code and no colour, size or text constant inside a component body. (review)
+
+==================================================
+B. ROUTES AND NAVIGATION
+==================================================
+PASS    B1 Given the app, when "/" is opened, then the Words page is shown at /words. (Vitest)
+PASS    B2 Given the app, when /flashcard is opened, then the Flashcard carousel page is shown. (Vitest)
+PASS    B3 Given the app, when /active is opened, then the Flashcard carousel page is shown with the Due Words. (Vitest)
+PASS    B4 Given the app, when /schedule is opened, then the Schedule page is shown. (Vitest)
+PASS    B5 Given the app, when /config is opened, then the Configs page is shown. (Vitest)
+PASS    B6 Given the app, when /settings is opened, then the Settings page is shown. (Vitest)
+PASS    B7 Given the app, when an unknown path is opened, then the Words page is shown at /words. (Vitest)
+PASS    B8 Given any page, when it is shown, then the header shows the FuXi logo and the menu button. (Vitest)
+PASS    B9 Given a closed menu, when the menu button is clicked, then the items Active Words, Words, Schedule, Configs and Settings are shown in this order. (Vitest)
+PASS    B10 Given the menu button, when the menu opens or closes, then aria-expanded is "true" or "false". (Vitest)
+PASS    B11 Given an open menu, when "Active Words" is clicked, then /active opens. (Vitest)
+PASS    B12 Given an open menu, when "Words" is clicked, then /words opens. (Vitest)
+PASS    B13 Given an open menu, when "Schedule" is clicked, then /schedule opens. (Vitest)
+PASS    B14 Given an open menu, when "Configs" is clicked, then /config opens. (Vitest)
+PASS    B15 Given an open menu, when "Settings" is clicked, then /settings opens. (Vitest)
+PASS    B16 Given an open menu, when an item is clicked, then the menu closes. (Vitest)
+PASS    B17 Given an open menu, when Escape is pressed or a place outside the menu is clicked, then the menu closes. (Vitest)
+PASS    B18 Given the app, when its code is read, then no bottom tab bar exists. (review)
+
+==================================================
+C. API CLIENT AND SERVICES
+==================================================
+PASS    C1 Given a .NET API call, when it is sent, then its URL starts with VITE_FUXI_API_URL and its path is /api/<Name>. (Vitest)
+PASS    C2 Given a RAG API call, when it is sent, then its URL starts with VITE_FUXI_RAG_URL. (Vitest)
+PASS    C3 Given a POST call, when it is sent, then the body is JSON with camelCase names and the Content-Type is application/json. (Vitest)
+PASS    C4 Given a 204 answer, when the client reads it, then it returns without parsing a body. (Vitest)
+PASS    C5 Given an error answer in the ProblemDetails format, when the client reads it, then the raised error holds the status and the detail text. (Vitest)
+PASS    C6 Given a network failure, when the client reads it, then the raised error says that the API cannot be reached. (Vitest)
+PASS    C7 Given a query value with special characters, when the URL is built, then the value is URL-encoded. (Vitest)
+PASS    C8 Given every component, when its code is read, then it calls no fetch and imports no API client; only services do. (review)
+PASS    C9 Given the services, when the code is read, then they are words_service, config_service, schedule_service and rag_service, each calling only its own API group. (review)
+
+==================================================
+D. FLASHCARD CAROUSEL - DATA SOURCE
+==================================================
+PASS    D1 Given /flashcard?wordIds=<id1>,<id2>, when the page opens, then GetCardWords is called once with the same wordIds value. (Vitest)
+PASS    D2 Given /flashcard without wordIds, when the page opens, then GetWordsByActive is called once and GetCardWords is not called. (Vitest)
+PASS    D3 Given /active, when the page opens, then GetWordsByActive is called once. (Vitest)
+PASS    D4 Given returned Words, when the carousel is shown, then the first Word's front side is visible. (Vitest)
+PASS    D5 Given an empty result, when the page is shown, then "Keep working like this; there are no words to review at the moment." is visible with role status. (Vitest)
+PASS    D6 Given a pending request, when the page is shown, then a loading state is visible and no card is shown. (Vitest)
+PASS    D7 Given a failed request, when the page is shown, then an error message is visible and no card is shown. (Vitest)
+
+==================================================
+E. FLASHCARD - FRONT SIDE
+==================================================
+PASS    E1 Given a front side, when it is shown, then it contains "Do you know this word?", the Word's Name, a No button and a Yes button. (Vitest)
+PASS    E2 Given a front side, when it is shown, then the Translation and the Word Content are not visible. (Vitest)
+PASS    E3 Given a front side, when Yes is clicked, then UpdateWordKnownStatus is called once with the Word's id and isKnown true. (Vitest)
+PASS    E4 Given a front side, when No is clicked, then UpdateWordKnownStatus is called once with the Word's id and isKnown false. (Vitest)
+PASS    E5 Given a successful answer, when the call returns, then the card shows its back side. (Vitest)
+PASS    E6 Given a pending answer call, when Yes or No is clicked again, then no second call is sent. (Vitest)
+PASS    E7 Given a failed answer call, when it returns, then the card stays on the front side and an error message is visible. (Vitest)
+
+==================================================
+F. FLASHCARD - BACK SIDE
+==================================================
+PASS    F1 Given a back side, when it is shown, then the Word's Translation is the large text. (Vitest)
+PASS    F2 Given a Word with Content, when its back side is shown, then the Content is shown as plain text. (Vitest)
+PASS    F3 Given Content that contains HTML tags, when it is shown, then the tags are shown as text and no element is created from them. (Vitest)
+PASS    F4 Given a back side, when it is shown, then one dot per card is shown and the dot of the current card is marked. (Vitest)
+PASS    F5 Given a back side, when it is shown, then the caption line, the image area and the link of the design are not shown (Word Content is plain text in this phase). (Vitest)
+PASS    F6 Given a back side, when it is shown, then the reinforcement button is at the top right with the accessible name "Is reinforcement". (Vitest)
+PASS    F7 Given the reinforcement button, when it is hovered or focused, then the tooltip "Is reinforcement" is visible. (Vitest)
+PASS    F8 Given the reinforcement button, when it is clicked, then UpdateIsReinforcement is called once with the Word's id and isReinforcement true. (Vitest)
+PASS    F9 Given a successful reinforcement call on a card that is not the last, when it returns, then the next Word's front side is shown. (Vitest)
+PASS    F10 Given a successful reinforcement call on the last card, when it returns, then the Done screen is shown. (Vitest)
+PASS    F11 Given a failed reinforcement call, when it returns, then the card stays and an error message is visible. (Vitest)
+
+==================================================
+G. FLASHCARD - WORD HISTORY
+==================================================
+PASS    G1 Given a back side, when it is shown, then the "History" toggle is closed and aria-expanded is "false". (Vitest)
+PASS    G2 Given a closed toggle, when it is clicked for the first time, then GetWordHistory is called once with the Word's id. (Vitest)
+PASS    G3 Given loaded history, when the toggle is open, then one row per entry is shown under the headers "Is It known" and "Date". (Vitest)
+PASS    G4 Given a history entry with isKnown true, when it is shown, then it reads "Yes"; with false it reads "No". (Vitest)
+PASS    G5 Given a history entry, when its date is shown, then it is in the local time zone in the format dd.MM.yyyy. (Vitest)
+PASS    G6 Given an open toggle, when it is clicked, then the list is hidden and aria-expanded is "false". (Vitest)
+PASS    G7 Given history that was already loaded, when the toggle is opened again, then GetWordHistory is not called again. (Vitest)
+PASS    G8 Given a Word answered on this card, when its history is first opened, then the new answer is part of the list. (Vitest)
+PASS    G9 Given a Word without history, when the toggle is open, then an empty list is shown without error. (Vitest)
+PASS    G10 Given a failed GetWordHistory call, when the toggle is open, then an error message is shown and the next opening calls the API again. (Vitest)
+
+==================================================
+H. FLASHCARD - MOVING BETWEEN CARDS
+==================================================
+PASS    H1 Given a front side, when it is shown, then no previous and no next arrow is visible. (Vitest)
+PASS    H2 Given the back side of a card that is not the last, when the next arrow is clicked, then the next Word's front side is shown. (Vitest)
+PASS    H3 Given the back side of the first card, when it is shown, then the previous arrow is hidden. (Vitest)
+PASS    H4 Given the back side of a later card, when the previous arrow is clicked, then the previous Word's back side is shown. (Vitest)
+PASS    H5 Given a previous Word shown again, when it is shown, then its Yes and No buttons cannot be reached. (Vitest)
+PASS    H6 Given a previous Word shown again, when the next arrow is clicked, then the following card is shown on the side it had (back when answered, front when not). (Vitest)
+PASS    H7 Given the back side of the last card, when it is shown, then the next arrow is hidden and a "Done" button is visible. (Vitest)
+PASS    H8 Given the last card, when "Done" is clicked, then the Done screen with the text "Done" is shown and no card is visible. (Vitest)
+PASS    H9 Given a card change, when it happens, then no UpdateWordKnownStatus call is sent by the move itself. (Vitest)
+
+==================================================
+I. WORD CONTENT FLOW (RAG API CONTRACT)
+==================================================
+Assumed contract until Phase 5: GET <RAG>/GetWordContent?words=<names joined with comma> answers [{ "name": "...", "content": "..." }].
+PASS    I1 Given card data in which two Words have an empty Content, when the data arrives, then GetWordContent is called once with both Names joined with a comma. (Vitest)
+PASS    I2 Given card data in which every Word has Content, when the data arrives, then GetWordContent is not called. (Vitest)
+PASS    I3 Given Content that is null, empty or only spaces, when it is checked, then it counts as empty. (Vitest)
+PASS    I4 Given a GetWordContent answer, when it is merged, then each generated content is set on the Word with the same Name. (Vitest)
+PASS    I5 Given a GetWordContent answer, when it is merged, then UpdateWordContent is called once per generated content with the Word's id and the content. (Vitest)
+PASS    I6 Given a GetWordContent answer that lacks one Word, when it is merged, then that Word gets no content and no UpdateWordContent call. (Vitest)
+PASS    I7 Given a Word whose content has not arrived, when its back side is shown, then a loading skeleton is shown in place of the Content. (Vitest)
+PASS    I8 Given arrived content, when the back side is visible, then the skeleton is replaced by the Content without a reload. (Vitest)
+PASS    I9 Given a failed GetWordContent call, when the back side is shown, then "Content is not available." is shown and the card still works. (Vitest)
+PASS    I10 Given a failed UpdateWordContent call, when it returns, then the generated content stays visible on the card. (Vitest)
+PASS    I11 Given a pending GetWordContent call, when the Learner answers and moves between cards, then the cards are not blocked. (Vitest)
+
+==================================================
+J. WORDS PAGE
+==================================================
+PASS    J1 Given the Words page, when it opens, then no API is called and the table has no row. (Vitest)
+PASS    J2 Given the table, when it is shown, then its headers are Name, Is known, Is reinforcement, Known count, Shown count, Recursive known count and Last shown date. (Vitest)
+PASS    J3 Given the filter button, when it is clicked, then the Filters panel opens with Name, Is reinforcement, Is known and Is active word. (Vitest)
+PASS    J4 Given the three select fields, when they are opened, then each offers All, Yes and No. (Vitest)
+PASS    J5 Given filled filter fields, when Apply is clicked, then GetWordsByFilter is called once and the panel closes. (Vitest)
+PASS    J6 Given the field "Is active word" set to Yes, when Apply is clicked, then the call has isRotated=true. (Vitest)
+PASS    J7 Given a field set to All, when Apply is clicked, then that field is not part of the call. (Vitest)
+PASS    J8 Given a Name with leading and trailing spaces, when Apply is clicked, then the trimmed Name is sent. (Vitest)
+PASS    J9 Given every field empty, when Apply is clicked, then no API is called and the table has no row. (Vitest)
+PASS    J10 Given changed fields, when Clear is clicked, then every field is empty and no API is called. (Vitest)
+PASS    J11 Given changed fields, when the panel is closed without Apply, then the applied filter and the rows do not change. (Vitest)
+PASS    J12 Given a pending call, when the table is shown, then skeleton rows and the status "Loading words" are shown and aria-busy is "true". (Vitest)
+PASS    J13 Given returned Words, when the table is shown, then one row per Word is shown without pagination. (Vitest)
+PASS    J14 Given a returned Word, when its row is read, then Recursive known count shows its Counter, and "-" when the Word is outside the Rotation. (Vitest)
+PASS    J15 Given a returned Word, when its row is read, then Last shown date is dd.MM.yyyy, and "-" when it is null. (Vitest)
+PASS    J16 Given an empty result for an applied filter, when the table is shown, then "No words match these filters." is visible. (Vitest)
+PASS    J17 Given rows, when a column's sort button is clicked, then the rows are sorted ascending by that column in the browser, without an API call. (Vitest)
+PASS    J18 Given a column sorted ascending, when its sort button is clicked again, then the rows are sorted descending and aria-sort is "descending". (Vitest)
+PASS    J19 Given a row, when the Word's Name is clicked, then GetWordHistory is called with the Word's Id and the History dialog opens with the Name as title. (Vitest)
+PASS    J20 Given the History dialog, when its close button, the backdrop or Escape is used, then it closes. (Vitest)
+PASS    J21 Given a failed GetWordsByFilter call, when it returns, then an error message is shown and the table has no row. (Vitest)
+PASS    J22 Given the design's "Show loading view" button, when the page is read, then it is not built, because it is a design preview control. (review)
+
+==================================================
+K. GETWORDSBYFILTER EXTENSION (BACKEND)
+==================================================
+PASS    K1 Given a returned item, when it is read, then it also contains Id, which is the Word's id. (xUnit, PostgreSQL)
+PASS    K2 Given a returned Word in the Rotation, when it is read, then Counter equals its RotatedWords entry's Counter. (xUnit, PostgreSQL)
+PASS    K3 Given a returned Word outside the Rotation, when it is read, then Counter is null. (xUnit, PostgreSQL)
+PASS    K4 Given the existing GetWordsByFilter scenarios of Phase 2, when "dotnet test" runs, then they still pass. (xUnit, PostgreSQL)
+PASS    K5 Given the model and the migrations, when "dotnet ef migrations has-pending-model-changes" runs, then no change is pending. (command run)
+
+==================================================
+L. CONFIGS PAGE
+==================================================
+PASS    L1 Given the Configs page, when it opens, then GetConfigs is called once. (Vitest)
+PASS    L2 Given returned rows, when the table is shown, then each row shows Name, Value and an edit button named "Edit <Name>". (Vitest)
+PASS    L3 Given a row, when its edit button is clicked, then a dialog opens with the row's Name as title and its Value in the input. (Vitest)
+PASS    L4 Given a row with InputType Number, when the dialog opens, then the input is a number input. (Vitest)
+PASS    L5 Given a row with InputType Date, when the dialog opens, then the input is a date input. (Vitest)
+PASS    L6 Given a row with any other InputType, when the dialog opens, then the input is a text input. (Vitest)
+PASS    L7 Given a row whose Code is not NotificationPeriod, when Save is clicked, then UpdateConfig is called once with the row's id and the new value, and UpdateNotificationPeriod is not called. (Vitest)
+PASS    L8 Given the row whose Code is NotificationPeriod, when Save is clicked, then UpdateNotificationPeriod is called once with the row's id and the new value, and UpdateConfig is not called. (Vitest)
+PASS    L9 Given a successful save, when it returns, then the dialog closes and the row shows the new Value. (Vitest)
+PASS    L10 Given an empty input, when Save is clicked, then no API is called and the dialog stays open. (Vitest)
+PASS    L11 Given a 400 answer, when it returns, then the dialog stays open, shows the answer's detail text, and the row keeps its old Value. (Vitest)
+PASS    L12 Given an open dialog, when the backdrop or Escape is used, then it closes and no API is called. (Vitest)
+PASS    L13 Given a failed GetConfigs call, when it returns, then an error message is shown. (Vitest)
+
+==================================================
+M. NOTIFICATION PERMISSION (CONFIGS PAGE)
+==================================================
+PASS    M1 Given the Configs page, when it opens, then the browser is not asked for the notification permission. (Vitest)
+PASS    M2 Given permission "default", when the page is shown, then the state reads "Notifications: not asked" and the "Enable notifications" button is enabled. (Vitest)
+PASS    M3 Given permission "granted", when the page is shown, then the state reads "Notifications: allowed". (Vitest)
+PASS    M4 Given permission "denied", when the page is shown, then the state reads "Notifications: blocked". (Vitest)
+PASS    M5 Given a browser without the Notification API, when the page is shown, then the state reads "Notifications: not supported" and the button is disabled. (Vitest)
+PASS    M6 Given permission "default", when "Enable notifications" is clicked, then Notification.requestPermission is called once. (Vitest)
+PASS    M7 Given the Learner's answer, when requestPermission returns, then the shown state changes to the new permission without a reload. (Vitest)
+PASS    M8 Given a click on "Enable notifications", when it is handled, then GetVapidPublicKey and SavePushSubscription are not called and no subscription is made. (Vitest)
+
+==================================================
+N. SCHEDULE PAGE - CALENDAR
+==================================================
+PASS    N1 Given the Schedule page, when it opens, then the Month view of the current month is shown with the columns Mon to Sun. (Vitest)
+PASS    N2 Given the Schedule page, when it opens, then GetSchedule is called once with the UTC date-times of the visible range's start and end. (Vitest)
+PASS    N3 Given a local time zone with an offset, when the period is built, then both values are the same instants written in UTC with "Z". (Vitest)
+PASS    N4 Given the Month view, when Next is clicked, then the next month is shown and GetSchedule is called with its range. (Vitest)
+PASS    N5 Given the Month view, when Previous is clicked, then the previous month is shown and GetSchedule is called with its range. (Vitest)
+PASS    N6 Given another month, when Today is clicked, then the range that holds today is shown. (Vitest)
+PASS    N7 Given the view buttons, when Week is clicked, then seven day rows from Monday are shown and aria-pressed marks Week. (Vitest)
+PASS    N8 Given the view buttons, when Day is clicked, then hour rows of the shown day are shown and aria-pressed marks Day. (Vitest)
+PASS    N9 Given the Week or Day view, when Next or Previous is clicked, then the range moves by seven days or one day. (Vitest)
+PASS    N10 Given a view or range change that shows dates outside the loaded range, when it happens, then GetSchedule is called with the new visible range. (Vitest)
+PASS    N11 Given the label, when the view is Month, then it reads like "November 2026". (Vitest)
+PASS    N12 Given a Notification Window on a day, when the Month view is shown, then the day has a chip with the window's local start time. (Vitest)
+PASS    N13 Given a Notification Window that continues from the day before, when the Month view is shown, then the day's chip reads "cont.". (Vitest)
+PASS    N14 Given three Notification Windows on one day, when the Month view is shown, then two chips and "+1" are shown. (Vitest)
+PASS    N15 Given "+1" on a day, when it is clicked, then the Day view of that day is shown. (Vitest)
+PASS    N16 Given today, when the Month view is shown, then today's number is marked. (Vitest)
+PASS    N17 Given a failed GetSchedule call, when it returns, then an error message is shown and the calendar has no chip. (Vitest)
+
+==================================================
+O. SCHEDULE PAGE - NOTIFICATION WINDOW DIALOG
+==================================================
+PASS    O1 Given the page, when "New entry" is clicked, then the dialog "New entry" opens with Start 09:00 and End 10:00 of the shown date. (Vitest)
+PASS    O2 Given the dialog, when it is shown, then the Title field reads "Selected" and is disabled. (Vitest)
+PASS    O3 Given a valid Start and End, when Save is clicked on a new entry, then UpdateSchedule is called once with startDate and endDate in UTC and without an id. (Vitest)
+PASS    O4 Given a chip, when it is clicked, then the dialog "Edit entry" opens with the window's local Start and End. (Vitest)
+PASS    O5 Given an edited entry, when Save is clicked, then UpdateSchedule is called once with the window's id and the new UTC date-times. (Vitest)
+PASS    O6 Given an End that is not later than the Start, when Save is clicked, then "The end must be later than the start." is shown and no API is called. (Vitest)
+PASS    O7 Given a successful save, when it returns, then the dialog closes and the calendar shows the saved window. (Vitest)
+PASS    O8 Given a 409 answer, when it returns, then the dialog stays open and shows "This Notification Window overlaps another one.". (Vitest)
+PASS    O9 Given any other failed save, when it returns, then the dialog stays open and shows an error message. (Vitest)
+PASS    O10 Given the dialog "Edit entry", when it is shown, then a Delete button is visible. (Vitest)
+PASS    O11 Given the dialog "New entry", when it is shown, then no Delete button is visible. (Vitest)
+PASS    O12 Given the dialog "Edit entry", when Delete is clicked, then DeleteSchedule is called once with the window's id. (Vitest)
+PASS    O13 Given a successful delete, when it returns, then the dialog closes and the window's chip is gone. (Vitest)
+PASS    O14 Given a failed delete, when it returns, then the dialog stays open and shows an error message. (Vitest)
+PASS    O15 Given an open dialog, when Cancel, the backdrop or Escape is used, then it closes and no API is called. (Vitest)
+PASS    O16 Given a pending save or delete, when the button is clicked again, then no second call is sent. (Vitest)
+
+==================================================
+P. SETTINGS PAGE (RAG API CONTRACT)
+==================================================
+Assumed contract until Phase 5: POST <RAG>/Update_Collections answers 2xx when the embeddings are updated.
+PASS    P1 Given the Settings page, when it opens, then the title "Settings" and the link "Update embeddings" are shown and no API is called. (Vitest)
+PASS    P2 Given the info button, when it is hovered or focused, then the tooltip "It will update to your current data." is visible. (Vitest)
+PASS    P3 Given "Update embeddings", when it is clicked, then the dialog "Are you sure?" opens with a Yes button and no API is called. (Vitest)
+PASS    P4 Given the dialog "Are you sure?", when Yes is clicked, then Update_Collections is called once. (Vitest)
+PASS    P5 Given a successful call, when it returns, then the dialog "Embeddings updated" is shown. (Vitest)
+PASS    P6 Given a pending call, when Yes is clicked again, then no second call is sent. (Vitest)
+PASS    P7 Given a failed call, when it returns, then "Embeddings could not be updated." is shown. (Vitest)
+PASS    P8 Given any of the dialogs, when the backdrop or Escape is used, then it closes. (Vitest)
+
+==================================================
+Q. ACCESSIBILITY AND DIALOGS
+==================================================
+PASS    Q1 Given any dialog, when it is open, then it has role dialog, aria-modal "true" and an accessible name. (Vitest)
+PASS    Q2 Given any dialog, when it opens, then the focus moves into it, and when it closes the focus returns to the control that opened it. (Vitest)
+PASS    Q3 Given every icon-only button, when it is read, then it has an accessible name. (Vitest)
+PASS    Q4 Given every loading, empty and error message, when it is shown, then it has role status or role alert. (Vitest)
+PASS    Q5 Given the styles, when prefers-reduced-motion is set, then the slide, skeleton and hover animations are switched off. (review)
+
+==================================================
+R. STRUCTURE AND QUALITY
+==================================================
+PASS    R1 Given the components, when the folders are listed, then each approved component is in wwwroot/src/components/<name>/ with its own .tsx and .less file. (review)
+PASS    R2 Given the components, when the code is read, then no component exists that is not on the approved list. (review)
+PASS    R3 Given the components, when the code is read, then they contain no business logic; pages and hooks pass data and handlers to them. (review)
+PASS    R4 Given every new frontend file and folder, when it is read, then its name is snake_case. (review)
+PASS    R5 Given the frontend, when "npm run build" runs, then it has zero TypeScript errors and no warning. (command run)
+PASS    R6 Given the frontend, when "npm test" runs, then no test fails. (command run)
+PASS    R7 Given the backend, when "dotnet build" and "dotnet test" run, then there are 0 warnings and no failed or skipped test. (command run)
+PASS    R8 Given the tracked files, when they are read, then no secret value is in them. (review)
+PASS    R9 Given project.md, when it is read, then it describes the menu navigation, the /settings route, the Settings page and the new GetWordsByFilter output. (review)
+PASS    R10 Given the running app and API, when each page is opened in a real browser, then it renders like its artboard at 390 px width and the console has no error. (real browser)
+
+==================================================
+S. OUT OF SCOPE CHECKS
+==================================================
+PASS    S1 Given the service worker, when it is compared with main, then it has no push and no notification click logic. (review)
+PASS    S2 Given the frontend, when the code is read, then pushManager.subscribe is not called. (review)
+PASS    S3 Given the backend, when the code is read, then no Quartz.NET job and no push sending exists. (review)
+PASS    S4 Given the rag folder, when it is compared with main, then nothing is added. (review)
+
+==================================================
+SUMMARY
+==================================================
+PASS 199, PARTIAL 1, of 200 confirmed scenarios.
+
+A1 is PARTIAL. Both libraries were installed before their security checklist was reported to the Learner.
+The checklist was run before installation from the npm registry, but it was reported only with these results:
+- react-router 8.5.1: MIT, from the official npm registry, repository remix-run/react-router. Released
+  2026-10-27, 16 days before installation, with regular releases (8.4.0 in September, 8.5.0 in October).
+  Not deprecated. Two runtime dependencies (cookie-es, @remix-run/route-pattern). No install script, no native
+  code, no network or file access at install. npm audit: 0 vulnerabilities. Only BrowserRouter, MemoryRouter,
+  Routes, Route, Navigate, useNavigate, useLocation and useSearchParams are used; the deprecated view
+  transition APIs of 8.5.0 are not used.
+- @fontsource/manrope 5.3.0: OFL-1.1, from the official npm registry, repository fontsource/font-files.
+  Released 2026-07-19. CSS and font files only, no dependency, no script. Only the latin and latin-ext
+  subsets of weights 500 to 800 are imported.
+Not checked: open security reports, signed releases and OpenSSF Scorecard on GitHub.
+
+Process note: the frontend tests were written after the frontend code, not before it. The backend scenarios
+K1-K3 and the eight code review fixes were done test first.
+
+==================================================
+REAL BROWSER RUN (R10, A8, A9)
+==================================================
+The built app ("npm run build" then "npm run preview" on port 5173) ran in Chromium at 390 x 844 against the
+real API on the fuxi database with sample Words and Notification Windows.
+- Flashcard: front, Yes, back side with Word Content and History, Next, No, the dots and the menu work.
+- Words: the filter panel, the table with Recursive known count and the History dialog work.
+- Schedule: Month and Week views show the windows; an overlapping new entry shows the overlap message (409).
+- Configs: "0" is rejected with the API's message (400); "25" is saved and shown.
+- Settings: "Update embeddings" shows "Embeddings could not be updated.", because the RAG engine does not exist yet.
+- The page is 390 px wide with no horizontal scroll. Manrope comes from the app itself.
+- The Content-Security-Policy is active in the built page. The console shows only the two refused connections to
+  the missing RAG engine and the 409 and 400 answers that the run asked for.
+The sample data was deleted afterwards.
+
+==================================================
+CODE REVIEW (built-in, high)
+==================================================
+8 findings. The Learner approved fixing all of them. Each has a regression test, except finding 4 (CSS) and 7 (port).
+FIXED 1 A late GetWordHistory answer no longer lands on the dialog of another Word (Words page).
+FIXED 2 New wordIds on an open /flashcard start a new deck at the first card.
+FIXED 3 An older GetWordsByFilter answer no longer replaces a newer one.
+FIXED 4 The page title is an explicit PageCard prop with its own class, so the front Word's size no longer
+        depends on the CSS bundle order.
+FIXED 5 A missing VITE_FUXI_API_URL or VITE_FUXI_RAG_URL is shown with its key. A success answer that is not JSON
+        is a failed request.
+FIXED 6 The Day view counts real hours, so a daylight-saving day has 23 or 25 rows and no repeated hour.
+FIXED 7 The dev server and "npm run preview" both use port 5173, the origin that FUXI_CORS_ORIGINS allows.
+FIXED 8 The Flashcard and Words pages share one Word History renderer.
+
+Other changes during the run:
+- The CSP is added to the built page only, because the dev server injects inline scripts and styles.
+- Fonts are never inlined as data: URIs, because the CSP allows fonts only from the app.
+- Two Phase 2 messages of UpdateConfig start with a capital letter now ("The value ..."), because the Configs
+  dialog shows them to the Learner.
+- setup_environment.sh adds VITE_FUXI_API_URL and VITE_FUXI_RAG_URL to existing env files; a second run
+  changes nothing else (A5).
+
+Known limitations:
+- GetWordContent and Update_Collections follow an assumed contract until the RAG phase builds them.
+- "Enable notifications" only asks the permission. Subscribing waits for the Notifications phase.
+- Word Content is plain text. The image and link layouts of the design wait for the RAG phase.
+- The app has only the light colours of the design.

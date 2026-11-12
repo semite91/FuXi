@@ -1,0 +1,46 @@
+@import (reference) '../../css/tokens.less';
+
+.icon-button {
+  .control-reset();
+  .focus-ring();
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text);
+  transition: background-color @transition-fast;
+
+  &:hover {
+    background: var(--color-hover);
+  }
+
+  &--round {
+    width: @size-control-round;
+    height: @size-control-round;
+    border: @border-default;
+    border-radius: @border-radius-round;
+    background: var(--color-surface);
+  }
+
+  &--small {
+    width: @size-control-small;
+    height: @size-control-small;
+    border: @border-default;
+    border-radius: @border-radius-round;
+    background: var(--color-surface);
+  }
+
+  &--square {
+    width: @size-control;
+    height: @size-control;
+    border: @border-default;
+    border-radius: @border-radius-control;
+    background: var(--color-surface);
+  }
+
+  &--plain {
+    width: @size-control;
+    height: @size-control;
+    border-radius: @border-radius-round;
+  }
+}

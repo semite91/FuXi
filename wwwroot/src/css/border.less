@@ -1,12 +1,26 @@
-// Border, border-radius and box-shadow values used across components.
-// Placeholder values until Claude Design is synced.
+// Border, border-radius and box-shadow values used across components,
+// taken from the FuXi Claude Design canvas.
 
 @border-width: 1px;
+@border-width-strong: 2px;
 @border-default: @border-width solid var(--color-border);
+@border-soft: @border-width solid var(--color-border-soft);
+@border-input: @border-width solid var(--color-border-input);
+@focus-outline: 3px solid var(--color-accent);
+@focus-outline-offset: 3px;
 
-@border-radius-small: 4px;
-@border-radius-medium: 8px;
-@border-radius-large: 16px;
+@border-radius-xsmall: 6px;
+@border-radius-small: 10px;
+@border-radius-medium: 12px;
+@border-radius-control: 14px;
+@border-radius-large: 18px;
+@border-radius-dialog: 24px;
+@border-radius-card: 32px;
+@border-radius-round: 50%;
 
-@box-shadow-small: 0 1px 2px rgba(0, 0, 0, 0.08);
-@box-shadow-medium: 0 4px 12px rgba(0, 0, 0, 0.12);
+@box-shadow-card: 0 1px 2px var(--color-shadow-soft), 0 20px 40px var(--color-shadow);
+@box-shadow-menu: 0 16px 32px var(--color-shadow-menu);
+@box-shadow-panel: -16px 0 32px var(--color-shadow-menu);
+@box-shadow-dialog: 0 24px 48px var(--color-shadow-dialog);
+@box-shadow-yes: 0 10px 20px var(--color-shadow-yes);
+@box-shadow-no: 0 10px 20px var(--color-shadow-no);

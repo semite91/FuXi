@@ -1,0 +1,42 @@
+@import (reference) '../../css/tokens.less';
+
+.embeddings-update {
+  padding: 0 @space-xsmall;
+  display: flex;
+  align-items: center;
+  gap: @space-small;
+}
+
+.embeddings-update__link {
+  .control-reset();
+  .focus-ring();
+  min-height: @size-control;
+  font-size: var(--font-size-base);
+  font-weight: @font-weight-medium;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.embeddings-update__info {
+  .control-reset();
+  .focus-ring();
+  width: @size-icon-small;
+  height: @size-icon-small;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: @border-width-strong solid var(--color-info);
+  border-radius: @border-radius-round;
+  color: var(--color-info);
+  cursor: help;
+}
+
+.embeddings-update__title {
+  text-align: center;
+}
+
+.embeddings-update__confirm {
+  .primary-button();
+  align-self: center;
+}
