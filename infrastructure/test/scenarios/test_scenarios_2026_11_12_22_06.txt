@@ -1,0 +1,141 @@
+FuXi - Phase 4 - Push Notifications
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-12 22:06 UTC
+Status: WAITING FOR THE LEARNER'S CONFIRMATION
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 4 adds the VAPID key generation, the Quartz.NET timed task that sends push notifications,
+the push and notification click handling of the service worker and the push subscription flow of the Settings page.
+It contains no RAG engine.
+
+Decisions taken by the Learner on 2026-11-12:
+- The push library is WebPush (web-push-csharp), as project.md names it. It is vetted before installation.
+- VAPID keys are generated once by the setup script through a backend command and written to .env.
+- A notification click focuses an open FuXi tab and moves it to /flashcard; a new window opens only when no tab is open.
+- The first run of the timed task comes one Notification Period after startup or after a restart.
+
+Marks:
+[BE]  backend scenario, verified by an xUnit test against the PostgreSQL test database, with a fake clock.
+[NOW] backend scenario, verified by an xUnit test that needs no database.
+[FE]  frontend scenario, verified by a Vitest test. No test calls a real API or a real push service.
+[RV]  verified by reading the code or by running a command.
+
+==================================================
+A. LIBRARY AND SETUP
+==================================================
+A1. [RV] Given the WebPush NuGet package, when it is vetted, then the security checklist result is reported to the Learner before installation.
+A2. [RV] Given the backend project, when its packages are read, then WebPush is pinned to one exact version and packages.lock.json is updated.
+A3. [RV] Given the frontend, when package.json is read, then no new library is added.
+A4. [RV] Given .env.example and .env.test.example, when they are read, then VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT exist without a value.
+
+==================================================
+B. VAPID KEY GENERATION
+==================================================
+B1. [NOW] Given the backend command "generate-vapid-keys", when it runs, then it prints one public key and one private key in URL-safe Base64.
+B2. [NOW] Given the generated public key, when it is decoded, then it is a 65-byte uncompressed P-256 point.
+B3. [NOW] Given the generated private key, when it is decoded, then it is 32 bytes.
+B4. [NOW] Given the command, when it runs twice, then the two key pairs differ.
+B5. [NOW] Given the command, when it runs, then the API is not started and no database is used.
+B6. [RV] Given an env file with empty VAPID keys, when the setup script runs, then both keys are filled by the command.
+B7. [RV] Given an env file with filled VAPID keys, when the setup script runs again, then the keys are not changed.
+B8. [RV] Given an env file without VAPID_SUBJECT, when the setup script runs, then a mailto: or https: default is added.
+B9. [RV] Given the setup script, when it runs, then the private key is never printed to the terminal.
+B10. [RV] Given the tracked files, when they are read, then no VAPID key value is in them.
+
+==================================================
+C. TIMED TASK (QUARTZ.NET)
+==================================================
+C1. [NOW] Given the API, when its services are read, then INotificationTimer is the Quartz.NET timer and IdleNotificationTimer no longer exists.
+C2. [NOW] Given the Quartz.NET scheduler, when it is read, then it uses the RAM job store.
+C3. [BE] Given NotificationPeriod "15", when the API starts, then one trigger exists with an interval of 15 minutes.
+C4. [BE] Given the API starts at T, when the trigger is read, then its first fire time is T + 15 minutes.
+C5. [BE] Given a running trigger, when UpdateNotificationPeriod is called with "30", then one trigger remains and its interval is 30 minutes.
+C6. [BE] Given a restart at T, when the new trigger is read, then its first fire time is T + 30 minutes.
+C7. [NOW] Given the job, when it is read, then it does not run twice at the same time.
+C8. [NOW] Given a run that throws an error, when the error is caught, then it is logged and the next run still fires.
+C9. [NOW] Given the API stops, when shutdown runs, then the scheduler is shut down.
+
+==================================================
+D. NOTIFICATION WINDOW CHECK
+==================================================
+D1. [BE] Given no Notification Window, when the job runs, then no push is sent and GetNotificationWords is not called.
+D2. [BE] Given a Notification Window that contains now, when the job runs, then the job continues to the words.
+D3. [BE] Given a Notification Window that ended before now, when the job runs, then no push is sent.
+D4. [BE] Given a Notification Window that starts after now, when the job runs, then no push is sent.
+D5. [BE] Given a Notification Window whose StartDate equals now, when the job runs, then the job continues.
+D6. [BE] Given a Notification Window whose EndDate equals now, when the job runs, then no push is sent.
+D7. [BE] Given the check, when its SQL is read, then the Schedule table is filtered at the database.
+
+==================================================
+E. WORDS AND PAYLOAD
+==================================================
+E1. [BE] Given now inside a Notification Window, when the job runs, then GetNotificationWords is called once with now.
+E2. [BE] Given GetNotificationWords returns no word, when the job runs, then no push is sent.
+E3. [BE] Given Due Words "apple" and "river", when the payload is built, then title is "apple, river".
+E4. [BE] Given the same Words, when the payload is built, then wordIds is their ids joined with a comma, in the same order as the names.
+E5. [NOW] Given the payload, when it is serialised, then it is JSON with camelCase fields title and wordIds only.
+E6. [BE] Given a sent notification that the Learner ignores, when the job runs again, then the same Words are sent again.
+E7. [BE] Given a run, when it ends, then no RotatedWords LastShownDate, Counter or Words ShownCount is changed by the job.
+
+==================================================
+F. SENDING
+==================================================
+F1. [BE] Given no PushSubscription, when the job has words to send, then no push is sent and nothing fails.
+F2. [BE] Given two PushSubscriptions, when the job runs, then the push client is called once for each endpoint.
+F3. [BE] Given a send, when it is made, then the subscription's Endpoint, P256dh and Auth and the VAPID details from the configuration are used.
+F4. [BE] Given an endpoint that answers 410 Gone, when the job runs, then that PushSubscription is deleted.
+F5. [BE] Given one endpoint that answers 410 and one that answers 201, when the job runs, then only the 410 entry is deleted and the other one still receives the push.
+F6. [BE] Given an endpoint that answers another error, when the job runs, then the error is logged, the entry is kept and the other endpoints still receive the push.
+F7. [NOW] Given empty VAPID keys, when the job runs, then no push is sent and a warning is logged.
+F8. [NOW] Given the push client, when it is read, then it is behind an interface, so tests use a fake client and no real push service is called.
+F9. [NOW] Given a subscription endpoint whose host is not in PushHosts, when the job runs, then it is not called (SSRF protection).
+F10. [NOW] Given the push client, when it is read, then its HttpClient comes from IHttpClientFactory with a timeout.
+
+==================================================
+G. SERVICE WORKER - PUSH
+==================================================
+G1. [FE] Given a push event with the payload, when the service worker handles it, then showNotification is called with the payload title.
+G2. [FE] Given the same push event, when the notification is shown, then its data holds the wordIds and its icon is the FuXi icon.
+G3. [FE] Given a push event, when it is handled, then the work is kept inside event.waitUntil.
+G4. [FE] Given a push event without data or with invalid JSON, when it is handled, then no notification is shown and no error is thrown.
+
+==================================================
+H. SERVICE WORKER - NOTIFICATION CLICK
+==================================================
+H1. [FE] Given a notification click, when it is handled, then the notification is closed.
+H2. [FE] Given no open FuXi tab, when a notification is clicked, then a new window opens at /flashcard?wordIds=<ids>.
+H3. [FE] Given an open FuXi tab, when a notification is clicked, then that tab is focused and moved to /flashcard?wordIds=<ids>, and no new window opens.
+H4. [FE] Given word ids, when the address is built, then they are URL-encoded.
+H5. [FE] Given /flashcard?wordIds=<ids>, when it opens, then GetCardWords is called with these ids (the Phase 3 flow is kept).
+
+==================================================
+I. SETTINGS PAGE - SUBSCRIBE
+==================================================
+I1. [FE] Given the Settings page, when it opens, then the browser is not asked for permission and no push API is called.
+I2. [FE] Given "Enable notifications", when it is clicked, then the browser asks for notification permission.
+I3. [FE] Given permission "denied", when the answer comes, then GetVapidPublicKey is not called and "Notifications: blocked" is shown.
+I4. [FE] Given permission "granted", when the answer comes, then GetVapidPublicKey is called once.
+I5. [FE] Given the public key, when subscribe is called, then userVisibleOnly is true and applicationServerKey is the key decoded from URL-safe Base64.
+I6. [FE] Given a subscription, when it is sent, then SavePushSubscription is called with endpoint, p256dh and auth taken from the subscription.
+I7. [FE] Given a saved subscription, when the answer comes, then "Notifications: allowed" is shown.
+I8. [FE] Given a failing GetVapidPublicKey, subscribe or SavePushSubscription call, when it fails, then "Notifications could not be enabled." is shown with role alert.
+I9. [FE] Given a pending subscription, when the button is clicked again, then no second request is sent.
+I10. [FE] Given permission already "granted" and an existing browser subscription, when the button is clicked, then the existing subscription is sent again and no new one is created.
+I11. [FE] Given a browser without PushManager, when the page opens, then "Notifications: not supported" is shown and the button is disabled.
+I12. [RV] Given the subscribe logic, when it is read, then it is in a service, not in a component.
+
+==================================================
+J. STRUCTURE AND QUALITY
+==================================================
+J1. [RV] Given the backend, when "dotnet build" and "dotnet test" run, then there are 0 warnings and no failed or skipped test.
+J2. [RV] Given the frontend, when "npm run build" and "npm test" run, then there is no TypeScript error, no warning and no failed test.
+J3. [RV] Given every new frontend file, when it is read, then its name is snake_case.
+J4. [RV] Given project.md, when it is read, then the workflow says the "Enable notifications" button is on the Settings page.
+J5. [RV] Given the running API and app, when a Notification Window covers now and the period is set to 1 minute, then a notification appears in a real browser and its click opens the Flashcard carousel.
+J6. [RV] Given the tracked files, when they are read, then no secret value is in them.
+
+==================================================
+K. OUT OF SCOPE CHECKS
+==================================================
+K1. [RV] Given the rag folder, when it is compared with main, then nothing is added.
+K2. [RV] Given the database, when the migrations are listed, then no new migration exists.
