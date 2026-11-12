@@ -1,18 +1,15 @@
 // Main stylesheet. Token files are imported here with their modes.
-@import './typography.less';
-@import './color.less';
-@import './border.less';
-@import './spaces.less';
+@import './tokens.less';
 
 :root {
   .typography-mode(small-font);
   .color-mode(light);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    .color-mode(dark);
-  }
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
@@ -23,4 +20,30 @@ body {
   line-height: @line-height-base;
   color: var(--color-text);
   background-color: var(--color-background);
+}
+
+.app {
+  box-sizing: border-box;
+  max-width: @size-app;
+  height: 100%;
+  margin: 0 auto;
+  padding: @space-xxlarge @space-medium @space-medium;
+  display: flex;
+  flex-direction: column;
+  gap: @space-large;
+}
+
+.app__content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

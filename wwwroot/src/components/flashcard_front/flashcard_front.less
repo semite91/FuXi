@@ -1,0 +1,87 @@
+@import (reference) '../../css/tokens.less';
+
+.flashcard-front {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: @space-xsmall @space-small @space-small;
+}
+
+.flashcard-front__question {
+  margin: 0;
+  font-size: var(--font-size-small);
+  font-weight: @font-weight-medium;
+  letter-spacing: @letter-spacing-label;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.flashcard-front__word {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  h1 {
+    margin: 0;
+    padding: 0;
+    font-size: var(--font-size-word);
+    line-height: @line-height-tight;
+    font-weight: @font-weight-bold;
+    letter-spacing: @letter-spacing-title;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+}
+
+.flashcard-front__answers {
+  width: 100%;
+  display: flex;
+  gap: @space-medium;
+}
+
+.flashcard-front__answer {
+  .control-reset();
+  .focus-ring();
+  flex: 1;
+  height: @size-answer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: @space-small;
+  border-radius: @border-radius-large;
+  color: var(--color-on-accent);
+  font-size: var(--font-size-large);
+  font-weight: @font-weight-bold;
+  transition: transform @transition-fast, box-shadow @transition-fast, background-color @transition-fast;
+
+  &:hover {
+    transform: translateY(-2px);
+  }
+
+  &:active {
+    transform: none;
+    box-shadow: none;
+  }
+
+  &--no {
+    background: var(--color-no);
+
+    &:hover {
+      background: var(--color-no-hover);
+      box-shadow: @box-shadow-no;
+    }
+  }
+
+  &--yes {
+    background: var(--color-yes);
+
+    &:hover {
+      background: var(--color-yes-hover);
+      box-shadow: @box-shadow-yes;
+    }
+  }
+}

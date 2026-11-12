@@ -1,0 +1,52 @@
+@import (reference) '../../css/tokens.less';
+
+.schedule-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.schedule-list__row {
+  min-height: 52px;
+  padding: @space-small @space-xsmall;
+  border-top: @border-soft;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: @space-medium;
+  align-items: center;
+}
+
+.schedule-list__label {
+  font-size: var(--font-size-small);
+  font-weight: @font-weight-medium;
+  color: var(--color-text-muted);
+}
+
+.schedule-list__chips {
+  display: flex;
+  flex-direction: column;
+  gap: @space-xsmall;
+}
+
+.schedule-list__chip {
+  .control-reset();
+  .focus-ring();
+  width: 100%;
+  min-height: @size-control;
+  box-sizing: border-box;
+  padding: @space-small @space-medium;
+  border-radius: @border-radius-medium;
+  background: var(--color-chip);
+  color: var(--color-chip-text);
+  text-align: left;
+  font-size: var(--font-size-text);
+  font-weight: @font-weight-medium;
+  transition: background-color @transition-fast;
+
+  &:hover {
+    background: var(--color-chip-hover);
+  }
+}

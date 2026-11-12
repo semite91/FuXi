@@ -8,8 +8,8 @@ namespace FuXi.Api.Configs;
 /// <summary>The settings logic behind the config endpoints.</summary>
 public sealed class ConfigService(FuXiDbContext database, INotificationTimer notificationTimer)
 {
-    private const string VALUE_MISSING = "value is missing or empty.";
-    private const string VALUE_INVALID = "value does not fit the input type of the setting.";
+    private const string VALUE_MISSING = "The value is missing or empty.";
+    private const string VALUE_INVALID = "The value does not fit the input type of the setting.";
     private const string CONFIG_NOT_FOUND = "The setting was not found.";
     private const string NOT_NOTIFICATION_PERIOD = "The setting is not the Notification Period.";
     private const string IS_NOTIFICATION_PERIOD = "The Notification Period is changed with UpdateNotificationPeriod.";

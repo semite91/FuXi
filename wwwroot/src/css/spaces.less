@@ -1,9 +1,31 @@
-// Spacing values used across pages. Placeholder values until Claude Design is synced.
+// Spacing and control sizes used across pages, taken from the FuXi Claude Design canvas.
 
 @space-unit: 4px;
 
+@space-xxsmall: (@space-unit / 2);
 @space-xsmall: @space-unit;
 @space-small: (@space-unit * 2);
-@space-medium: (@space-unit * 4);
-@space-large: (@space-unit * 6);
-@space-xlarge: (@space-unit * 8);
+@space-medium: (@space-unit * 3);
+@space-large: (@space-unit * 4);
+@space-xlarge: (@space-unit * 5);
+@space-xxlarge: (@space-unit * 6);
+@space-page: (@space-unit * 7);
+@space-section: (@space-unit * 8);
+
+// Touch targets and fixed control sizes.
+@size-dot: 6px;
+@size-icon-small: 24px;
+@size-control-small: 32px;
+@size-control-compact: 36px;
+@size-control-round: 40px;
+@size-control: 44px;
+@size-input: 48px;
+@size-row: 56px;
+@size-answer: 60px;
+@size-day-cell: 64px;
+@size-menu: 188px;
+@size-tooltip: 200px;
+@size-app: 390px;
+
+@transition-fast: 0.18s ease;
+@transition-slide: 0.35s cubic-bezier(0.22, 0.8, 0.24, 1);

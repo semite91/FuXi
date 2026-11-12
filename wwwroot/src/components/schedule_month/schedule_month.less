@@ -1,0 +1,89 @@
+@import (reference) '../../css/tokens.less';
+
+.schedule-month {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.schedule-month__weekdays,
+.schedule-month__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.schedule-month__weekdays {
+  padding: @space-small 0;
+  text-align: center;
+  font-size: var(--font-size-xsmall);
+  font-weight: @font-weight-medium;
+  color: var(--color-text-muted);
+}
+
+.schedule-month__cell {
+  box-sizing: border-box;
+  min-height: @size-day-cell;
+  padding: @space-xsmall @space-xxsmall;
+  border-top: @border-soft;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: @space-xxsmall;
+  background: var(--color-surface);
+
+  &--outside {
+    background: var(--color-background);
+
+    .schedule-month__number {
+      color: var(--color-text-muted);
+    }
+  }
+}
+
+.schedule-month__number {
+  width: @size-icon-small;
+  height: @size-icon-small;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xsmall);
+  font-weight: @font-weight-medium;
+
+  &[aria-current='date'] {
+    border-radius: @border-radius-round;
+    background: var(--color-accent);
+    color: var(--color-on-accent);
+    font-weight: @font-weight-strong;
+  }
+}
+
+.schedule-month__chip {
+  .control-reset();
+  .focus-ring();
+  width: 100%;
+  min-height: (@space-unit * 5);
+  border-radius: @border-radius-xsmall;
+  background: var(--color-chip);
+  color: var(--color-chip-text);
+  font-size: 0.6875rem;
+  font-weight: @font-weight-medium;
+  transition: background-color @transition-fast;
+
+  &:hover {
+    background: var(--color-chip-hover);
+  }
+}
+
+.schedule-month__more {
+  .control-reset();
+  .focus-ring();
+  min-width: @size-icon-small;
+  border-radius: @border-radius-xsmall;
+  font-size: 0.6875rem;
+  font-weight: @font-weight-medium;
+  color: var(--color-text-muted);
+
+  &:hover {
+    background: var(--color-hover);
+  }
+}

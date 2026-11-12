@@ -1,0 +1,28 @@
+@import (reference) '../../css/tokens.less';
+
+.flashcard-carousel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  margin: 0 -@space-medium;
+  padding: 0 @space-medium @space-xlarge;
+}
+
+.flashcard-carousel__slide {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  animation: flashcard-slide 0.5s cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+@keyframes flashcard-slide {
+  from {
+    transform: translateX(calc(100% + @space-xxlarge));
+  }
+
+  to {
+    transform: none;
+  }
+}

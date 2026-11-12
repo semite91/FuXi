@@ -42,7 +42,7 @@ This file is initializer instructor of my project.
   - RAG resources will be Spotify, Notion, Google Drive, letterboxd - TMDB
   - Connection infos will be delivered during development
   - < RAG purpose >
-  - Settings are part of Config page. There is no separate Settings page.
+  - The Settings page has the "Update embeddings" action, which calls the RAG engine's Update_Collections API.
   - RAG technologies will be defined at next parts.
 
   -- Words --
@@ -61,12 +61,13 @@ This file is initializer instructor of my project.
   - App's dashboard should open Words page. Words page will be described at next parts.
 
     # DESIGN - ROUTES
-    - React Router will be used. There will be a bottom tab bar.
-    - /words: Words page. It is default page.
-    - /flashcard: Flashcard carousel page.
-    - /active: Active Words page.
+    - React Router will be used. The header has the FuXi logo and a menu button at the top right. The menu lists Active Words, Words, Schedule, Configs and Settings. There is no bottom tab bar.
+    - /words: Words page. It is default page. An unknown path opens it too.
+    - /flashcard: Flashcard carousel page. A notification opens it with wordIds.
+    - /active: Active Words page. It shows the same Flashcard carousel, filled with the Due Words.
     - /schedule: Schedule page.
-    - /config: Config page.
+    - /config: Config page. Its title is "Configs".
+    - /settings: Settings page.
   
     # DESIGN - API CONNECTION
     API - frontend connections described below. 
@@ -83,7 +84,9 @@ This file is initializer instructor of my project.
     - When user opens Word History toggle clicking text and arrow icon at flashcard component's back side, if history is not exists, it should loaded by GetWordHistory api call.
     - When user clicks to reinforcement button next at the top right side of flashcard component's back side, next word should be shown and UpdateIsReinforcement api should be called with true parameter value.
     - After getting card data, GetWordContent api is called with words whose Content value is empty. Its parameter is word names joined with comma. Last, GetWordContent data and card data should be merged by word. Every generated content will be passed to UpdateWordContent api with word id.
-    - Back side of card shows a loading state until content arrives.
+    - Back side of card shows a loading state until content arrives. Word Content is shown as plain text. If it cannot be generated, the card says that content is not available.
+    - The X button at the top right of the back side is the reinforcement button.
+    - On the last card's back side the right arrow is hidden and a Done button opens the Done screen.
     - While user is moving between carousels, user can move forward freely. User can move back, but they can see just back side of card. 
       If user comes last card, right arrow will be hidden and Done screen will be shown.
 
@@ -97,15 +100,22 @@ This file is initializer instructor of my project.
     If it is not, UpdateConfig should be called.
     - Config page has "Enable notifications" button. Browser asks notification permission only after this button is clicked. Permission state is visible at Config page.
 
+    -- settings --
+    - When user clicks "Update embeddings" and confirms with Yes, Update_Collections api of the RAG engine is called. The result is shown in a dialog.
+
     -- schedule --
     - When user opens schedule page, data should be loaded by GetSchedule api with current month's start and end date-times.
     - When user selects new Notification Window from schedule, UpdateSchedule api will be called. If user changes an existing Notification Window, its id will be sent too.
     - When user changes visible month GetSchedule api should be called with new month's parameters.
+    - The calendar has Month, Week and Day views. GetSchedule is called again only when the view shows dates outside the loaded range.
+    - When user edits an existing Notification Window, the dialog has a Delete button that calls DeleteSchedule api.
     - Date-times are sent to backend as UTC.
 
     -- words --
     - Words page will gets empty at first.
-    - When user selects any value from filter fields, GetWordsByFilter api will be called.
+    - When user applies the filter fields, GetWordsByFilter api will be called.
+    - When user clicks a word name, its Word History is loaded by GetWordHistory api and shown in a dialog.
+    - Columns can be sorted in the browser without a new api call.
     - If there is data, no pagination will be implemented.
 
   # Database
@@ -196,7 +206,7 @@ This file is initializer instructor of my project.
     Empty filter field means any value.
     Words table and RotatedWords table will be joined using left join.
     IsRotated field will be added to filtered data. This value will be true if this word is exist at RotatedWords table.
-    Output model should be Words.Name, Words.IsReinforcement, Words.IsKnown, RotatedWords.LastShownDate, Words.ShownCount, Words.KnownCount, IsRotated.
+    Output model should be Words.Id, Words.Name, Words.IsReinforcement, Words.IsKnown, RotatedWords.LastShownDate, Words.ShownCount, Words.KnownCount, IsRotated, RotatedWords.Counter. Counter is null when the word is not in RotatedWords.
   - GetWordsByActive
     First, it will find word ids with GetNotificationWords function with current date. Second, GetCardWords function should be called using word ids as parameter. Last data should be returned as response. Output model should be same as GetCardWords.
   - GetConfigs

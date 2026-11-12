@@ -1,0 +1,34 @@
+@import (reference) '../../css/tokens.less';
+
+.words-filter-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.words-filter-panel__field {
+  label {
+    .field-label();
+  }
+
+  input,
+  select {
+    .text-input();
+    height: @size-control;
+  }
+}
+
+.words-filter-panel__actions {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: @space-small;
+}
+
+.words-filter-panel__clear {
+  .secondary-button();
+}
+
+.words-filter-panel__apply {
+  .primary-button();
+}

@@ -1,0 +1,38 @@
+@import (reference) '../../css/tokens.less';
+
+.navigation-menu {
+  position: absolute;
+  top: calc(100% + @space-small);
+  right: 0;
+  z-index: 40;
+  width: @size-menu;
+  box-sizing: border-box;
+  padding: @space-small;
+  display: flex;
+  flex-direction: column;
+  gap: @space-xxsmall;
+  background: var(--color-surface);
+  border: @border-default;
+  border-radius: @border-radius-large;
+  box-shadow: @box-shadow-menu;
+}
+
+.navigation-menu__item {
+  .control-reset();
+  height: @size-control;
+  padding: 0 @space-medium;
+  border-radius: @border-radius-medium;
+  text-align: left;
+  font-size: var(--font-size-base);
+  font-weight: @font-weight-medium;
+  transition: background-color @transition-fast;
+
+  &:hover {
+    background: var(--color-hover);
+  }
+
+  &:focus-visible {
+    outline: @focus-outline;
+    outline-offset: -@focus-outline-offset;
+  }
+}

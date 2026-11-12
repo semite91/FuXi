@@ -1,0 +1,22 @@
+@import (reference) '../../css/tokens.less';
+
+.tooltip {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltip__text {
+  position: absolute;
+  top: calc(100% + @space-small);
+  right: 0;
+  z-index: 6;
+  max-width: @size-tooltip;
+  width: max-content;
+  padding: @space-small @space-medium;
+  border-radius: @border-radius-small;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: var(--font-size-small);
+  font-weight: @font-weight-medium;
+  line-height: 1.4;
+}

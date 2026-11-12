@@ -1,0 +1,64 @@
+@import (reference) '../../css/tokens.less';
+
+.schedule-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: @space-medium;
+  margin-bottom: @space-medium;
+}
+
+.schedule-toolbar__row {
+  display: flex;
+  align-items: center;
+  gap: @space-small;
+}
+
+.schedule-toolbar__new {
+  .primary-button();
+  height: @size-control-round;
+  padding: 0 @space-medium;
+  display: flex;
+  align-items: center;
+  gap: @space-xsmall;
+  font-size: var(--font-size-text);
+  white-space: nowrap;
+}
+
+.schedule-toolbar__views {
+  margin-left: auto;
+  padding: @space-xxsmall;
+  display: flex;
+  border: @border-default;
+  border-radius: @border-radius-control;
+}
+
+.schedule-toolbar__view {
+  .control-reset();
+  .focus-ring();
+  min-width: 48px;
+  height: @size-control-compact;
+  padding: 0 @space-small;
+  border-radius: 11px;
+  font-size: var(--font-size-small);
+  font-weight: @font-weight-medium;
+
+  &[aria-pressed='true'] {
+    background: var(--color-accent);
+    color: var(--color-on-accent);
+  }
+}
+
+.schedule-toolbar__label {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-cell);
+  font-weight: @font-weight-bold;
+}
+
+.schedule-toolbar__today {
+  .secondary-button();
+  height: @size-control-small;
+  padding: 0 @space-medium;
+  font-size: var(--font-size-small);
+}

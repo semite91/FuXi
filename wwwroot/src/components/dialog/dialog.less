@@ -1,0 +1,80 @@
+@import (reference) '../../css/tokens.less';
+
+.dialog {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  box-sizing: border-box;
+  display: flex;
+  border-radius: @border-radius-card;
+  background: var(--color-scrim);
+
+  &--center {
+    padding: @space-xlarge;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &--panel {
+    justify-content: flex-end;
+  }
+}
+
+.dialog__backdrop {
+  .control-reset();
+  position: absolute;
+  inset: 0;
+  border-radius: @border-radius-card;
+  cursor: default;
+}
+
+.dialog__box {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: @space-large;
+  background: var(--color-surface);
+
+  &:focus {
+    outline: none;
+  }
+
+  h2 {
+    margin: 0;
+    font-size: var(--font-size-heading);
+    line-height: @line-height-heading;
+    font-weight: @font-weight-bold;
+    overflow-wrap: anywhere;
+  }
+
+  .dialog--center & {
+    width: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    padding: @space-xxlarge @space-xlarge @space-xlarge;
+    border-radius: @border-radius-dialog;
+    box-shadow: @box-shadow-dialog;
+  }
+
+  .dialog--panel & {
+    width: 60%;
+    overflow-y: auto;
+    padding: @space-xlarge @space-medium @space-large;
+    gap: @space-medium;
+    border-radius: @border-radius-card 0 0 @border-radius-card;
+    box-shadow: @box-shadow-panel;
+    animation: dialog-slide @transition-slide;
+  }
+}
+
+@keyframes dialog-slide {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: none;
+  }
+}
