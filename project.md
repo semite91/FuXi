@@ -27,7 +27,7 @@ This file is initializer instructor of my project.
   - It will be PWA app to trigger push notifications.
   - To create PWA, vite will be used. 
   - Web push API will be used to trigger push notification.
-  - App icon is at /fuxi.jpeg location.
+  - App icon is at /fuxi.jpeg location. The page background is the icon's background colour, #FCFAEE. The header shows the FuXi lettering as tall as the menu button.
   - manifest.webmanifest file will be created. It's content will be defined with agent harness.
 
   -- Push notification --
@@ -98,10 +98,10 @@ This file is initializer instructor of my project.
     - When user opens Config page, data should be loaded by GetConfigs api call.
     - When user clicks to Config page's save button (It means saves config), if row's Code value is NotificationPeriod, UpdateNotificationPeriod api should be called.
     If it is not, UpdateConfig should be called.
-    - Config page has "Enable notifications" button. Browser asks notification permission only after this button is clicked. Permission state is visible at Config page.
 
     -- settings --
     - When user clicks "Update embeddings" and confirms with Yes, Update_Collections api of the RAG engine is called. The result is shown in a dialog.
+    - Settings page has "Enable notifications" button under the "Update embeddings" row. Browser asks notification permission only after this button is clicked. Permission state is visible at Settings page.
 
     -- schedule --
     - When user opens schedule page, data should be loaded by GetSchedule api with current month's start and end date-times.

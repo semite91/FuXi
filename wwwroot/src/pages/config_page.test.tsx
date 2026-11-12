@@ -133,43 +133,10 @@ test('L13 a failed GetConfigs shows an error', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Server is down.');
 });
 
-test('M1 opening the page does not ask and M2 "default" reads "not asked" with the button enabled', async () => {
-  const requestPermission = stubNotification('default');
+test('the Configs page has no notification permission', async () => {
+  stubNotification('default');
   openConfigs();
+  await screen.findByRole('button', { name: 'Edit Rotation Count' });
 
-  expect(await screen.findByText('Notifications: not asked')).toBeInTheDocument();
-  expect(button('Enable notifications')).toBeEnabled();
-  expect(requestPermission).not.toHaveBeenCalled();
-});
-
-test.each([
-  ['M3', 'granted', 'Notifications: allowed'],
-  ['M4', 'denied', 'Notifications: blocked'],
-] as const)('%s permission %s reads "%s"', async (_, permission, text) => {
-  stubNotification(permission);
-  openConfigs();
-
-  expect(await screen.findByText(text)).toBeInTheDocument();
-});
-
-test('M5 a browser without notifications reads "not supported" and disables the button', async () => {
-  vi.stubGlobal('Notification', undefined);
-  delete (window as { Notification?: unknown }).Notification;
-  openConfigs();
-
-  expect(await screen.findByText('Notifications: not supported')).toBeInTheDocument();
-  expect(button('Enable notifications')).toBeDisabled();
-});
-
-test('M6 the button asks once, M7 the state follows the answer and M8 nothing is subscribed', async () => {
-  const requestPermission = stubNotification('default', 'granted');
-  const api = openConfigs();
-  await screen.findByText('Notifications: not asked');
-
-  await act(async () => fireEvent.click(button('Enable notifications')));
-
-  expect(requestPermission).toHaveBeenCalledTimes(1);
-  expect(screen.getByText('Notifications: allowed')).toBeInTheDocument();
-  expect(api.callsTo('GetVapidPublicKey')).toHaveLength(0);
-  expect(api.callsTo('SavePushSubscription')).toHaveLength(0);
+  expect(screen.queryByRole('button', { name: 'Enable notifications' })).not.toBeInTheDocument();
 });

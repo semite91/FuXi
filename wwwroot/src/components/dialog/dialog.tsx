@@ -31,7 +31,8 @@ const Dialog = ({ label, closeLabel, onClose, children, variant = 'center' }: Di
 
   useEffect(() => {
     const opener = document.activeElement;
-    boxRef.current?.focus();
+    // Without preventScroll the browser scrolls the page toward a panel that is still sliding in.
+    boxRef.current?.focus({ preventScroll: true });
 
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === ESCAPE_KEY) {
@@ -43,7 +44,7 @@ const Dialog = ({ label, closeLabel, onClose, children, variant = 'center' }: Di
     return () => {
       document.removeEventListener(KEY_DOWN_EVENT, closeOnEscape);
       if (opener instanceof HTMLElement) {
-        opener.focus();
+        opener.focus({ preventScroll: true });
       }
     };
   }, []);

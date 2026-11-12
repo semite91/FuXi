@@ -1,7 +1,9 @@
 FuXi - Phase 3 - Frontend
 Test scenarios, shredded to atomic processes.
 Created: 2026-11-11 23:40 UTC
-Status: WAITING FOR MANUAL CONFIRMATION
+Status: CONFIRMED BY THE LEARNER ON 2026-11-12
+Amended on 2026-11-12 at the Learner's request: section M moved from the Configs page to the Settings page,
+under the "Update embeddings" row (M0 added), and the page background became the logo's #FCFAEE.
 
 Every scenario has one purpose. "Given / When / Then" is used.
 Phase 3 builds the React pages from the "FuXi" Claude Design canvas, their services and one small API extension.
@@ -195,9 +197,10 @@ L12. [FE] Given an open dialog, when the backdrop or Escape is used, then it clo
 L13. [FE] Given a failed GetConfigs call, when it returns, then an error message is shown.
 
 ==================================================
-M. NOTIFICATION PERMISSION (CONFIGS PAGE)
+M. NOTIFICATION PERMISSION (SETTINGS PAGE)
 ==================================================
-M1. [FE] Given the Configs page, when it opens, then the browser is not asked for the notification permission.
+M0. [FE] Given the Settings page, when it is shown, then "Enable notifications" is under the "Update embeddings" row.
+M1. [FE] Given the Settings page, when it opens, then the browser is not asked for the notification permission.
 M2. [FE] Given permission "default", when the page is shown, then the state reads "Notifications: not asked" and the "Enable notifications" button is enabled.
 M3. [FE] Given permission "granted", when the page is shown, then the state reads "Notifications: allowed".
 M4. [FE] Given permission "denied", when the page is shown, then the state reads "Notifications: blocked".
