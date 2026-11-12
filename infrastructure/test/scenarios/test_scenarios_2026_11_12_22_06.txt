@@ -1,7 +1,7 @@
 FuXi - Phase 4 - Push Notifications
 Test scenarios, shredded to atomic processes.
 Created: 2026-11-12 22:06 UTC
-Status: WAITING FOR THE LEARNER'S CONFIRMATION
+Status: CONFIRMED BY THE LEARNER ON 2026-11-12, with the defaults proposed by Claude
 
 Every scenario has one purpose. "Given / When / Then" is used.
 Phase 4 adds the VAPID key generation, the Quartz.NET timed task that sends push notifications,
