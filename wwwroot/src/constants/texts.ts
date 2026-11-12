@@ -73,6 +73,7 @@ export const PERMISSION_TEXTS = {
   granted: 'Notifications: allowed',
   denied: 'Notifications: blocked',
   unsupported: 'Notifications: not supported',
+  failed: 'Notifications could not be enabled.',
 } as const;
 
 export const SCHEDULE_TEXTS = {
