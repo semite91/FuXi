@@ -22,6 +22,13 @@ readonly DEFAULT_API_URL="http://localhost:5000"
 readonly RAG_URL_KEY="VITE_FUXI_RAG_URL"
 # The address of the FastAPI engine.
 readonly DEFAULT_RAG_URL="http://localhost:8000"
+readonly VAPID_PUBLIC_KEY_KEY="VAPID_PUBLIC_KEY"
+readonly VAPID_PRIVATE_KEY_KEY="VAPID_PRIVATE_KEY"
+readonly VAPID_SUBJECT_KEY="VAPID_SUBJECT"
+# The VAPID contact that push services may use. Replace it with your own mailto: or https: address.
+readonly DEFAULT_VAPID_SUBJECT="mailto:learner@fuxi.local"
+readonly BACKEND_PROJECT="backend/fuxi_api"
+readonly GENERATE_VAPID_KEYS_COMMAND="generate-vapid-keys"
 readonly PASSWORD_BYTES=24
 readonly PRIVATE_FILE_UMASK=077
 readonly REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -69,6 +76,7 @@ ${API_URL_KEY}=${DEFAULT_API_URL}
 ${RAG_URL_KEY}=${DEFAULT_RAG_URL}
 VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=
 ENV
   )
 }
@@ -87,7 +95,34 @@ create_env_files() {
   for file in "${env_file}" "${test_env_file}"; do
     ensure_env_value "${file}" "${API_URL_KEY}" "${DEFAULT_API_URL}"
     ensure_env_value "${file}" "${RAG_URL_KEY}" "${DEFAULT_RAG_URL}"
+    ensure_env_value "${file}" "${VAPID_SUBJECT_KEY}" "${DEFAULT_VAPID_SUBJECT}"
+    ensure_vapid_keys "${file}"
   done
+}
+
+# Generates the VAPID keys once with the backend command and writes them to the env file.
+# Keys that exist are never replaced. The private key is kept out of the terminal.
+ensure_vapid_keys() {
+  local env_file="$1" public_key private_key keys
+  public_key="$(read_env_value "${env_file}" "${VAPID_PUBLIC_KEY_KEY}")"
+  private_key="$(read_env_value "${env_file}" "${VAPID_PRIVATE_KEY_KEY}")"
+  if [ -n "${public_key}" ] && [ -n "${private_key}" ]; then
+    return
+  fi
+  if [ -n "${public_key}" ] || [ -n "${private_key}" ]; then
+    echo "Only one VAPID key is filled in ${env_file}. Fill both or empty both." >&2
+    exit 1
+  fi
+  keys="$(dotnet run --verbosity quiet --project "${REPOSITORY_ROOT}/${BACKEND_PROJECT}" -- "${GENERATE_VAPID_KEYS_COMMAND}")"
+  public_key="$(grep -E "^${VAPID_PUBLIC_KEY_KEY}=" <<< "${keys}" | head -n 1 | cut -d= -f2-)"
+  private_key="$(grep -E "^${VAPID_PRIVATE_KEY_KEY}=" <<< "${keys}" | head -n 1 | cut -d= -f2-)"
+  if [ -z "${public_key}" ] || [ -z "${private_key}" ]; then
+    echo "The VAPID keys could not be generated." >&2
+    exit 1
+  fi
+  ensure_env_value "${env_file}" "${VAPID_PUBLIC_KEY_KEY}" "${public_key}"
+  ensure_env_value "${env_file}" "${VAPID_PRIVATE_KEY_KEY}" "${private_key}"
+  echo "VAPID keys were generated for ${env_file}."
 }
 
 # Creates or updates the role and creates the development database.

@@ -9,7 +9,8 @@ the push and notification click handling of the service worker and the push subs
 It contains no RAG engine.
 
 Decisions taken by the Learner on 2026-11-12:
-- The push library is WebPush (web-push-csharp), as project.md names it. It is vetted before installation.
+- The push library is Lib.Net.Http.WebPush. It replaced WebPush (web-push-csharp) on 2026-11-12, because WebPush only supports the old aesgcm encoding
+  and the Learner wants every browser. No better-starred .NET library supports aes128gcm. project.md is updated.
 - VAPID keys are generated once by the setup script through a backend command and written to .env.
 - A notification click focuses an open FuXi tab and moves it to /flashcard; a new window opens only when no tab is open.
 - The first run of the timed task comes one Notification Period after startup or after a restart.
@@ -23,15 +24,15 @@ Marks:
 ==================================================
 A. LIBRARY AND SETUP
 ==================================================
-A1. [RV] Given the WebPush NuGet package, when it is vetted, then the security checklist result is reported to the Learner before installation.
-A2. [RV] Given the backend project, when its packages are read, then WebPush is pinned to one exact version and packages.lock.json is updated.
+A1. [RV] Given the Lib.Net.Http.WebPush NuGet package, when it is vetted, then the security checklist result is reported to the Learner before installation.
+A2. [RV] Given the backend project, when its packages are read, then Lib.Net.Http.WebPush is pinned to one exact version and packages.lock.json is updated.
 A3. [RV] Given the frontend, when package.json is read, then no new library is added.
 A4. [RV] Given .env.example and .env.test.example, when they are read, then VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT exist without a value.
 
 ==================================================
 B. VAPID KEY GENERATION
 ==================================================
-B1. [NOW] Given the backend command "generate-vapid-keys", when it runs, then it prints one public key and one private key in URL-safe Base64.
+B1. [NOW] Given the backend command "generate-vapid-keys", when it runs, then it prints one public key and one private key in URL-safe Base64 (built-in .NET cryptography, because the library has no generator).
 B2. [NOW] Given the generated public key, when it is decoded, then it is a 65-byte uncompressed P-256 point.
 B3. [NOW] Given the generated private key, when it is decoded, then it is 32 bytes.
 B4. [NOW] Given the command, when it runs twice, then the two key pairs differ.
@@ -82,7 +83,7 @@ F. SENDING
 ==================================================
 F1. [BE] Given no PushSubscription, when the job has words to send, then no push is sent and nothing fails.
 F2. [BE] Given two PushSubscriptions, when the job runs, then the push client is called once for each endpoint.
-F3. [BE] Given a send, when it is made, then the subscription's Endpoint, P256dh and Auth and the VAPID details from the configuration are used.
+F3. [BE] Given a send, when it is made, then the subscription's Endpoint, P256dh and Auth and the VAPID public key, private key and subject from the configuration are used.
 F4. [BE] Given an endpoint that answers 410 Gone, when the job runs, then that PushSubscription is deleted.
 F5. [BE] Given one endpoint that answers 410 and one that answers 201, when the job runs, then only the 410 entry is deleted and the other one still receives the push.
 F6. [BE] Given an endpoint that answers another error, when the job runs, then the error is logged, the entry is kept and the other endpoints still receive the push.
@@ -130,7 +131,7 @@ J. STRUCTURE AND QUALITY
 J1. [RV] Given the backend, when "dotnet build" and "dotnet test" run, then there are 0 warnings and no failed or skipped test.
 J2. [RV] Given the frontend, when "npm run build" and "npm test" run, then there is no TypeScript error, no warning and no failed test.
 J3. [RV] Given every new frontend file, when it is read, then its name is snake_case.
-J4. [RV] Given project.md, when it is read, then the workflow says the "Enable notifications" button is on the Settings page.
+J4. [RV] Given project.md, when it is read, then the workflow says the "Enable notifications" button is on the Settings page and names Lib.Net.Http.WebPush.
 J5. [RV] Given the running API and app, when a Notification Window covers now and the period is set to 1 minute, then a notification appears in a real browser and its click opens the Flashcard carousel.
 J6. [RV] Given the tracked files, when they are read, then no secret value is in them.
 
