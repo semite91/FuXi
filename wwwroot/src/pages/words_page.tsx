@@ -3,13 +3,13 @@ import Dialog from '../components/dialog/dialog';
 import IconButton from '../components/icon_button/icon_button';
 import PageCard from '../components/page_card/page_card';
 import StatusMessage from '../components/status_message/status_message';
-import WordHistoryList from '../components/word_history_list/word_history_list';
 import WordsFilterPanel, { type FilterField } from '../components/words_filter_panel/words_filter_panel';
 import WordsTable, { type WordsTableColumn } from '../components/words_table/words_table';
 import { APP_TEXTS, HISTORY_TEXTS, WORDS_TEXTS } from '../constants/texts';
-import { EMPTY_FILTER, useWords, type Choice, type FilterDraft, type OpenedHistory, type SortKey } from '../hooks/use_words';
+import { EMPTY_FILTER, useWords, type Choice, type FilterDraft, type SortKey } from '../hooks/use_words';
 import type { FilteredWord } from '../services/words_service';
 import { formatDate } from '../utils/date_format';
+import { renderWordHistory } from './word_history_content';
 
 const CHOICES: readonly { value: Choice; label: string }[] = [
   { value: '', label: WORDS_TEXTS.all },
@@ -51,26 +51,6 @@ const toRow = (word: FilteredWord) => ({
   lastShownDate: word.lastShownDate === null ? APP_TEXTS.empty : formatDate(new Date(word.lastShownDate)),
 });
 
-const renderHistory = (history: OpenedHistory) => {
-  if (history.status === 'loading') {
-    return <StatusMessage text={HISTORY_TEXTS.loading} />;
-  }
-
-  if (history.status === 'error') {
-    return <StatusMessage kind="error" text={APP_TEXTS.failed} />;
-  }
-
-  return (
-    <WordHistoryList
-      rows={history.rows.map((row) => ({ isKnown: row.isKnown, dateText: formatDate(new Date(row.date)) }))}
-      isKnownLabel={HISTORY_TEXTS.isKnown}
-      dateLabel={HISTORY_TEXTS.date}
-      yesLabel={APP_TEXTS.yes}
-      noLabel={APP_TEXTS.no}
-    />
-  );
-};
-
 /** The Words page starts empty. Words are loaded when a filter is applied. */
 const WordsPage = () => {
   const words = useWords();
@@ -91,11 +71,12 @@ const WordsPage = () => {
   };
 
   return (
-    <PageCard>
-      <div className="page-card__head">
-        <h1>{WORDS_TEXTS.title}</h1>
+    <PageCard
+      title={WORDS_TEXTS.title}
+      action={
         <IconButton icon="filter" label={WORDS_TEXTS.openFilters} aria-haspopup="dialog" onClick={() => setIsPanelOpen(true)} />
-      </div>
+      }
+    >
 
       <WordsTable
         label={WORDS_TEXTS.title}
@@ -129,14 +110,14 @@ const WordsPage = () => {
 
       {history && (
         <Dialog label={history.wordName} closeLabel={APP_TEXTS.closeDialog} onClose={words.closeHistory}>
-          <div className="page-card__head">
+          <div className="dialog__head">
             <div>
               <h2>{history.wordName}</h2>
-              <p className="page-card__subtitle">{HISTORY_TEXTS.title}</p>
+              <p className="dialog__subtitle">{HISTORY_TEXTS.title}</p>
             </div>
             <IconButton icon="close" shape="small" label={APP_TEXTS.close} onClick={words.closeHistory} />
           </div>
-          {renderHistory(history)}
+          {renderWordHistory(history)}
         </Dialog>
       )}
     </PageCard>

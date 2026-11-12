@@ -102,8 +102,7 @@ const SchedulePage = () => {
   const draftError = draft?.isRangeInvalid ? SCHEDULE_TEXTS.invalidRange : (draft?.error ?? '');
 
   return (
-    <PageCard>
-      <h1>{SCHEDULE_TEXTS.title}</h1>
+    <PageCard title={SCHEDULE_TEXTS.title}>
       <ScheduleToolbar
         newEntryLabel={SCHEDULE_TEXTS.newEntry}
         viewGroupLabel={SCHEDULE_TEXTS.view}

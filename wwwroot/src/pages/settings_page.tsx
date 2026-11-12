@@ -14,8 +14,7 @@ const SettingsPage = () => {
   const embeddings = useEmbeddingsUpdate();
 
   return (
-    <PageCard>
-      <h1>{SETTINGS_TEXTS.title}</h1>
+    <PageCard title={SETTINGS_TEXTS.title}>
       <EmbeddingsUpdate
         linkLabel={SETTINGS_TEXTS.updateEmbeddings}
         aboutLabel={SETTINGS_TEXTS.about}

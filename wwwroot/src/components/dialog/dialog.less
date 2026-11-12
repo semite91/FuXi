@@ -78,3 +78,18 @@
     transform: none;
   }
 }
+
+// A title row with a close button, and a small line under the title.
+.dialog__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: @space-small;
+}
+
+.dialog__subtitle {
+  margin: @space-xsmall 0 0;
+  font-size: var(--font-size-small);
+  font-weight: @font-weight-medium;
+  color: var(--color-text-muted);
+}

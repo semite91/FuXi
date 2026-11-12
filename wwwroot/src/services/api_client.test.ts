@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 import { API_URL, RAG_URL, mockApi, networkFailure, problem } from '../test/api_mock';
-import { ApiError, API_URL_KEY, UNREACHABLE_MESSAGE, createApiClient } from './api_client';
+import { ApiError, API_URL_KEY, UNREACHABLE_MESSAGE, createApiClient, errorMessageOf } from './api_client';
 import { getConfigs } from './config_service';
 import { getWordContent } from './rag_service';
 import { getWordsByFilter, updateWordContent } from './words_service';
@@ -80,4 +80,20 @@ test('a trailing slash of the base URL is not doubled', async () => {
   await createApiClient(API_URL_KEY).get('/api/GetConfigs');
 
   expect(api.calls[0].url.href).toBe(`${API_URL}/api/GetConfigs`);
+});
+
+test('review: a missing API URL is shown with its key, not as a generic failure', async () => {
+  mockApi();
+  vi.stubEnv(API_URL_KEY, '');
+
+  const error = await getConfigs().catch((caught: unknown) => caught);
+
+  expect(errorMessageOf(error)).toBe(`Configuration value ${API_URL_KEY} is missing.`);
+});
+
+test('review: a success answer that is not JSON is a failed request', async () => {
+  mockApi({ 'GET /api/GetConfigs': () => ({ status: 200, body: undefined }) });
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>', { status: 200 })));
+
+  await expect(getConfigs()).rejects.toBeInstanceOf(ApiError);
 });

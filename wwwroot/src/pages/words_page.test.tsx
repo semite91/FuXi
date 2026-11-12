@@ -1,7 +1,7 @@
 // Section J: the Words page.
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
-import { deferred, mockApi, problem } from '../test/api_mock';
+import { deferred, mockApi, problem, type RecordedCall } from '../test/api_mock';
 import { WORD_ONE_ID, WORD_THREE_ID, WORD_TWO_ID, filteredWord } from '../test/data';
 import { renderApp } from '../test/render_app';
 
@@ -216,4 +216,45 @@ test('J21 a failed call shows an error and no row', async () => {
 
   expect(await screen.findByRole('alert')).toHaveTextContent('IsKnown is not a boolean.');
   expect(bodyRows()).toHaveLength(0);
+});
+
+test('review: a late history answer does not land on another Word', async () => {
+  const late = deferred();
+  const api = openWords({
+    'GET /api/GetWordHistory': (call: RecordedCall) =>
+      call.url.searchParams.get('wordId') === WORD_ONE_ID
+        ? late.promise
+        : { body: [{ isKnown: false, date: '2026-10-01T10:00:00Z' }] },
+  });
+  await filterBy('Name', 'a');
+
+  fireEvent.click(button('banana'));
+  fireEvent.keyDown(document, { key: 'Escape' });
+  fireEvent.click(button('Apple'));
+  const dialog = await screen.findByRole('dialog', { name: 'Apple' });
+  await within(dialog).findByText('01.10.2026');
+  await act(async () => late.resolve({ body: [{ isKnown: true, date: '2026-10-30T10:00:00Z' }] }));
+
+  expect(within(dialog).queryByText('30.10.2026')).not.toBeInTheDocument();
+  expect(within(dialog).getByText('01.10.2026')).toBeInTheDocument();
+  expect(api.callsTo('GetWordHistory')).toHaveLength(2);
+});
+
+test('review: an older filter answer does not replace a newer one', async () => {
+  const late = deferred();
+  openWords({
+    'GET /api/GetWordsByFilter': (call: RecordedCall) =>
+      call.url.searchParams.get('isKnown') === 'true' ? late.promise : { body: [WORDS[1]] },
+  });
+  openFilters();
+  setField('Is known', 'yes');
+  apply();
+  openFilters();
+  setField('Is known', 'no');
+  apply();
+  await screen.findByRole('button', { name: 'Apple' });
+
+  await act(async () => late.resolve({ body: [WORDS[0]] }));
+
+  expect(names()).toEqual(['Apple']);
 });

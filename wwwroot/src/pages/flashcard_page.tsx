@@ -5,11 +5,10 @@ import FlashcardFront from '../components/flashcard_front/flashcard_front';
 import PageCard from '../components/page_card/page_card';
 import Skeleton from '../components/skeleton/skeleton';
 import StatusMessage from '../components/status_message/status_message';
-import WordHistoryList from '../components/word_history_list/word_history_list';
 import { WORD_IDS_QUERY } from '../constants/routes';
 import { APP_TEXTS, FLASHCARD_TEXTS, HISTORY_TEXTS } from '../constants/texts';
-import { useFlashcardDeck, type Flashcard, type WordHistory } from '../hooks/use_flashcard_deck';
-import { formatDate } from '../utils/date_format';
+import { useFlashcardDeck, type Flashcard } from '../hooks/use_flashcard_deck';
+import { renderWordHistory } from './word_history_content';
 
 const FRONT_SIDE = 'front';
 const BACK_SIDE = 'back';
@@ -31,36 +30,13 @@ const renderContent = (card: Flashcard) => {
   );
 };
 
-const renderHistory = (history: WordHistory | undefined) => {
-  if (history === undefined || history.status === 'loading') {
-    return <StatusMessage text={HISTORY_TEXTS.loading} />;
-  }
-
-  if (history.status === 'error') {
-    return <StatusMessage kind="error" text={APP_TEXTS.failed} />;
-  }
-
-  return (
-    <WordHistoryList
-      rows={history.rows.map((row) => ({ isKnown: row.isKnown, dateText: formatDate(new Date(row.date)) }))}
-      isKnownLabel={HISTORY_TEXTS.isKnown}
-      dateLabel={HISTORY_TEXTS.date}
-      yesLabel={APP_TEXTS.yes}
-      noLabel={APP_TEXTS.no}
-    />
-  );
-};
-
-interface FlashcardPageProps {
-  /** True for the notification route, which reads the Word ids from the address. */
-  usesWordIds: boolean;
+interface FlashcardDeckProps {
+  /** Null loads the Due Words. */
+  wordIds: string | null;
 }
 
-/** The Flashcard carousel. It is filled by a notification's Word ids or by the Due Words. */
-const FlashcardPage = ({ usesWordIds }: FlashcardPageProps) => {
-  const [searchParams] = useSearchParams();
-  const wordIds = usesWordIds ? searchParams.get(WORD_IDS_QUERY) : null;
-  const deck = useFlashcardDeck(wordIds === '' ? null : wordIds);
+const FlashcardDeck = ({ wordIds }: FlashcardDeckProps) => {
+  const deck = useFlashcardDeck(wordIds);
   const { card } = deck;
 
   if (deck.status === 'loading') {
@@ -113,7 +89,7 @@ const FlashcardPage = ({ usesWordIds }: FlashcardPageProps) => {
             onDone={deck.isLast ? deck.finish : undefined}
             isHistoryOpen={deck.isHistoryOpen}
             onToggleHistory={deck.toggleHistory}
-            history={renderHistory(deck.history)}
+            history={renderWordHistory(deck.history)}
             notice={notice}
           />
         ) : (
@@ -129,6 +105,25 @@ const FlashcardPage = ({ usesWordIds }: FlashcardPageProps) => {
       </PageCard>
     </FlashcardCarousel>
   );
+};
+
+interface FlashcardPageProps {
+  /** True for the notification route, which reads the Word ids from the address. */
+  usesWordIds: boolean;
+}
+
+const DUE_WORDS_KEY = 'due';
+
+/**
+ * The Flashcard carousel. It is filled by a notification's Word ids or by the Due Words.
+ * New Word ids start a new deck, so the position of the old one is not kept.
+ */
+const FlashcardPage = ({ usesWordIds }: FlashcardPageProps) => {
+  const [searchParams] = useSearchParams();
+  const queryValue = usesWordIds ? searchParams.get(WORD_IDS_QUERY) : null;
+  const wordIds = queryValue === '' ? null : queryValue;
+
+  return <FlashcardDeck key={wordIds ?? DUE_WORDS_KEY} wordIds={wordIds} />;
 };
 
 export default FlashcardPage;

@@ -27,8 +27,7 @@ const ConfigPage = () => {
   const { editing } = configs;
 
   return (
-    <PageCard>
-      <h1>{CONFIG_TEXTS.title}</h1>
+    <PageCard title={CONFIG_TEXTS.title}>
 
       {configs.status === 'loading' && <StatusMessage text={APP_TEXTS.loading} />}
       {configs.status === 'error' && <StatusMessage kind="error" text={configs.loadError} />}

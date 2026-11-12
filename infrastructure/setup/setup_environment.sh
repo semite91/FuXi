@@ -14,7 +14,7 @@ readonly DEFAULT_DB_USER="fuxi"
 readonly DEFAULT_DB_NAME="fuxi"
 readonly TEST_DB_SUFFIX="_test"
 readonly CORS_ORIGINS_KEY="FUXI_CORS_ORIGINS"
-# The Vite development server of the frontend.
+# The Vite dev server and the preview of the build (vite.config.ts APP_PORT).
 readonly DEFAULT_CORS_ORIGINS="http://localhost:5173"
 readonly API_URL_KEY="VITE_FUXI_API_URL"
 # The address that "dotnet run" listens on.

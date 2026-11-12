@@ -46,7 +46,7 @@ const WordsFilterPanel = <Name extends string>({
 
   return (
     <Dialog variant="panel" label={title} closeLabel={closeLabel} onClose={onClose}>
-      <div className="words-filter-panel__head">
+      <div className="dialog__head">
         <h2>{title}</h2>
         <IconButton icon="close" shape="small" label={closeLabel} onClick={onClose} />
       </div>

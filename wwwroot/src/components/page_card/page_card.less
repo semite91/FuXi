@@ -20,27 +20,15 @@
     justify-content: center;
     padding: @space-section @space-page;
   }
-
-  h1 {
-    .page-title();
-  }
 }
 
-// A title row with a control on its right, on a page or in a dialog.
 .page-card__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: @space-small;
-
-  h1 {
-    margin-bottom: @space-large;
-  }
 }
 
-.page-card__subtitle {
-  margin: @space-xsmall 0 0;
-  font-size: var(--font-size-small);
-  font-weight: @font-weight-medium;
-  color: var(--color-text-muted);
+.page-card__title {
+  .page-title();
 }

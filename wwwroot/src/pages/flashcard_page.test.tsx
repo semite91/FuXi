@@ -410,3 +410,23 @@ test('I10 a failed UpdateWordContent keeps the generated content on the card', a
 
   expect(await screen.findByText('Kept.')).toBeInTheDocument();
 });
+
+test('review: new wordIds on an open /flashcard start again at the first card', async () => {
+  const api = mockApi({ ...answerRoutes, 'GET /api/GetCardWords': { body: THREE_CARDS } });
+  renderApp(`/flashcard?wordIds=${WORD_ONE_ID}`);
+  await word('Ephemeral');
+  answerYes();
+  fireEvent.click(await screen.findByRole('button', { name: 'Next word' }));
+  answerYes();
+  fireEvent.click(await screen.findByRole('button', { name: 'Next word' }));
+  await word('Ubiquitous');
+  api.set('GET /api/GetCardWords', { body: [cardWord(WORD_TWO_ID, 'Serendipity')] });
+
+  // A notification click opens the same route with new Word ids.
+  await act(async () => {
+    screen.getByTestId('navigate-probe').setAttribute('data-to', `/flashcard?wordIds=${WORD_TWO_ID}`);
+    screen.getByTestId('navigate-probe').click();
+  });
+
+  expect(await word('Serendipity')).toBeInTheDocument();
+});

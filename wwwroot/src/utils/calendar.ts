@@ -17,7 +17,6 @@ export interface MonthCell {
 }
 
 export const DAYS_PER_WEEK = 7;
-export const HOURS_PER_DAY = 24;
 const MONTH_GRID_WEEKS = 6;
 const MONTH_GRID_DAYS = MONTH_GRID_WEEKS * DAYS_PER_WEEK;
 // JavaScript counts days from Sunday, the calendar starts on Monday.
@@ -82,17 +81,22 @@ export const monthCells = (date: Date, windows: readonly NotificationWindow[], t
 export const weekDays = (date: Date): Date[] =>
   Array.from({ length: DAYS_PER_WEEK }, (_, position) => addDays(startOfWeek(date), position));
 
+const HOUR_MILLISECONDS = 60 * 60 * 1000;
+
+/** Adds real hours, so a daylight-saving change neither repeats nor skips an hour. */
+export const addHours = (date: Date, hours: number): Date => new Date(date.getTime() + hours * HOUR_MILLISECONDS);
+
+/** Every real hour from local midnight to the next one: 24, or 23 and 25 on daylight-saving days. */
 export const dayHours = (date: Date): Date[] => {
-  const day = startOfDay(date);
+  const end = addDays(startOfDay(date), 1);
+  const hours: Date[] = [];
 
-  return Array.from(
-    { length: HOURS_PER_DAY },
-    (_, hour) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour),
-  );
+  for (let hour = startOfDay(date); hour < end; hour = addHours(hour, 1)) {
+    hours.push(hour);
+  }
+
+  return hours;
 };
-
-export const addHours = (date: Date, hours: number): Date =>
-  new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours() + hours, date.getMinutes());
 
 /** "November 2026", "9 – 15 Nov 2026" or "Thu, 12 Nov 2026". */
 export const rangeLabel = (view: CalendarView, date: Date): string => {

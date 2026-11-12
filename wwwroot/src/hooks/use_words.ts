@@ -1,5 +1,5 @@
 // The logic of the Words page: the applied filter, the rows, their order and the Word History dialog.
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { errorMessageOf } from '../services/api_client';
 import {
   getWordHistory,
@@ -80,6 +80,9 @@ export const useWords = () => {
   const [words, setWords] = useState<FilteredWord[]>([]);
   const [sort, setSort] = useState<WordSort | null>(null);
   const [history, setHistory] = useState<OpenedHistory | null>(null);
+  // Only the answer of the latest request may change the page.
+  const latestFilter = useRef(0);
+  const latestHistory = useRef(0);
 
   const sortedWords = useMemo(() => {
     if (sort === null) {
@@ -92,6 +95,7 @@ export const useWords = () => {
   }, [words, sort]);
 
   const apply = async (draft: FilterDraft) => {
+    const request = ++latestFilter.current;
     const filter = toFilter(draft);
     setApplied({ ...draft, name: draft.name.trim() });
     setWords([]);
@@ -105,11 +109,17 @@ export const useWords = () => {
     setStatus('loading');
 
     try {
-      setWords(await getWordsByFilter(filter));
-      setStatus('loaded');
+      const found = await getWordsByFilter(filter);
+
+      if (request === latestFilter.current) {
+        setWords(found);
+        setStatus('loaded');
+      }
     } catch (caught) {
-      setError(errorMessageOf(caught));
-      setStatus('error');
+      if (request === latestFilter.current) {
+        setError(errorMessageOf(caught));
+        setStatus('error');
+      }
     }
   };
 
@@ -120,13 +130,19 @@ export const useWords = () => {
     }));
 
   const openHistory = async (word: FilteredWord) => {
+    const request = ++latestHistory.current;
     setHistory({ wordName: word.name, status: 'loading', rows: [] });
 
     try {
       const rows = await getWordHistory(word.id);
-      setHistory((current) => current && { ...current, status: 'loaded', rows });
+
+      if (request === latestHistory.current) {
+        setHistory((current) => current && { ...current, status: 'loaded', rows });
+      }
     } catch {
-      setHistory((current) => current && { ...current, status: 'error' });
+      if (request === latestHistory.current) {
+        setHistory((current) => current && { ...current, status: 'error' });
+      }
     }
   };
 
@@ -140,6 +156,9 @@ export const useWords = () => {
     apply,
     sortBy,
     openHistory,
-    closeHistory: () => setHistory(null),
+    closeHistory: () => {
+      latestHistory.current += 1;
+      setHistory(null);
+    },
   };
 };

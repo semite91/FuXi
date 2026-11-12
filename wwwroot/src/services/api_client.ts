@@ -36,7 +36,8 @@ const requireBaseUrl = (key: string): string => {
   const value: unknown = import.meta.env[key];
 
   if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`Configuration value ${key} is missing.`);
+    // Status null: the API was not reached.
+    throw new ApiError(null, `Configuration value ${key} is missing.`);
   }
 
   return value.trim().replace(TRAILING_SLASHES, '');
@@ -100,7 +101,11 @@ const send = async <T>(url: string, init: RequestInit): Promise<T> => {
 
   const text = await response.text();
 
-  return (text === '' ? undefined : JSON.parse(text)) as T;
+  try {
+    return (text === '' ? undefined : JSON.parse(text)) as T;
+  } catch {
+    throw new ApiError(response.status, FAILED_MESSAGE);
+  }
 };
 
 /** The base URL is read on each call, so a missing key rejects the call that needs it. */
