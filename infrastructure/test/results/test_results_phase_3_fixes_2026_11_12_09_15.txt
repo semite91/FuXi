@@ -1,0 +1,20 @@
+FuXi - Phase 3 - Frontend - Fixes requested by the Learner
+Run: 2026-11-12 09:15 UTC, Ubuntu 24.04, Node 22.23.4, Chromium (Playwright), against "npm run dev".
+
+Requests and results:
+FIXED  1 The Words page shook while the Filters panel opened.
+         Cause: the dialog took the focus while the panel was still off-screen at the start of its slide, so the
+         browser scrolled the whole Words card 218 px sideways and back. Measured in Chromium frame by frame.
+         Fix: the dialog takes and returns the focus with preventScroll, the panel container hides its overflow, and
+         the backdrop fades in. After the fix the card stays at 0 px while the panel slides in.
+         Test: "a dialog takes the focus without scrolling" (Vitest), failed before the fix.
+FIXED  2 "Enable notifications" and the permission state moved from the Configs page to the Settings page, under the
+         "Update embeddings" row. Tests M0-M8 now run on the Settings page and failed before the change; the Configs
+         page has a test that it shows no permission any more.
+FIXED  3 The header logo is the FuXi lettering cropped from /fuxi.jpeg, 44 px tall like the framed menu button
+         (measured: logo 97 x 44, menu button 44 x 44). The image is stored at three times that height.
+FIXED  4 The page background is #FCFAEE, the background of the FuXi logo (measured in the browser: rgb(252, 250, 238)).
+         The manifest and the theme-color use the same colour.
+
+Totals: npm run build: 0 TypeScript errors, no warning. npm test: 9 files, 135 tests, 135 passed, 0 failed.
+project.md and the scenario file are updated for items 2 to 4.

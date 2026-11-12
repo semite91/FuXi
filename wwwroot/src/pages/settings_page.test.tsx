@@ -1,6 +1,6 @@
 // Section P: the Settings page.
 import { act, fireEvent, screen } from '@testing-library/react';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { deferred, mockApi, networkFailure } from '../test/api_mock';
 import { renderApp } from '../test/render_app';
 
@@ -12,6 +12,14 @@ const openSettings = (route = {}) => {
 };
 
 const button = (name: string) => screen.getByRole('button', { name });
+
+const stubNotification = (permission: NotificationPermission, answer: NotificationPermission = permission) => {
+  const requestPermission = vi.fn(async () => answer);
+  vi.stubGlobal('Notification', { permission, requestPermission });
+
+  return requestPermission;
+};
+
 
 test('P1 the page shows its title and link without a call', () => {
   const api = openSettings();
@@ -72,4 +80,54 @@ test('P8 the backdrop and Escape close the dialogs', async () => {
   fireEvent.click(button('Close dialog'));
 
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+test('M0 "Enable notifications" is under the "Update embeddings" row', () => {
+  stubNotification('default');
+  openSettings();
+
+  const update = button('Update embeddings');
+  const enable = button('Enable notifications');
+  expect(update.compareDocumentPosition(enable) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test('M1 opening the Settings page does not ask and M2 "default" reads "not asked" with the button enabled', async () => {
+  const requestPermission = stubNotification('default');
+  openSettings();
+
+  expect(await screen.findByText('Notifications: not asked')).toBeInTheDocument();
+  expect(button('Enable notifications')).toBeEnabled();
+  expect(requestPermission).not.toHaveBeenCalled();
+});
+
+test.each([
+  ['M3', 'granted', 'Notifications: allowed'],
+  ['M4', 'denied', 'Notifications: blocked'],
+] as const)('%s permission %s reads "%s"', async (_, permission, text) => {
+  stubNotification(permission);
+  openSettings();
+
+  expect(await screen.findByText(text)).toBeInTheDocument();
+});
+
+test('M5 a browser without notifications reads "not supported" and disables the button', async () => {
+  vi.stubGlobal('Notification', undefined);
+  delete (window as { Notification?: unknown }).Notification;
+  openSettings();
+
+  expect(await screen.findByText('Notifications: not supported')).toBeInTheDocument();
+  expect(button('Enable notifications')).toBeDisabled();
+});
+
+test('M6 the button asks once, M7 the state follows the answer and M8 nothing is subscribed', async () => {
+  const requestPermission = stubNotification('default', 'granted');
+  const api = openSettings();
+  screen.getByText('Notifications: not asked');
+
+  await act(async () => fireEvent.click(button('Enable notifications')));
+
+  expect(requestPermission).toHaveBeenCalledTimes(1);
+  expect(screen.getByText('Notifications: allowed')).toBeInTheDocument();
+  expect(api.callsTo('GetVapidPublicKey')).toHaveLength(0);
+  expect(api.callsTo('SavePushSubscription')).toHaveLength(0);
 });

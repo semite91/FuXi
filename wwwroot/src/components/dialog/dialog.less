@@ -8,6 +8,7 @@
   display: flex;
   border-radius: @border-radius-card;
   background: var(--color-scrim);
+  animation: dialog-fade @transition-slide;
 
   &--center {
     padding: @space-xlarge;
@@ -17,6 +18,7 @@
 
   &--panel {
     justify-content: flex-end;
+    overflow: hidden;
   }
 }
 
@@ -66,6 +68,16 @@
     border-radius: @border-radius-card 0 0 @border-radius-card;
     box-shadow: @box-shadow-panel;
     animation: dialog-slide @transition-slide;
+  }
+}
+
+@keyframes dialog-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
   }
 }
 

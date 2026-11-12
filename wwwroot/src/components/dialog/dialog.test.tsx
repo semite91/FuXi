@@ -1,7 +1,7 @@
 // Section Q: dialogs and accessible names.
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { mockApi } from '../../test/api_mock';
 import { CONFIGS } from '../../test/data';
 import { renderApp } from '../../test/render_app';
@@ -52,4 +52,14 @@ test.each(['/words', '/config', '/settings', '/schedule'])('Q3 every button on %
   screen.getAllByRole('button').forEach((button) => {
     expect(button).toHaveAccessibleName();
   });
+});
+
+test('a dialog takes the focus without scrolling, so a sliding panel does not shake the page', () => {
+  const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+  render(<Opener />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+  expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+  focus.mockRestore();
 });

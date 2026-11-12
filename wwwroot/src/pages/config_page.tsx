@@ -1,16 +1,13 @@
 import ConfigEditDialog from '../components/config_edit_dialog/config_edit_dialog';
 import ConfigTable from '../components/config_table/config_table';
-import NotificationPermission from '../components/notification_permission/notification_permission';
 import PageCard from '../components/page_card/page_card';
 import StatusMessage from '../components/status_message/status_message';
-import { APP_TEXTS, CONFIG_TEXTS, PERMISSION_TEXTS } from '../constants/texts';
+import { APP_TEXTS, CONFIG_TEXTS } from '../constants/texts';
 import { useConfigs } from '../hooks/use_configs';
-import { useNotificationPermission } from '../hooks/use_notification_permission';
 import type { InputType } from '../services/config_service';
 
 const NUMBER_TYPE: InputType = 'Number';
 const DATE_TYPE: InputType = 'Date';
-const ASKABLE_PERMISSION = 'default';
 
 /** Every InputType without its own input is edited as text. */
 const inputTypeOf = (inputType: InputType) => {
@@ -23,7 +20,6 @@ const inputTypeOf = (inputType: InputType) => {
 
 const ConfigPage = () => {
   const configs = useConfigs();
-  const notification = useNotificationPermission();
   const { editing } = configs;
 
   return (
@@ -46,13 +42,6 @@ const ConfigPage = () => {
           onEdit={configs.edit}
         />
       )}
-
-      <NotificationPermission
-        stateText={PERMISSION_TEXTS[notification.permission]}
-        buttonLabel={PERMISSION_TEXTS.enable}
-        isDisabled={notification.permission !== ASKABLE_PERMISSION}
-        onEnable={() => void notification.enable()}
-      />
 
       {editing && (
         <ConfigEditDialog
