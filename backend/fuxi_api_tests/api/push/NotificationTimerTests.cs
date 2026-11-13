@@ -166,6 +166,34 @@ public sealed class NotificationTimerTests : IDisposable
         await restart.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task RestartDuringStopThatWaitsForRunningJobReturnsAtOnce()
+    {
+        // C12: the job blocks while it reads the VAPID keys, so the stop waits for it; the restart must not wait for the stop.
+        var blockingKeys = new BlockingConfigurationSource();
+        using var blockingServices = CreateServices(logs, new ConfigurationBuilder().Add(blockingKeys).Build());
+        var timer = blockingServices.GetRequiredService<QuartzNotificationTimer>();
+        await timer.RestartAsync(ShortInterval, Token);
+        await blockingKeys.Entered.WaitAsync(WaitLimit, Token);
+
+        Task stop;
+        try
+        {
+            stop = timer.StopAsync(Token);
+            await timer.RestartAsync(LongInterval, Token).WaitAsync(WaitLimit, Token);
+
+            stop.IsCompleted.Should().BeFalse();
+        }
+        finally
+        {
+            blockingKeys.Release();
+        }
+
+        await stop.WaitAsync(WaitLimit, Token);
+        timer.IsShutDown.Should().BeTrue();
+        logs.Of(typeof(QuartzNotificationTimer).FullName!).Should().ContainSingle(entry => entry.Level == LogLevel.Warning);
+    }
+
     public void Dispose()
     {
         services.Dispose();
@@ -187,17 +215,20 @@ public sealed class NotificationTimerTests : IDisposable
         logs.Of(typeof(NotificationJob).FullName!).Count(entry => entry.Level == LogLevel.Error && entry.Exception is not null);
 
     // The parts the job needs, with VAPID keys so a run goes on to the database.
-    private static ServiceProvider CreateServices(RecordingLoggerProvider logs)
-    {
-        var collection = new ServiceCollection();
-        collection.AddLogging(logging => logging.AddProvider(logs));
-        collection.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+    private static ServiceProvider CreateServices(RecordingLoggerProvider logs) =>
+        CreateServices(logs, new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 [VapidSettings.PUBLIC_KEY_KEY] = TEST_KEY,
                 [VapidSettings.PRIVATE_KEY_KEY] = TEST_KEY,
             })
             .Build());
+
+    private static ServiceProvider CreateServices(RecordingLoggerProvider logs, IConfiguration configuration)
+    {
+        var collection = new ServiceCollection();
+        collection.AddLogging(logging => logging.AddProvider(logs));
+        collection.AddSingleton(configuration);
         collection.AddSingleton(TimeProvider.System);
         collection.AddFuXiDatabase(UNREACHABLE_CONNECTION);
         collection.AddScoped<WordService>();
@@ -207,5 +238,34 @@ public sealed class NotificationTimerTests : IDisposable
         collection.AddSingleton<QuartzNotificationTimer>();
 
         return collection.BuildServiceProvider();
+    }
+
+    // A configuration whose VAPID public key read blocks the reading thread until it is released; it then reads as missing.
+    private sealed class BlockingConfigurationSource : ConfigurationProvider, IConfigurationSource
+    {
+        private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Completes once a job is blocked in the read.</summary>
+        public Task Entered => entered.Task;
+
+        public void Release() => released.TrySetResult();
+
+        public IConfigurationProvider Build(IConfigurationBuilder builder) => this;
+
+        public override bool TryGet(string key, out string? value)
+        {
+            if (key == VapidSettings.PUBLIC_KEY_KEY)
+            {
+                entered.TrySetResult();
+
+                // Blocking on purpose: it holds the Quartz.NET job; the limit only guards a failing test.
+                released.Task.Wait(WaitLimit);
+            }
+
+            value = null;
+
+            return false;
+        }
     }
 }

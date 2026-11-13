@@ -22,10 +22,17 @@ public sealed class PushSendingNowTests
     private const string CONFIGURED_KEY = "configured-key-of-a-test";
     private const string WORD_ID_SEPARATOR = ",";
 
-    // JSON escapes this letter as \u015F, six bytes, so the size must be counted on the escaped JSON.
-    private const char ESCAPED_LETTER = 'ş';
-    private const int ESCAPED_LETTERS_PER_NAME = 50;
+    // UTF-8 writes this letter in two bytes, so the size must be counted in bytes, not in characters.
+    private const char NON_ASCII_LETTER = 'ş';
+    private const int NON_ASCII_LETTER_BYTES = 2;
+    private const int NON_ASCII_LETTERS_PER_NAME = 150;
     private const int LONG_WORD_COUNT = 20;
+    private const string NON_ASCII_NAME = "ışık çiçeği";
+    private const string UNICODE_ESCAPE = "\\u";
+    private const string NAME_WITH_JSON_SPECIAL_CHARACTERS = "say \"hi\" \\ then\nstop";
+
+    // A Word whose JSON fills well over half of a payload, so a second one of the same size never fits next to it.
+    private const int MORE_THAN_HALF_PAYLOAD_NAME = NotificationPayload.MAX_PAYLOAD_BYTES / 2 + 1;
 
     // {"title":"","wordIds":""} and the "D" text of a Guid.
     private const int EMPTY_PAYLOAD_BYTES = 25;
@@ -54,10 +61,10 @@ public sealed class PushSendingNowTests
     {
         // E8
         var words = Enumerable.Range(0, LONG_WORD_COUNT)
-            .Select(number => new NotificationWord(Guid.NewGuid(), new string(ESCAPED_LETTER, ESCAPED_LETTERS_PER_NAME) + number))
+            .Select(number => new NotificationWord(Guid.NewGuid(), new string(NON_ASCII_LETTER, NON_ASCII_LETTERS_PER_NAME) + number))
             .ToList();
 
-        var json = NotificationPayload.FittingJson(words)!;
+        var json = NotificationPayload.Fit(words).Json!;
 
         var count = ReadField(json, WORD_IDS_FIELD).Split(WORD_ID_SEPARATOR).Length;
         count.Should().BeInRange(1, LONG_WORD_COUNT - 1);
@@ -71,7 +78,7 @@ public sealed class PushSendingNowTests
     public void PayloadOfExactlyMaxPayloadBytesIsBuilt()
     {
         // E8
-        var json = NotificationPayload.FittingJson([AsciiWord(LONGEST_FITTING_NAME)]);
+        var json = NotificationPayload.Fit([AsciiWord(LONGEST_FITTING_NAME)]).Json;
 
         Encoding.UTF8.GetByteCount(json!).Should().Be(NotificationPayload.MAX_PAYLOAD_BYTES);
     }
@@ -79,10 +86,69 @@ public sealed class PushSendingNowTests
     [Fact]
     public void WordThatAloneExceedsMaxPayloadBytesGivesNoPayload()
     {
-        // E8: not even the first Word fits, so there is nothing to send.
-        var json = NotificationPayload.FittingJson([AsciiWord(LONGEST_FITTING_NAME + 1), new(Guid.Parse(RIVER_ID), RIVER)]);
+        // E8: the only Word does not fit, so there is nothing to send, and the Word is named as too long.
+        var payload = NotificationPayload.Fit([AsciiWord(LONGEST_FITTING_NAME + 1)]);
 
-        json.Should().BeNull();
+        payload.Json.Should().BeNull();
+        payload.TooLongWordIds.Should().Equal(Guid.Parse(APPLE_ID));
+    }
+
+    [Fact]
+    public void TooLongFirstWordIsSkippedAndNextWordsAreKept()
+    {
+        // E11
+        NotificationWord river = new(Guid.Parse(RIVER_ID), RIVER);
+
+        var payload = NotificationPayload.Fit([AsciiWord(LONGEST_FITTING_NAME + 1), river]);
+
+        payload.Json.Should().Be(NotificationPayload.From([river]).ToJson());
+        payload.TooLongWordIds.Should().Equal(Guid.Parse(APPLE_ID));
+    }
+
+    [Fact]
+    public void WordThatNoLongerFitsIsSkippedAndSmallerNextWordIsAdded()
+    {
+        // E11: the second Word fits alone but not next to the first, so it is left out without a warning; the third still fits.
+        NotificationWord first = new(Guid.NewGuid(), new string(ASCII_LETTER, MORE_THAN_HALF_PAYLOAD_NAME));
+        NotificationWord second = new(Guid.NewGuid(), new string(ASCII_LETTER, MORE_THAN_HALF_PAYLOAD_NAME));
+        NotificationWord river = new(Guid.Parse(RIVER_ID), RIVER);
+
+        var payload = NotificationPayload.Fit([first, second, river]);
+
+        payload.Json.Should().Be(NotificationPayload.From([first, river]).ToJson());
+        payload.TooLongWordIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void NonAsciiLettersAreWrittenAsUtf8()
+    {
+        // E12
+        var json = NotificationPayload.Fit([new(Guid.Parse(APPLE_ID), NON_ASCII_NAME)]).Json!;
+
+        json.Should().Contain(NON_ASCII_NAME).And.NotContain(UNICODE_ESCAPE);
+        ReadField(json, TITLE_FIELD).Should().Be(NON_ASCII_NAME);
+    }
+
+    [Fact]
+    public void PayloadOfExactlyMaxPayloadBytesWithNonAsciiNameIsBuilt()
+    {
+        // E12: the size is counted with the same relaxed encoder the payload is written with.
+        var name = new string(NON_ASCII_LETTER, LONGEST_FITTING_NAME / NON_ASCII_LETTER_BYTES);
+
+        var fitting = NotificationPayload.Fit([new(Guid.Parse(APPLE_ID), name)]).Json;
+        var tooLong = NotificationPayload.Fit([new(Guid.Parse(APPLE_ID), name + ASCII_LETTER)]).Json;
+
+        Encoding.UTF8.GetByteCount(fitting!).Should().Be(NotificationPayload.MAX_PAYLOAD_BYTES);
+        tooLong.Should().BeNull();
+    }
+
+    [Fact]
+    public void QuotesBackslashesAndControlCharactersAreStillEscaped()
+    {
+        // E12: the relaxed encoder still writes valid JSON.
+        var json = NotificationPayload.Fit([new(Guid.Parse(APPLE_ID), NAME_WITH_JSON_SPECIAL_CHARACTERS)]).Json!;
+
+        ReadField(json, TITLE_FIELD).Should().Be(NAME_WITH_JSON_SPECIAL_CHARACTERS);
     }
 
     [Theory]

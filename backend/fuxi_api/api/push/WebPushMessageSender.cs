@@ -12,11 +12,13 @@ public sealed class WebPushMessageSender(HttpClient httpClient) : IPushMessageSe
     /// <summary>How long one request to a push service may take.</summary>
     public static readonly TimeSpan REQUEST_TIMEOUT = TimeSpan.FromSeconds(30);
 
-    public IPushRun StartRun(VapidDetails vapid)
-    {
-        var authentication = CreateAuthentication(vapid);
+    private readonly PushServiceClient pushServiceClient = new(httpClient);
 
-        return new WebPushRun(new PushServiceClient(httpClient) { DefaultAuthentication = authentication }, authentication);
+    // Each push builds and disposes its own authentication: its ECDsa signer is not safe to share between parallel pushes.
+    public async Task SendAsync(Database.Entities.PushSubscription subscription, string payload, VapidDetails vapid, CancellationToken cancellationToken)
+    {
+        using var authentication = CreateAuthentication(vapid);
+        await pushServiceClient.RequestPushMessageDeliveryAsync(ToTarget(subscription), new PushMessage(payload), authentication, cancellationToken);
     }
 
     private static VapidAuthentication CreateAuthentication(VapidDetails vapid)
@@ -38,21 +40,12 @@ public sealed class WebPushMessageSender(HttpClient httpClient) : IPushMessageSe
         }
     }
 
-    // One client and one authentication for every push of the run; the authentication is disposed with the run.
-    private sealed class WebPushRun(PushServiceClient pushServiceClient, VapidAuthentication authentication) : IPushRun
+    private static PushSubscription ToTarget(Database.Entities.PushSubscription subscription)
     {
-        public Task SendAsync(Database.Entities.PushSubscription subscription, string payload, CancellationToken cancellationToken) =>
-            pushServiceClient.RequestPushMessageDeliveryAsync(ToTarget(subscription), new PushMessage(payload), cancellationToken);
+        var target = new PushSubscription { Endpoint = subscription.Endpoint };
+        target.SetKey(PushEncryptionKeyName.P256DH, subscription.P256dh);
+        target.SetKey(PushEncryptionKeyName.Auth, subscription.Auth);
 
-        public void Dispose() => authentication.Dispose();
-
-        private static PushSubscription ToTarget(Database.Entities.PushSubscription subscription)
-        {
-            var target = new PushSubscription { Endpoint = subscription.Endpoint };
-            target.SetKey(PushEncryptionKeyName.P256DH, subscription.P256dh);
-            target.SetKey(PushEncryptionKeyName.Auth, subscription.Auth);
-
-            return target;
-        }
+        return target;
     }
 }

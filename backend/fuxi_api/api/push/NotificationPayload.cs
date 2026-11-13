@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using FuXi.Api.Words;
 
@@ -16,7 +17,10 @@ public sealed record NotificationPayload(string Title, string WordIds)
     private const string TITLE_SEPARATOR = ", ";
     private const string WORD_ID_SEPARATOR = ",";
 
-    private static readonly JsonSerializerOptions JSON_OPTIONS = new(JsonSerializerDefaults.Web);
+    // Relaxed escaping writes letters such as 'ş' as UTF-8 instead of \uXXXX, so more Words fit. Safe here: the service worker
+    // reads the payload with JSON.parse and never puts it into HTML. Quotes, backslashes and control characters are still escaped.
+    private static readonly JsonSerializerOptions JSON_OPTIONS =
+        new(JsonSerializerDefaults.Web) { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     // The JSON of a payload without Words, and the bytes each Word after the first adds between the names and between the ids.
     private static readonly int EMPTY_PAYLOAD_BYTES = Utf8Length(new NotificationPayload(string.Empty, string.Empty).ToJson());
@@ -28,49 +32,50 @@ public sealed record NotificationPayload(string Title, string WordIds)
         new(string.Join(TITLE_SEPARATOR, words.Select(word => word.Name)), string.Join(WORD_ID_SEPARATOR, words.Select(word => word.Id)));
 
     /// <summary>
-    /// The JSON of the first Words, in their order, whose payload fits in <see cref="MAX_PAYLOAD_BYTES"/>; the other Words are left out.
-    /// Null when not even the first Word fits.
+    /// Goes through the Words once, in their order, and keeps each Word that still fits in <see cref="MAX_PAYLOAD_BYTES"/>.
+    /// A Word that does not fit is left out and the next ones are tried; a Word that alone is too long is also named.
     /// </summary>
-    public static string? FittingJson(IReadOnlyList<NotificationWord> words)
+    public static FittedPayload Fit(IReadOnlyList<NotificationWord> words)
     {
-        var count = CountFittingWords(words);
-        if (count == 0)
+        var fitting = new List<NotificationWord>();
+        var tooLongWordIds = new List<Guid>();
+        var size = EMPTY_PAYLOAD_BYTES;
+        foreach (var word in words)
         {
-            return null;
+            var wordBytes = WordBytes(word);
+            if (EMPTY_PAYLOAD_BYTES + wordBytes > MAX_PAYLOAD_BYTES)
+            {
+                tooLongWordIds.Add(word.Id);
+                continue;
+            }
+
+            var addedBytes = wordBytes + (fitting.Count == 0 ? 0 : SEPARATOR_BYTES);
+            if (size + addedBytes <= MAX_PAYLOAD_BYTES)
+            {
+                fitting.Add(word);
+                size += addedBytes;
+            }
         }
 
-        var json = From(words.Take(count).ToList()).ToJson();
-
-        // The size was counted Word by Word; this proves the count against the real JSON.
-        return Utf8Length(json) <= MAX_PAYLOAD_BYTES
-            ? json
-            : throw new InvalidOperationException($"The notification payload is longer than {MAX_PAYLOAD_BYTES} bytes.");
+        return new FittedPayload(fitting.Count == 0 ? null : CheckedJson(fitting), tooLongWordIds);
     }
 
     /// <summary>The JSON the service worker reads: {"title": ..., "wordIds": ...}.</summary>
     public string ToJson() => JsonSerializer.Serialize(this, JSON_OPTIONS);
 
-    // Adds up the escaped bytes each Word adds to the JSON, so the payload is not serialised again for every Word.
-    private static int CountFittingWords(IReadOnlyList<NotificationWord> words)
+    // The size was counted Word by Word, so the payload is not serialised again for every Word; this proves it against the real JSON.
+    private static string CheckedJson(IReadOnlyList<NotificationWord> words)
     {
-        var size = EMPTY_PAYLOAD_BYTES;
-        var count = 0;
-        foreach (var word in words)
-        {
-            size += WordBytes(word) + (count == 0 ? 0 : SEPARATOR_BYTES);
-            if (size > MAX_PAYLOAD_BYTES)
-            {
-                break;
-            }
+        var json = From(words).ToJson();
 
-            count++;
-        }
-
-        return count;
+        return Utf8Length(json) <= MAX_PAYLOAD_BYTES
+            ? json
+            : throw new InvalidOperationException($"The notification payload is longer than {MAX_PAYLOAD_BYTES} bytes.");
     }
 
-    // The name as the serialiser escapes it (the default encoder, as JSON_OPTIONS sets none), and the id.
-    private static int WordBytes(NotificationWord word) => JsonEncodedText.Encode(word.Name).EncodedUtf8Bytes.Length + WORD_ID_BYTES;
+    // The name as the serialiser escapes it (the same encoder as JSON_OPTIONS), and the id.
+    private static int WordBytes(NotificationWord word) =>
+        JsonEncodedText.Encode(word.Name, JavaScriptEncoder.UnsafeRelaxedJsonEscaping).EncodedUtf8Bytes.Length + WORD_ID_BYTES;
 
     private static int Utf8Length(string text) => Encoding.UTF8.GetByteCount(text);
 }

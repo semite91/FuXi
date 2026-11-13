@@ -1,4 +1,5 @@
 using FluentAssertions;
+using FuXi.Api.Database;
 using FuXi.Api.Database.Entities;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -12,6 +13,10 @@ public sealed class GetWordsByActiveTests : IDisposable
     private const int ADDABLE_WORD_COUNT = 3;
     private const int ONE_MINUTE = 1;
     private const string WAITING_NAME = "waiting";
+    private const string NEWER_NAME = "a-newer";
+    private const string OLDER_NAME = "b-older";
+    private const string NEVER_SHOWN_NAME = "c-never-shown";
+    private const int OLDER_SHOWN_PERIODS = 2;
 
     private readonly DatabaseApi api = new();
 
@@ -86,15 +91,35 @@ public sealed class GetWordsByActiveTests : IDisposable
         itemsAtDueDate.Ids().Should().Equal(word.Id);
     }
 
+    [Fact]
+    public async Task ItemsComeInOrderOfGetNotificationWords()
+    {
+        // Phase 4 E10: never shown first, then the oldest shown, then by name; added out of order.
+        var expected = api.Arrange(context =>
+        {
+            var newer = AddWordShownAt(context, NEWER_NAME, TestData.Now.AddMinutes(-TestData.SEEDED_ROTATION_PERIOD));
+            var older = AddWordShownAt(context, OLDER_NAME, TestData.Now.AddMinutes(-TestData.SEEDED_ROTATION_PERIOD * OLDER_SHOWN_PERIODS));
+            var neverShown = AddWordShownAt(context, NEVER_SHOWN_NAME, lastShownDate: null);
+
+            return new[] { neverShown, older, newer };
+        });
+
+        var items = await api.Client.GetItemsAsync(ApiRoutes.GET_WORDS_BY_ACTIVE);
+
+        items.Ids().Should().Equal(expected.Select(word => word.Id));
+    }
+
     public void Dispose() => api.Dispose();
 
     // The only Word is already in the Rotation, so the top-up has nothing to add.
     private Word ArrangeWordShownAt(DateTimeOffset? lastShownDate) =>
-        api.Arrange(context =>
-        {
-            var word = TestData.AddWord(context);
-            TestData.AddRotatedWord(context, word, lastShownDate: lastShownDate);
+        api.Arrange(context => AddWordShownAt(context, TestData.WORD_NAME, lastShownDate));
 
-            return word;
-        });
+    private static Word AddWordShownAt(FuXiDbContext context, string name, DateTimeOffset? lastShownDate)
+    {
+        var word = TestData.AddWord(context, name);
+        TestData.AddRotatedWord(context, word, lastShownDate: lastShownDate);
+
+        return word;
+    }
 }

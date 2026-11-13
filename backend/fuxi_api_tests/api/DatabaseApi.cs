@@ -68,12 +68,15 @@ public sealed class DatabaseApi(bool startsNotificationTimer = false) : IDisposa
     }
 
     /// <summary>Runs the timed task's work once, the way a Quartz.NET firing does.</summary>
-    public async Task SendDueWordsAsync()
+    public Task SendDueWordsAsync() => SendDueWordsWithTokenAsync(TestContext.Current.CancellationToken);
+
+    /// <summary>Runs the timed task's work once with the given token, as Quartz.NET passes one that a shutdown cancels.</summary>
+    public async Task SendDueWordsWithTokenAsync(CancellationToken cancellationToken)
     {
         await using var scope = StartedServices().CreateAsyncScope();
         var notificationService = scope.ServiceProvider.GetRequiredService<NotificationService>();
 
-        await notificationService.SendDueWordsAsync(TestContext.Current.CancellationToken);
+        await notificationService.SendDueWordsAsync(cancellationToken);
     }
 
     public void Dispose()

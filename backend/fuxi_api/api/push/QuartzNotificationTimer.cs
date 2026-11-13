@@ -24,10 +24,13 @@ public sealed partial class QuartzNotificationTimer(IServiceScopeFactory scopeFa
     private readonly SemaphoreSlim schedulerLock = new(1, 1);
     private StandaloneSchedulerFactory? schedulerFactory;
     private IScheduler? scheduler;
+
+    // The scheduler StopAsync took out, kept only to report its status.
+    private IScheduler? stoppedScheduler;
     private bool isStopped;
 
     /// <summary>True once the scheduler was shut down.</summary>
-    public bool IsShutDown => scheduler?.Status == SchedulerStatus.Shutdown;
+    public bool IsShutDown => stoppedScheduler?.Status == SchedulerStatus.Shutdown;
 
     /// <summary>
     /// Reads the Notification Period and schedules the trigger. When the period cannot be read (database down, value missing
@@ -84,21 +87,29 @@ public sealed partial class QuartzNotificationTimer(IServiceScopeFactory scopeFa
     public async Task<SchedulerMetadata?> ReadMetadataAsync(CancellationToken cancellationToken) =>
         scheduler is null ? null : await scheduler.GetMetadata(cancellationToken);
 
-    /// <summary>Marks the timer stopped, shuts the scheduler down and lets a running job finish.</summary>
+    /// <summary>
+    /// Marks the timer stopped, shuts the scheduler down and lets a running job finish. The lock is held only to take the
+    /// scheduler out, so a RestartAsync during the wait returns at once instead of waiting for the job.
+    /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        IScheduler? stopping;
         await schedulerLock.WaitAsync(cancellationToken);
         try
         {
             isStopped = true;
-            if (scheduler is not null && scheduler.Status != SchedulerStatus.Shutdown)
-            {
-                await scheduler.Shutdown(waitForJobsToComplete: true, cancellationToken);
-            }
+            stopping = scheduler;
+            scheduler = null;
+            stoppedScheduler ??= stopping;
         }
         finally
         {
             schedulerLock.Release();
+        }
+
+        if (stopping is not null)
+        {
+            await stopping.Shutdown(waitForJobsToComplete: true, cancellationToken);
         }
     }
 

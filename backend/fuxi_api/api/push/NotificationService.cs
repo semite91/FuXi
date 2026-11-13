@@ -40,14 +40,23 @@ public sealed partial class NotificationService(
         }
 
         // Words that do not fit in one push message stay Due and are sent by a later run.
-        var payload = NotificationPayload.FittingJson(words);
-        if (payload is null)
+        var payload = NotificationPayload.Fit(words);
+        LogTooLongWords(payload.TooLongWordIds);
+        if (payload.Json is null)
         {
-            LogFirstWordTooLong(logger, words[0].Id, NotificationPayload.MAX_PAYLOAD_BYTES);
             return;
         }
 
-        await SendToSubscriptionsAsync(payload, vapid, cancellationToken);
+        await SendToSubscriptionsAsync(payload.Json, vapid, cancellationToken);
+    }
+
+    // A Word whose name alone is too long for a push message is never sent, so each run warns about it.
+    private void LogTooLongWords(IReadOnlyList<Guid> wordIds)
+    {
+        foreach (var wordId in wordIds)
+        {
+            LogWordTooLong(logger, wordId, NotificationPayload.MAX_PAYLOAD_BYTES);
+        }
     }
 
     // A window holds now from its StartDate on, up to but not including its EndDate.
@@ -67,16 +76,16 @@ public sealed partial class NotificationService(
         var unknownIds = await SendInParallelAsync(subscriptions, payload, vapid, cancellationToken);
         if (unknownIds.Count > 0)
         {
-            await DeleteSubscriptionsAsync(unknownIds, cancellationToken);
+            // Not cancelled: the answers are already known, and the one short delete must not lose them when the run is stopped.
+            await DeleteSubscriptionsAsync(unknownIds, CancellationToken.None);
         }
     }
 
-    // One run, so the VAPID authentication is built once; it is disposed once every push answered.
+    // Returns the ids of the subscriptions the push services no longer know.
     private async Task<IReadOnlyList<Guid>> SendInParallelAsync(
         IReadOnlyList<PushSubscription> subscriptions, string payload, VapidDetails vapid, CancellationToken cancellationToken)
     {
-        using var run = pushMessageSender.StartRun(vapid);
-        var unknown = await Task.WhenAll(subscriptions.Select(subscription => SendAsync(run, subscription, payload, cancellationToken)));
+        var unknown = await Task.WhenAll(subscriptions.Select(subscription => SendAsync(subscription, payload, vapid, cancellationToken)));
 
         return subscriptions.Where((_, index) => unknown[index]).Select(subscription => subscription.Id).ToList();
     }
@@ -101,12 +110,13 @@ public sealed partial class NotificationService(
         return allowed;
     }
 
-    // One failing subscription never stops the others. Returns true when the push service no longer knows the subscription.
-    private async Task<bool> SendAsync(IPushRun run, PushSubscription subscription, string payload, CancellationToken cancellationToken)
+    // One failing subscription never stops the others, and a cancelled push is one more failure, so every push answers and the
+    // deletes still run. Returns true when the push service no longer knows the subscription.
+    private async Task<bool> SendAsync(PushSubscription subscription, string payload, VapidDetails vapid, CancellationToken cancellationToken)
     {
         try
         {
-            await run.SendAsync(subscription, payload, cancellationToken);
+            await pushMessageSender.SendAsync(subscription, payload, vapid, cancellationToken);
 
             return false;
         }
@@ -114,7 +124,7 @@ public sealed partial class NotificationService(
         {
             return true;
         }
-        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception exception)
         {
             LogSendFailed(logger, exception, subscription.Id);
 
@@ -132,8 +142,8 @@ public sealed partial class NotificationService(
     [LoggerMessage(Level = LogLevel.Warning, Message = "VAPID_PUBLIC_KEY or VAPID_PRIVATE_KEY is empty, so no push notification is sent.")]
     private static partial void LogVapidKeysMissing(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "The name of Word {WordId} alone makes the push message longer than {MaxBytes} bytes, so nothing is sent this run.")]
-    private static partial void LogFirstWordTooLong(ILogger logger, Guid wordId, int maxBytes);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The name of Word {WordId} alone makes the push message longer than {MaxBytes} bytes, so the Word is skipped.")]
+    private static partial void LogWordTooLong(ILogger logger, Guid wordId, int maxBytes);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Push Subscription {SubscriptionId} points to a host that is not a known push service; it is skipped.")]
     private static partial void LogEndpointNotAllowed(ILogger logger, Guid subscriptionId);

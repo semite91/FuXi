@@ -24,6 +24,13 @@ public sealed class NotificationServiceTests : IDisposable
     private const string UNKNOWN_HOST_ENDPOINT = "https://push.example.com/third";
     private const string APPLE = "apple";
     private const string RIVER = "river";
+    private const string ALPHA = "alpha";
+    private const string BRAVO = "bravo";
+    private const string CHARLIE = "charlie";
+    private const string DELTA = "delta";
+    private const string ECHO = "echo";
+    private const int NEWER_SHOWN_PERIODS = 2;
+    private const int OLDER_SHOWN_PERIODS = 3;
     private const string TITLE_SEPARATOR = ", ";
     private const char WORD_ID_SEPARATOR = ',';
     private const string TITLE_FIELD = "title";
@@ -41,6 +48,7 @@ public sealed class NotificationServiceTests : IDisposable
     private const int LONG_NAME_LENGTH = 300;
     private const int LONG_WORD_COUNT = 20;
     private const char LONG_NAME_LETTER = 'x';
+    private const char FIRST_SORTED_LETTER = 'a';
 
     private static readonly DateTimeOffset Now = TestData.Now;
 
@@ -182,22 +190,38 @@ public sealed class NotificationServiceTests : IDisposable
 
         await api.SendDueWordsAsync();
 
-        var title = TitleOf(api.PushSender.Sent.Single().Payload);
-        title.Split(TITLE_SEPARATOR).Should().BeEquivalentTo(APPLE, RIVER);
-        title.Should().BeOneOf(APPLE + TITLE_SEPARATOR + RIVER, RIVER + TITLE_SEPARATOR + APPLE);
+        TitleOf(api.PushSender.Sent.Single().Payload).Should().Be(APPLE + TITLE_SEPARATOR + RIVER);
     }
 
     [Fact]
     public async Task WordIdsAreJoinedWithCommaInOrderOfNames()
     {
-        // E4
+        // E4: both Words were never shown, so they come in the order of their names.
         var words = ArrangeAppleAndRiver();
 
         await api.SendDueWordsAsync();
 
-        var payload = api.PushSender.Sent.Single().Payload;
-        var namesById = words.ToDictionary(word => word.Id, word => word.Name);
-        WordIdsOf(payload).Select(id => namesById[id]).Should().Equal(TitleOf(payload).Split(TITLE_SEPARATOR));
+        WordIdsOf(api.PushSender.Sent.Single().Payload).Should().Equal(words.Select(word => word.Id));
+    }
+
+    [Fact]
+    public async Task DueWordsComeNeverShownFirstThenOldestShownThenByName()
+    {
+        // E10: the Words are added out of order, so only an ORDER BY gives the expected list.
+        var expected = api.Arrange(context =>
+        {
+            var alpha = AddShownWord(context, ALPHA, Now.AddMinutes(-ROTATION_PERIOD_MINUTES * NEWER_SHOWN_PERIODS));
+            var echo = AddShownWord(context, ECHO, Now.AddMinutes(-ROTATION_PERIOD_MINUTES * OLDER_SHOWN_PERIODS));
+            var delta = AddNeverShownWord(context, DELTA);
+            var charlie = AddShownWord(context, CHARLIE, Now.AddMinutes(-ROTATION_PERIOD_MINUTES * OLDER_SHOWN_PERIODS));
+            var bravo = AddNeverShownWord(context, BRAVO);
+
+            return new[] { bravo, delta, charlie, echo, alpha };
+        });
+
+        var words = await api.GetNotificationWordsAsync(Now);
+
+        words.Select(word => word.Name).Should().Equal(expected.Select(word => word.Name));
     }
 
     [Fact]
@@ -261,19 +285,38 @@ public sealed class NotificationServiceTests : IDisposable
     [Fact]
     public async Task WordTooLongForOnePushSendsNothingAndLogsWarning()
     {
-        // E8: not even the first Word fits, so nothing is sent this run.
-        api.Arrange(context =>
+        // E8: the only Due Word does not fit, so nothing is sent this run and the warning names the Word.
+        var word = api.Arrange(context =>
         {
-            var word = TestData.AddWord(context, new string(LONG_NAME_LETTER, NotificationPayload.MAX_PAYLOAD_BYTES));
-            TestData.AddRotatedWord(context, word);
             TestData.AddPushSubscription(context, FCM_ENDPOINT);
+
+            return AddNeverShownWord(context, TooLongName(LONG_NAME_LETTER));
         });
         AddOpenWindow();
 
         await api.SendDueWordsAsync();
 
         api.PushSender.Sent.Should().BeEmpty();
-        api.Logs.Of(typeof(NotificationService).FullName!).Should().ContainSingle(entry => entry.Level == LogLevel.Warning);
+        WarningLogs().Should().ContainSingle().Which.Message.Should().Contain(word.Id.ToString());
+    }
+
+    [Fact]
+    public async Task TooLongFirstWordIsSkippedWithWarningAndNextWordsAreSent()
+    {
+        // E11: the too long name sorts before apple and river, so it is the first Due Word.
+        var (tooLong, apple, river) = api.Arrange(context =>
+        {
+            TestData.AddPushSubscription(context, FCM_ENDPOINT);
+
+            return (AddNeverShownWord(context, TooLongName(FIRST_SORTED_LETTER)), AddNeverShownWord(context, APPLE), AddNeverShownWord(context, RIVER));
+        });
+        AddOpenWindow();
+
+        await api.SendDueWordsAsync();
+
+        (await api.GetNotificationWordsAsync(Now))[0].Id.Should().Be(tooLong.Id);
+        WordIdsOf(api.PushSender.Sent.Single().Payload).Should().Equal(apple.Id, river.Id);
+        WarningLogs().Should().ContainSingle().Which.Message.Should().Contain(tooLong.Id.ToString());
     }
 
     [Fact]
@@ -399,21 +442,6 @@ public sealed class NotificationServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task VapidAuthenticationIsBuiltOncePerRun()
-    {
-        // F11: one run for both subscriptions, disposed after the pushes.
-        ArrangeDueWordAndSubscription();
-        api.Arrange(context => TestData.AddPushSubscription(context, MOZILLA_ENDPOINT));
-        AddOpenWindow();
-
-        await api.SendDueWordsAsync();
-
-        api.PushSender.Sent.Should().HaveCount(2);
-        api.PushSender.RunsStarted.Should().Be(1);
-        api.PushSender.RunsDisposed.Should().Be(1);
-    }
-
-    [Fact]
     public async Task SlowEndpointDoesNotHoldOtherEndpoint()
     {
         // F12: both pushes are held; each is called while the other has not answered, so they are not sent one after another.
@@ -432,6 +460,27 @@ public sealed class NotificationServiceTests : IDisposable
         mozillaAnswer.SetResult();
         await run;
         api.PushSender.Sent.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task CancelledSendKeepsItsSubscriptionAndGoneOneIsStillDeleted()
+    {
+        // F13: the run is cancelled while the Mozilla push waits for its answer; the 410 that came first is not lost.
+        ArrangeDueWordAndSubscription();
+        api.Arrange(context => TestData.AddPushSubscription(context, MOZILLA_ENDPOINT));
+        AddOpenWindow();
+        api.PushSender.FailFor(FCM_ENDPOINT, new PushServiceClientException(GONE, HttpStatusCode.Gone));
+        api.PushSender.HoldFor(MOZILLA_ENDPOINT);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+
+        var run = api.SendDueWordsWithTokenAsync(cancellation.Token);
+        await Task.WhenAll(api.PushSender.CalledAsync(FCM_ENDPOINT), api.PushSender.CalledAsync(MOZILLA_ENDPOINT))
+            .WaitAsync(WaitLimit, TestContext.Current.CancellationToken);
+        await cancellation.CancelAsync();
+
+        await run.WaitAsync(WaitLimit, TestContext.Current.CancellationToken);
+        StoredEndpoints().Should().Equal(MOZILLA_ENDPOINT);
+        ErrorLogs().Should().ContainSingle().Which.Exception.Should().BeAssignableTo<OperationCanceledException>();
     }
 
     [Fact]
@@ -495,6 +544,14 @@ public sealed class NotificationServiceTests : IDisposable
         return word;
     }
 
+    private static Word AddNeverShownWord(FuXiDbContext context, string name)
+    {
+        var word = TestData.AddWord(context, name);
+        TestData.AddRotatedWord(context, word);
+
+        return word;
+    }
+
     private void AddOpenWindow() => AddWindow(Now.AddHours(-WINDOW_HOURS), Now.AddHours(WINDOW_HOURS));
 
     private void AddWindow(DateTimeOffset startDate, DateTimeOffset endDate) =>
@@ -510,6 +567,11 @@ public sealed class NotificationServiceTests : IDisposable
                 .Select(rotated => new { rotated.WordId, rotated.Counter, rotated.LastShownDate }).ToList(),
             ShownCounts = context.Words.AsNoTracking().OrderBy(word => word.Id).Select(word => new { word.Id, word.ShownCount }).ToList(),
         });
+
+    private static string TooLongName(char letter) => new(letter, NotificationPayload.MAX_PAYLOAD_BYTES);
+
+    private IReadOnlyList<LogEntry> WarningLogs() =>
+        api.Logs.Of(typeof(NotificationService).FullName!).Where(entry => entry.Level == LogLevel.Warning).ToList();
 
     private IReadOnlyList<LogEntry> ErrorLogs() =>
         api.Logs.Of(typeof(NotificationService).FullName!).Where(entry => entry.Level >= LogLevel.Error).ToList();
