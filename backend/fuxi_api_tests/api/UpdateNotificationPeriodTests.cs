@@ -19,7 +19,6 @@ public sealed class UpdateNotificationPeriodTests : IDisposable
     private const string MAXIMUM_VALUE = "525600";
     private const int MAXIMUM_PERIOD_MINUTES = 525600;
     private const string ABOVE_MAXIMUM_VALUE = "525601";
-    private const string IDLE_TIMER_TYPE = "FuXi.Api.Push.IdleNotificationTimer";
 
     private static readonly TimeSpan NewInterval = TimeSpan.FromMinutes(NEW_PERIOD_MINUTES);
 
@@ -122,21 +121,21 @@ public sealed class UpdateNotificationPeriodTests : IDisposable
     }
 
     [Fact]
-    public void IdleTimerIsRegisteredAsSingleton()
+    public void QuartzTimerIsRegisteredAsSingleton()
     {
-        // M9
+        // M9, updated by Phase 4 C1: the Quartz.NET timer replaced the idle timer.
         using var api = new NowApi(new NowApiSettings { ReplacesServices = false });
 
         var timer = api.Services.GetRequiredService<INotificationTimer>();
 
-        timer.GetType().FullName.Should().Be(IDLE_TIMER_TYPE);
+        timer.Should().BeOfType<QuartzNotificationTimer>();
         api.Services.GetRequiredService<INotificationTimer>().Should().BeSameAs(timer);
     }
 
     [Fact]
-    public async Task IdleTimerRestartsWithoutError()
+    public async Task QuartzTimerRestartsWithoutError()
     {
-        // M10
+        // M10, updated by Phase 4: the restart needs no database.
         using var api = new NowApi(new NowApiSettings { ReplacesServices = false });
         var timer = api.Services.GetRequiredService<INotificationTimer>();
 

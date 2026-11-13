@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import App from './app';
+import { listenForNavigation } from './services/service_worker_message_service';
 import '@fontsource/manrope/latin-500.css';
 import '@fontsource/manrope/latin-ext-500.css';
 import '@fontsource/manrope/latin-600.css';
@@ -45,4 +46,5 @@ const renderApp = (): void => {
 };
 
 registerServiceWorker();
+listenForNavigation();
 renderApp();

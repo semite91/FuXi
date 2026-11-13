@@ -200,15 +200,21 @@ public sealed class WordService(FuXiDbContext database, TimeProvider timeProvide
             .Select(word => word.Id);
 
     // A Reinforced Word waits ReinforcementPeriod; any other Word waits Counter * RotationPeriod.
+    // Never shown Words come first, then the oldest shown, then by Name; the Id makes the order unique.
     private IQueryable<RotationRow> DueWords(RotationSettings settings, DateTimeOffset date)
     {
         var rotationPeriod = settings.RotationPeriod;
         var reinforcedDueBefore = date.AddMinutes(-settings.ReinforcementPeriod);
 
-        return RotationRows().Where(row => row.Rotated.LastShownDate == null
-            || (row.Word.IsReinforcement
-                ? row.Rotated.LastShownDate <= reinforcedDueBefore
-                : row.Rotated.LastShownDate.Value.AddMinutes(row.Rotated.Counter * rotationPeriod) <= date));
+        return RotationRows()
+            .Where(row => row.Rotated.LastShownDate == null
+                || (row.Word.IsReinforcement
+                    ? row.Rotated.LastShownDate <= reinforcedDueBefore
+                    : row.Rotated.LastShownDate.Value.AddMinutes(row.Rotated.Counter * rotationPeriod) <= date))
+            .OrderBy(row => row.Rotated.LastShownDate != null)
+            .ThenBy(row => row.Rotated.LastShownDate)
+            .ThenBy(row => row.Word.Name)
+            .ThenBy(row => row.Word.Id);
     }
 
     // Every Word in the Rotation, next to its Rotation entry.

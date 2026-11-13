@@ -16,7 +16,7 @@ public static class ApiRegistration
             .AddFuXiCors()
             .ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()))
             .AddSingleton(TimeProvider.System)
-            .AddSingleton<INotificationTimer, IdleNotificationTimer>()
+            .AddFuXiNotifications()
             .AddScoped<WordService>()
             .AddScoped<ConfigService>()
             .AddScoped<ScheduleService>()
@@ -35,6 +35,21 @@ public static class ApiRegistration
             .MapConfigEndpoints()
             .MapScheduleEndpoints()
             .MapPushEndpoints();
+
+    // One timer instance is both the INotificationTimer and the hosted service that starts and stops it.
+    private static IServiceCollection AddFuXiNotifications(this IServiceCollection services)
+    {
+        services
+            .AddSingleton<QuartzNotificationTimer>()
+            .AddSingleton<INotificationTimer>(provider => provider.GetRequiredService<QuartzNotificationTimer>())
+            .AddHostedService(provider => provider.GetRequiredService<QuartzNotificationTimer>())
+            .AddScoped<NotificationService>()
+            .AddScoped<NotificationJob>()
+            .AddHttpClient<IPushMessageSender, WebPushMessageSender>(
+                WebPushMessageSender.HTTP_CLIENT_NAME, client => client.Timeout = WebPushMessageSender.REQUEST_TIMEOUT);
+
+        return services;
+    }
 
     // Every error answer is ProblemDetails, also the ones the framework creates (binding failures, 404, 405, 500).
     private static IServiceCollection AddFuXiErrorHandling(this IServiceCollection services) =>

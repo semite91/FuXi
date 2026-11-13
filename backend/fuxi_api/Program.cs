@@ -1,5 +1,12 @@
 using FuXi.Api;
 using FuXi.Api.Database;
+using FuXi.Api.Push;
+
+// A tool command runs before anything else, so it needs no env file, no database and no API.
+if (VapidKeyGenerator.TryRunCommand(args, Console.Out))
+{
+    return;
+}
 
 EnvironmentFile.Load();
 
