@@ -2,10 +2,13 @@
 
 import time
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from typing import Any
 
+import httpx
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from notion_client import APIResponseError, Client
+from notion_client.errors import RequestTimeoutError
 
 from base import (
     METADATA_NAME,
@@ -28,6 +31,10 @@ DEFAULT_RETRY_AFTER_SECONDS = 1.0
 MIN_RETRY_AFTER_SECONDS = 0.0
 MAX_RETRY_AFTER_SECONDS = 60.0
 RATE_LIMITED_STATUS = 429
+# A dropped connection or a timeout is tried again after 1, 2, 4 and 8 seconds.
+NETWORK_RETRY_SECONDS = 1.0
+NETWORK_RETRY_GROWTH = 2
+NETWORK_ERRORS = (httpx.TransportError, RequestTimeoutError)
 # A parent page answering with one of these is not shared with the integration; other errors fail the resource.
 UNREADABLE_PAGE_STATUSES = frozenset({403, 404})
 UNREADABLE_PAGE_CODES = frozenset({"object_not_found", "restricted_resource"})
@@ -46,6 +53,27 @@ PATH_SEPARATOR = " / "
 NotionClientFactory = Callable[[], Any]
 # None marks a parent page the integration cannot read.
 PageCache = dict[str, dict[str, Any] | None]
+# Seconds that only move forward; differences between two readings are measured.
+Clock = Callable[[], float]
+
+
+@dataclass
+class ReadStats:
+    """What one read cost: Notion calls, waits and time."""
+
+    pages: int = 0
+    calls: int = 0
+    rate_limit_waits: int = 0
+    rate_limit_seconds: float = 0.0
+    network_retries: int = 0
+    seconds: float = 0.0
+
+    def summary(self) -> str:
+        return (
+            f"{self.pages} pages, {self.calls} calls, "
+            f"{self.rate_limit_waits} rate limit waits ({self.rate_limit_seconds:.1f} s), "
+            f"{self.network_retries} network retries, {self.seconds:.1f} s"
+        )
 
 
 class NotionResource(Resource):
@@ -56,16 +84,31 @@ class NotionResource(Resource):
         self,
         client_factory: NotionClientFactory,
         sleep: Callable[[float], None] = time.sleep,
+        clock: Clock = time.monotonic,
     ) -> None:
         self._client_factory = client_factory
         self._sleep = sleep
+        self._clock = clock
+        self._stats = ReadStats()
         self._splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
         )
 
     def read_documents(self) -> list[Document]:
+        self._stats = ReadStats()
+        started = self._clock()
+        try:
+            return self._read_documents()
+        finally:
+            self._stats.seconds = self._clock() - started
+
+    def read_summary(self) -> str:
+        return self._stats.summary()
+
+    def _read_documents(self) -> list[Document]:
         client = self._client_factory()
         pages = list(self._search_pages(client))
+        self._stats.pages = len(pages)
         page_cache: PageCache = {page["id"]: page for page in pages}
         documents: list[Document] = []
         for page in pages:
@@ -103,14 +146,22 @@ class NotionResource(Resource):
             cursor = answer.get("next_cursor")
 
     def _call_with_retry(self, call: Callable[[], dict[str, Any]]) -> dict[str, Any]:
-        """On 429 waits Retry-After and tries again; the last attempt's error is raised."""
-        for _ in range(MAX_ATTEMPTS - 1):
+        """On 429 waits Retry-After, on a network error waits longer each time; the last attempt's error is raised."""
+        for attempt in range(MAX_ATTEMPTS - 1):
+            self._stats.calls += 1
             try:
                 return call()
             except APIResponseError as error:
                 if error.status != RATE_LIMITED_STATUS:
                     raise
-                self._sleep(_retry_after_seconds(error))
+                seconds = _retry_after_seconds(error)
+                self._stats.rate_limit_waits += 1
+                self._stats.rate_limit_seconds += seconds
+            except NETWORK_ERRORS:
+                seconds = NETWORK_RETRY_SECONDS * NETWORK_RETRY_GROWTH**attempt
+                self._stats.network_retries += 1
+            self._sleep(seconds)
+        self._stats.calls += 1
         return call()
 
     def _build_metadata(

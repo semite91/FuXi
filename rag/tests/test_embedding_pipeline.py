@@ -342,3 +342,26 @@ def test_old_collection_without_a_live_one_is_restored_before_a_build(chroma_cli
     assert collection_names(chroma_client) == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
     assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
     assert is_build_complete(chroma_client)
+
+
+class SummaryResource(ListResource):
+    def read_summary(self) -> str:
+        return "3 pages, 9 calls"
+
+
+class FailingSummaryResource(FailingResource):
+    def read_summary(self) -> str:
+        return "1 pages, 5 calls"
+
+
+def test_read_summary_is_logged_after_a_read_and_after_a_failed_read(chroma_client, embedders, tmp_path):
+    # E14
+    run_pipeline(
+        Mode.CREATE, [FailingSummaryResource(), SummaryResource("notion", 2), ListResource("plain", 1)],
+        chroma_client, embedders, tmp_path,
+    )
+
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert "resource notion: read summary: 3 pages, 9 calls" in log
+    assert "resource broken: read summary: 1 pages, 5 calls" in log
+    assert "resource plain: read summary" not in log

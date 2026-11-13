@@ -4,6 +4,7 @@ import httpx
 import pytest
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from notion_client import APIResponseError
+from notion_client.errors import RequestTimeoutError
 
 from base import Document, Resource, ResourceKind
 from fakes import FakeNotionClient, load_fixture
@@ -11,6 +12,7 @@ from resources.notion_resource import (
     CHUNK_OVERLAP,
     CHUNK_SIZE,
     MAX_ATTEMPTS,
+    NETWORK_RETRY_SECONDS,
     NotionResource,
 )
 
@@ -244,3 +246,55 @@ def test_not_found_code_with_another_status_still_ends_the_path():
     client = FakeNotionClient(recorded(), page_errors={PAGE_D: api_error(400, "object_not_found")})
 
     assert by_name(make_resource(client).read_documents())["Poems"].metadata["path"] == ""
+
+
+@pytest.mark.parametrize("error", [
+    httpx.ReadError("connection reset"),
+    httpx.ConnectError("no route"),
+    RequestTimeoutError(),
+])
+def test_network_error_waits_and_tries_again(error):
+    # C13
+    sleeps: list[float] = []
+    client = FakeNotionClient(recorded(), errors=[error])
+
+    documents = make_resource(client, sleeps).read_documents()
+
+    assert sleeps == [NETWORK_RETRY_SECONDS]
+    assert len(by_name(documents)) == 3
+
+
+def test_network_retries_wait_longer_each_time_and_are_bounded():
+    # C13
+    errors = [httpx.ReadError("connection reset") for _ in range(MAX_ATTEMPTS)]
+    sleeps: list[float] = []
+
+    with pytest.raises(httpx.ReadError):
+        make_resource(FakeNotionClient(recorded(), errors=errors), sleeps).read_documents()
+
+    assert sleeps == [NETWORK_RETRY_SECONDS * 2**attempt for attempt in range(MAX_ATTEMPTS - 1)]
+
+
+def test_read_summary_counts_pages_calls_waits_and_time():
+    # C14
+    ticks = iter([100.0, 107.5])
+    client = FakeNotionClient(recorded(), errors=[rate_limited("3"), httpx.ReadError("connection reset")])
+    resource = NotionResource(client_factory=lambda: client, sleep=lambda _: None, clock=lambda: next(ticks))
+
+    resource.read_documents()
+
+    assert resource.read_summary() == (
+        f"4 pages, {len(client.calls)} calls, 1 rate limit waits (3.0 s), 1 network retries, 7.5 s"
+    )
+
+
+def test_read_summary_is_kept_when_the_read_fails():
+    # C14
+    errors = [httpx.ReadError("connection reset") for _ in range(MAX_ATTEMPTS)]
+    resource = make_resource(FakeNotionClient(recorded(), errors=errors))
+
+    with pytest.raises(httpx.ReadError):
+        resource.read_documents()
+
+    assert f"{MAX_ATTEMPTS} calls" in resource.read_summary()
+    assert f"{MAX_ATTEMPTS - 1} network retries" in resource.read_summary()
