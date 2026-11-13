@@ -1,0 +1,15 @@
+{
+  "_comment": "Recorded examples of Gemini generate_content answer texts (response.text), trimmed for tests.",
+  "retrieval_query": "{\n  \"query\": \"unexpected discoveries, pleasant surprises, lucky coincidences, chance encounters while travelling\"\n}",
+  "retrieval_invalid": "Here is a good query: lucky surprises",
+  "story_success": "```json\n{\n  \"method\": \"story\",\n  \"reason\": \"The Lisbon note holds a chance discovery.\",\n  \"fallback_method\": \"quote\",\n  \"memory_aid\": {\n    \"title\": \"The Umbrella in Paris\",\n    \"content\": \"In the rain a stranger lent you an umbrella: pure serendipity.\",\n    \"source_reference\": \"Travel Notes\"\n  },\n  \"status\": \"success\"\n}\n```",
+  "quote_success": "{\n  \"method\": \"quote\",\n  \"reason\": \"A short line fits.\",\n  \"fallback_method\": null,\n  \"memory_aid\": {\n    \"title\": \"Feathers\",\n    \"content\": \"\\\"Hope is the thing with feathers\\\" - a hopeful find is serendipity.\",\n    \"source_reference\": null\n  },\n  \"status\": \"success\"\n}",
+  "film_reference_variant_success": "{\n  \"method\": \"Film_Reference\",\n  \"reason\": \"A film scene matches.\",\n  \"fallback_method\": \"story\",\n  \"memory_aid\": {\n    \"title\": \"Amélie\",\n    \"content\": \"Amélie finds a tin box by chance - serendipity.\",\n    \"source_reference\": null\n  },\n  \"status\": \"success\"\n}",
+  "photo_success": "{\n  \"method\": \"photo\",\n  \"reason\": \"A strong visual association.\",\n  \"fallback_method\": \"music\",\n  \"memory_aid\": {\n    \"image_url\": \"https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg\"\n  },\n  \"status\": \"success\"\n}",
+  "photo_http_url": "{\n  \"method\": \"photo\",\n  \"reason\": \"x\",\n  \"fallback_method\": null,\n  \"memory_aid\": {\n    \"image_url\": \"http://example.com/image.jpg\"\n  },\n  \"status\": \"success\"\n}",
+  "music_success": "{\n  \"method\": \"music\",\n  \"reason\": \"The lyrics fit.\",\n  \"fallback_method\": \"photo\",\n  \"memory_aid\": {\n    \"song_title\": \"Serendipity\",\n    \"artist\": \"BTS\",\n    \"song_url\": \"https://open.spotify.com/track/4d8b0ZFHJaGG4H3CSHfSwV\",\n    \"lyrics_excerpt\": \"All of this is serendipity\"\n  },\n  \"status\": \"success\"\n}",
+  "music_bad_url": "{\n  \"method\": \"music\",\n  \"reason\": \"x\",\n  \"fallback_method\": null,\n  \"memory_aid\": {\n    \"song_title\": \"Serendipity\",\n    \"artist\": \"BTS\",\n    \"song_url\": \"javascript:alert(1)\",\n    \"lyrics_excerpt\": \"All of this\"\n  },\n  \"status\": \"success\"\n}",
+  "insufficient_context": "{\n  \"method\": \"story\",\n  \"reason\": \"Nothing relevant was retrieved.\",\n  \"fallback_method\": null,\n  \"memory_aid\": null,\n  \"status\": \"insufficient_context\"\n}",
+  "wrong_method": "{\n  \"method\": \"quote\",\n  \"reason\": \"x\",\n  \"fallback_method\": null,\n  \"memory_aid\": {\n    \"title\": \"t\",\n    \"content\": \"c\",\n    \"source_reference\": null\n  },\n  \"status\": \"success\"\n}",
+  "empty": ""
+}

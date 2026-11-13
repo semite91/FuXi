@@ -19,3 +19,6 @@ __pycache__/
 
 # Logs
 logs/
+
+# RAG engine data
+rag/chroma_data/

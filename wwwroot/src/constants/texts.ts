@@ -29,6 +29,7 @@ export const FLASHCARD_TEXTS = {
   next: 'Next word',
   contentUnavailable: 'Content is not available.',
   loadingContent: 'Loading content',
+  listen: 'Listen',
 } as const;
 
 export const HISTORY_TEXTS = {

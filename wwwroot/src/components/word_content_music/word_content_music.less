@@ -1,0 +1,36 @@
+@import (reference) '../../css/tokens.less';
+
+.word-content-music {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: @space-small;
+}
+
+.word-content-music__title {
+  margin: 0;
+  font-size: var(--font-size-large);
+  line-height: @line-height-heading;
+  font-weight: @font-weight-bold;
+  letter-spacing: @letter-spacing-title;
+}
+
+.word-content-music__artist {
+  margin: 0;
+  font-weight: @font-weight-medium;
+  color: var(--color-text-muted);
+}
+
+.word-content-music__excerpt {
+  font-style: italic;
+  white-space: pre-line;
+}
+
+.word-content-music__link {
+  .secondary-button();
+  display: inline-flex;
+  align-items: center;
+  margin-top: @space-xsmall;
+  color: var(--color-text);
+  text-decoration: none;
+}

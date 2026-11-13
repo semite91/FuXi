@@ -44,6 +44,9 @@ This file is initializer instructor of my project.
   - < RAG purpose >
   - The Settings page has the "Update embeddings" action, which calls the RAG engine's Update_Collections API.
   - RAG technologies will be defined at next parts.
+  - Phase 5 is split: 5a builds the engine core with Notion; Google Drive (5b), letterboxd - TMDB (5c) and Spotify (5d) follow one by one.
+  - The engine runs on the Learner's Windows laptop with Python 3.13 and CPU-only PyTorch. It is started from /rag with: uvicorn engine:app --port 8000
+  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE and RAG_LIVE_TESTS.
 
   -- Words --
   - Words will be added to database manually by the Learner. There is no add word page or api.
@@ -83,8 +86,9 @@ This file is initializer instructor of my project.
     If button text is Yes, isKnown value should be true, if it is no, value should be false.
     - When user opens Word History toggle clicking text and arrow icon at flashcard component's back side, if history is not exists, it should loaded by GetWordHistory api call.
     - When user clicks to reinforcement button next at the top right side of flashcard component's back side, next word should be shown and UpdateIsReinforcement api should be called with true parameter value.
-    - After getting card data, GetWordContent api is called with words whose Content value is empty. Its parameter is word names joined with comma. Last, GetWordContent data and card data should be merged by word. Every generated content will be passed to UpdateWordContent api with word id.
-    - Back side of card shows a loading state until content arrives. Word Content is shown as plain text. If it cannot be generated, the card says that content is not available.
+    - After getting card data, GetWordContent api is called with words whose Content value is empty, in groups of 5 words, one group after another; each group's content is shown and stored when it arrives. Its body is { "words": [{ "name", "translation" }] }; the Translation is the word's meaning. Last, GetWordContent data and card data should be merged by word. Every generated content will be passed to UpdateWordContent api with word id.
+    - Back side of card shows a loading state until content arrives. Word Content is a JSON string and is shown by its method: text methods (story, quote, film reference) show title and content as plain text, with the source reference as a small caption; photo shows the image; music shows song title, artist, the lyric excerpt (when there is one) and a link to the song. Only https image and song links are shown. An old plain-text Content is shown as a story. If it cannot be generated, the card says that content is not available.
+    - When the app opens, the frontend calls the RAG engine's Init_RAG once. A failure is not shown.
     - The X button at the top right of the back side is the reinforcement button.
     - On the last card's back side the right arrow is hidden and a Done button opens the Done screen.
     - While user is moving between carousels, user can move forward freely. User can move back, but they can see just back side of card. 
@@ -274,6 +278,7 @@ This file is initializer instructor of my project.
       # NOTION
       - Notion API will be used
       - All data will be taken
+      - A parent page that is not shared with the integration ends the page's path; the page is still read.
 
       # Google Drive
       - Google Drive API will be used
@@ -293,11 +298,13 @@ This file is initializer instructor of my project.
     # embedding_pipeline
     - It will be convert resources' data to embed
     - There will be model argument of this file. These are create and update embedding processes
-    - When user opens app, system will check, if there is not embedding data, it will create. 
+    - When user opens app, the frontend calls Init_RAG. If there is not embedding data, it starts one background build; if there is, it answers at once.
     - If user wants to update embedding, engine runs and it triggers update embedding pipeline from this file.
     - ChromaDB will be used for vector embedding database
-    - ChromaDB will use HNSW indexing
-    - All steps will be logged manually to text file. It will be under /logs/embedding path with yyyy_MM_dd_mm_hh date formatted file name.
+    - ChromaDB will use HNSW indexing with cosine distance. Collections are fuxi_text and fuxi_image, stored in rag/chroma_data.
+    - ChromaDB is used embedded (PersistentClient) with embeddings computed by FuXi and anonymized telemetry off. No ChromaDB server is run, because ChromaDB 1.5.9 has open CVEs in its HTTP server.
+    - Documents are embedded in batches of RAG_BATCH_SIZE (16).
+    - All steps will be logged manually to text file. It will be under /logs/embedding path with yyyy_MM_dd_HH_mm date formatted file name.
     - If data is image. Image's embeds will be stored second collection.
     - Plain data will be used as one of the parameter while adding to collection. If data is image, image will be converted to Base64 and it will be used as collection's data.
     - Every resource types will be own model and function but pipeline - workflow will be same.
@@ -350,7 +357,7 @@ This file is initializer instructor of my project.
           type: text,
           timestamp
         }
-        chunk type: per note. Only long notes are split.
+        chunk type: per note. Only long notes are split: notes over 2000 characters, with 200 characters overlap.
         chunk tool: LangChainTextSplitter
         transformer: Qwen3-Embedding-0.6B
 
@@ -363,10 +370,9 @@ This file is initializer instructor of my project.
           It will take word as parameter
           It will use below methodologies to get better result
             top_k: 20
-            similarity threshold: 0.9
-          Replace the part written as {{word}} in the prompt specified below with a word's value.
-          /prompts/retrieval.txt file's content will be used as prompt.
-          Prompt will be embedded twice:
+            similarity threshold: one per collection, RAG_TEXT_THRESHOLD (0.5) and RAG_IMAGE_THRESHOLD (0.25). Similarity is 1 - cosine distance.
+          /prompts/retrieval.txt file's content is sent to Gemini with { "word", "meaning" }; Gemini writes the search query. If its answer is invalid, "<word>: <meaning>" is used.
+          The query will be embedded twice:
             Text collection: sentence-transformers library and Qwen3-Embedding-0.6B.
             Image collection: CLIP's text encoder.
           Using singleton collection object's query method with each embedded query, it will get related data
@@ -374,7 +380,7 @@ This file is initializer instructor of my project.
 
         + generate
           It will take words as parameter
-          Spit words from comma
+          It takes the words with their translations from the request body.
           Using loop, it will sends word to retrieve function
           It will create response returning data (2 collections) from retrieve function using llm_client's generate function
 
@@ -382,10 +388,14 @@ This file is initializer instructor of my project.
     - File will be use to create response of RAG system
     - It will consist of only generate function
     - Response methods will be story, picture, quote, music, movie reference.
-    - Response method will be chosen randomly.
-    - Response will create using Google AI Studio API and gemini-3.8-flash model. Model name and search tool name will be verified with current Gemini docs before coding.
+    - Response method will be chosen randomly by the code: story, quote, film reference, photo (picture) or music. It is sent to Gemini as "available_methods": ["<chosen>"], so the prompt files are not changed.
+    - If the answer is insufficient_context, invalid or an error, one other random method is tried once. Then the word gets no content.
+    - Prompt files are read once. Words are generated one after another, because of the free-tier rate limits.
+    - The answer is stored as a JSON string. Text methods: {"method","title","content","source_reference"}. photo: {"method","image_url"}. music: {"method","song_title","artist","song_url","lyrics_excerpt"}. Links must be https.
+    - In 5a, photo is a web image found by Google Search. From 5b, Gemini may also choose the Learner's own Google Drive image.
+    - Response will create using Google AI Studio API and gemini-3.8-flash model. Model name and search tool name were verified on 2026-11-13: gemini-3.8-flash and google_search.
     - Model will keep as parameter
-    - If response method is picture or music, /prompts/llm_web.txt file's content will be used as prompt and google_search_retrieval tool will be added to tools option of Google AI Studio API. 
+    - If response method is picture or music, /prompts/llm_web.txt file's content will be used as prompt and google_search tool will be added to tools option of Google AI Studio API. 
       If it is not, /prompts/llm.txt file's content will be used.
 
 
@@ -400,14 +410,20 @@ This file is initializer instructor of my project.
     - There will be API both .NET and python. This file will keep python api's created by fastapi. 
     - APIs listed as below
       + GetWordContent
-        It will take words joined with comma as parameter
-        It will get response of rag_client's generate function. Words parameter will be used parameter for this function
+        POST /GetWordContent with { "words": [{ "name", "translation" }] } (1 to 50 words). Names are answered exactly as sent; a repeated name is generated once.
+        It will get response of rag_client's generate function and answer [{ "name", "content" }]. A word without content is left out.
+        While a build runs, it answers 503.
       + Init_RAG
-        It will call embedding_pipeline with mode create argument
-        It will trigger rag_client.init function
+        POST /Init_RAG. If the collections have data, it answers 200 {"status":"ready"}.
+        Otherwise it starts one background build (embedding_pipeline mode create, then rag_client.init) and answers 202 {"status":"building"}.
+        A call during a build does not start a second one. A build is ready only when it ended completely (a marker on fuxi_text); a build that stopped partway is started again.
+        If the last build found nothing or a source failed, it answers 200 {"status":"empty"} and does not build again until the engine restarts or Update_Collections runs.
       + Update_Collections
-        It will trigger embedding_pipeline with mode update argument
+        POST /Update_Collections. It will trigger embedding_pipeline with mode update argument and answer 200 when the rebuild ends.
+        Every source is read and embedded into staging collections first. The old collections are replaced only when every source succeeded; otherwise they are kept and it answers 502.
+        It waits for running GetWordContent requests; new ones answer 503 meanwhile.
         It will update rag_client's Singleton collection object
+        While another build runs, it answers 503.
 
 
   # TEST

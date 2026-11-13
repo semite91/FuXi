@@ -1,0 +1,208 @@
+FuXi - Phase 5a - RAG engine core and Notion
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-13 11:03 UTC
+Status: CONFIRMED BY THE LEARNER ON 2026-11-13, with the proposals by Claude
+Amended on 2026-11-13 for the code review fixes approved by the Learner: A8, I1, I7, I11 and the requirements changed;
+B6, C11, E10, E11, G18, H12 to H15 and I15 to I19 were added. Review item 6 (image embedding input) moves to Phase 5b.
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 5a builds the Python RAG engine in /rag (FastAPI, ChromaDB, Qwen3-Embedding-0.6B, CLIP, Gemini) with one real
+source, Notion, and the frontend changes it needs. Google Drive (5b), Letterboxd + TMDB (5c) and Spotify (5d) come later.
+Evaluation (ragas) is version 2.
+
+Decisions taken by the Learner on 2026-11-13 (grilling rounds 1 and 2):
+- Phase 5 is split: 5a is the engine core plus Notion; each later source has its own scenarios, PR and confirmation.
+- The engine runs natively on Windows with Python 3.13 and CPU-only PyTorch (the GTX 660 is not supported by CUDA 12).
+- Word Content is structured JSON stored as a string in Words.Content (no migration). The card renders text, picture and
+  music layouts, built from the existing card style. An old plain-text Content is shown as a story.
+- The code picks one of the 5 methods at random (story, quote, film reference, photo, music) and sends it to Gemini as
+  "available_methods": ["<chosen>"]. photo and music use prompts/llm_web.txt with the google_search tool; the others use
+  prompts/llm.txt. The prompt files are not changed. On insufficient_context one other random method is tried once.
+- prompts/retrieval.txt is sent to Gemini with the word and its meaning; Gemini writes the search query; the query is
+  embedded with Qwen (text collection) and CLIP (image collection).
+- The frontend sends each Word with its Translation as the meaning: POST /GetWordContent { "words": [{ "name", "translation" }] }.
+- The frontend calls Init_RAG on every app open. It is cheap when collections have data and starts one background build when
+  they are empty. While a build runs, GetWordContent answers "not ready".
+- In 5a, photo means a web image found by Google Search. When Drive comes (5b), Gemini may choose the Learner's own image.
+- Similarity threshold is one setting per collection: text 0.5 and image 0.25 to start, tuned on real data.
+- Gemini uses gemini-3.8-flash on the free tier; when grounding is refused the fallback rule applies.
+- Notion: every page shared with the integration. Notes longer than 2000 characters are split with a 200-character overlap.
+- Secrets and settings are RAG_ keys in the root .env. ChromaDB data is in rag/chroma_data/, logs in logs/embedding/
+  named yyyy_MM_dd_HH_mm.txt; both are git-ignored. Embedding batch size is 16.
+- ChromaDB 1.5.9 is used embedded only (PersistentClient), with precomputed embeddings and anonymized_telemetry off,
+  because its 4 open CVEs are in its HTTP server.
+
+Proposed by Claude, to confirm with these scenarios:
+- Content JSON shapes. Text methods: {"method","title","content","source_reference"}. photo: {"method","image_url"}.
+  music: {"method","song_title","artist","song_url","lyrics_excerpt"}. "method" is the method name Gemini returned.
+- GetWordContent answers [{ "name", "content" }] where content is that JSON string; a Word without content is left out.
+- GetWordContent and Update_Collections answer 503 while a build runs. Update_Collections waits until the rebuild ends
+  and then answers 200, so the Settings dialog shows the real result.
+- Init_RAG is POST /Init_RAG and answers {"status": "ready"} (200) or {"status": "building"} (202).
+- Collections are named fuxi_text and fuxi_image, both with cosine distance.
+- The engine is started with: uvicorn engine:app --port 8000 (from /rag).
+- Live tests (real models, real Notion and Gemini) run only when RAG_LIVE_TESTS=true in .env.test.
+
+Marks:
+[PY]  Python scenario, verified by a pytest test with a fake embedder and recorded Notion and Gemini answers.
+[LIVE] Python scenario, verified by a pytest test that loads the real models or calls a real API; runs only when enabled.
+[FE]  frontend scenario, verified by a Vitest test.
+[RV]  verified by reading the code, running a command or a real run.
+
+==================================================
+A. LIBRARIES AND SETUP
+==================================================
+A1. [RV] Given the 10 libraries, when they were vetted, then the checklist result was reported to the Learner before installation.
+A2. [RV] Given rag/requirements.in, when it is read, then each direct library is pinned to the approved version.
+A3. [RV] Given rag/requirements.txt, when it is read, then it locks every package, and CUDA-only packages are marked sys_platform == "linux".
+A4. [RV] Given a clean virtual environment, when "pip install -r rag/requirements.txt" runs, then it succeeds and pip check reports no conflict.
+A5. [RV] Given pip-audit, when it runs on the environment, then only the 4 known ChromaDB server CVEs are reported.
+A6. [RV] Given .gitignore, when it is read, then rag/chroma_data/, logs/ and rag/.venv/ are ignored.
+A7. [RV] Given .env.example and .env.test.example, when they are read, then RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GEMINI_MODEL,
+    RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE and RAG_LIVE_TESTS exist without a secret value.
+A8. [RV] Given the setup script on Ubuntu, when it runs, then it creates rag/.venv, installs requirements.txt and adds the RAG_ keys with defaults.
+    Without python3.13, its last line says the environment is ready except the RAG engine.
+
+==================================================
+B. SETTINGS
+==================================================
+B1. [PY] Given a .env with every RAG_ key, when the settings are read, then each value is parsed (thresholds as numbers, batch size as an integer).
+B2. [PY] Given a missing RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD or RAG_BATCH_SIZE, when the settings are read, then 0.5, 0.25 and 16 are used.
+B3. [PY] Given a missing RAG_GEMINI_MODEL, when the settings are read, then gemini-3.8-flash is used.
+B4. [PY] Given a threshold outside 0 to 1 or a batch size below 1, when the settings are read, then an error names the key.
+B5. [PY] Given a missing RAG_NOTION_TOKEN or RAG_GEMINI_API_KEY, when the engine starts, then it starts and the error names the key only when that key is used.
+B6. [PY] Given a .env line with an inline comment, when the settings are read, then the value without the comment is used (python-dotenv).
+
+==================================================
+C. NOTION RESOURCE
+==================================================
+C1. [PY] Given recorded Notion search answers over 2 result pages, when the resource reads, then every shared page is read once.
+C2. [PY] Given a page with nested blocks, when it is read, then the text of the nested blocks is included in order.
+C3. [PY] Given block children over 2 result pages, when a page is read, then every block is read.
+C4. [PY] Given a page, when its document is built, then metadata has name (page title), path (parent titles joined with " / "), type "text" and timestamp (last edit time).
+C5. [PY] Given a page whose text is at most 2000 characters, when it is chunked, then it gives one document.
+C6. [PY] Given a page whose text is longer than 2000 characters, when it is chunked, then it is split by RecursiveCharacterTextSplitter into parts of at most 2000 characters with 200 characters overlap.
+C7. [PY] Given a page without text, when it is read, then it gives no document.
+C8. [PY] Given a Notion answer 429 with Retry-After, when the resource reads, then it waits and tries again.
+C9. [PY] Given a new resource class, when it is added, then it implements the Resource base and no existing class is changed (open-closed).
+C11. [PY] Given a shared page whose parent is not shared, when it is read, then the page is embedded and its path stops at the first unreadable parent.
+C10. [LIVE] Given the real Notion token, when the resource reads, then at least one document is returned.
+
+==================================================
+D. EMBEDDERS
+==================================================
+D1. [PY] Given the text embedder, when a query is embedded, then the Qwen "query" prompt is used; when a document is embedded, no prompt is used.
+D2. [PY] Given the image embedder, when a text query is embedded, then the CLIP text encoder is used.
+D3. [PY] Given the embedders, when they are created, then they load on the CPU and only once per process.
+D4. [LIVE] Given the real Qwen model, when a text is embedded, then the vector has 1024 numbers.
+D5. [LIVE] Given the real CLIP model, when a text is embedded, then the vector has 512 numbers.
+
+==================================================
+E. EMBEDDING PIPELINE
+==================================================
+E1. [PY] Given mode create and 40 documents, when the pipeline runs with batch size 16, then the embedder is called 3 times (16, 16, 8).
+E2. [PY] Given a document, when it is added, then its id is a new GUID that is unique in the collection.
+E3. [PY] Given a text document, when it is added, then ids, documents (the text), embeddings and metadatas go to fuxi_text together.
+E4. [PY] Given the collections, when they are created, then their HNSW space is cosine.
+E5. [PY] Given mode update, when the pipeline runs, then every resource is read and embedded into staging collections first, and the old collections are replaced only after every resource succeeded.
+E6. [PY] Given a run, when it starts, ends or fails, then each step is written to logs/embedding/yyyy_MM_dd_HH_mm.txt.
+E7. [PY] Given a resource that fails, when the pipeline runs, then the error is logged and the other resources are still embedded.
+E8. [PY] Given the Chroma client, when it is created, then it is a PersistentClient at rag/chroma_data with anonymized_telemetry off.
+E9. [RV] Given the engine code, when it is read, then no ChromaDB embedding function and no Chroma server is used.
+E10. [PY] Given a resource that fails during an update, when Update_Collections runs, then the old collections stay and the answer is 502 with a generic message.
+E11. [PY] Given an update that reads 0 documents, when it runs, then the old collections stay.
+
+==================================================
+F. RAG CLIENT
+==================================================
+F1. [PY] Given init, when it runs twice, then the collections are opened once and the same object is returned (singleton).
+F2. [PY] Given a query, when retrieve runs, then the query is embedded with Qwen for fuxi_text and with CLIP for fuxi_image.
+F3. [PY] Given each collection, when it is queried, then n_results is 20.
+F4. [PY] Given results with similarities 0.7, 0.5 and 0.3, when the text threshold is 0.5, then 0.7 and 0.5 are kept.
+F5. [PY] Given image results, when the image threshold is 0.25, then results below it are dropped.
+F6. [PY] Given retrieve, when it returns, then it gives two lists: text results and image results, each with document, metadata and similarity.
+F7. [PY] Given empty collections, when retrieve runs, then both lists are empty and no error is raised.
+F8. [PY] Given an update, when Update_Collections ends, then the singleton points to the new collections.
+
+==================================================
+G. LLM CLIENT
+==================================================
+G1. [PY] Given a word and its meaning, when the search query is asked, then prompts/retrieval.txt is sent with {"word","meaning"} as input.
+G2. [PY] Given Gemini's retrieval answer {"query": "..."}, when it is read, then that query is used for retrieve.
+G3. [PY] Given an invalid retrieval answer, when it is read, then "<word>: <meaning>" is used as the query.
+G4. [PY] Given a fixed random source, when the method is chosen, then it is one of story, quote, film reference, photo and music.
+G5. [PY] Given the chosen method story, quote or film reference, when Gemini is called, then prompts/llm.txt is used without tools.
+G6. [PY] Given the chosen method photo or music, when Gemini is called, then prompts/llm_web.txt is used with the google_search tool.
+G7. [PY] Given a call, when its input is built, then it holds word, meaning, available_methods ["<chosen>"] and the retrieved text and image results.
+G8. [PY] Given a call, when it is made, then the model is RAG_GEMINI_MODEL.
+G9. [PY] Given a success answer for a text method, when it is read, then the content JSON is {"method","title","content","source_reference"}.
+G10. [PY] Given a success answer for photo, when it is read, then the content JSON is {"method","image_url"}.
+G11. [PY] Given a success answer for music, when it is read, then the content JSON is {"method","song_title","artist","song_url","lyrics_excerpt"}.
+G12. [PY] Given an image_url or song_url that is not an https URL, when it is read, then the answer counts as insufficient_context.
+G13. [PY] Given an answer with status insufficient_context, invalid JSON or empty text, when it is read, then one other random method is tried once.
+G14. [PY] Given the second method also fails, when it is read, then the word gets no content.
+G15. [PY] Given Gemini refuses the google_search tool, when it answers with an error, then it counts as a failed method and the fallback rule applies.
+G16. [PY] Given a Gemini error for one word, when generate runs for 3 words, then the other words still get content.
+G18. [PY] Given several calls, when prompts are used, then each prompt file is read once.
+G17. [LIVE] Given the real Gemini key, when one word is generated, then the answer is a valid content JSON or no content, without an error.
+
+==================================================
+H. ENGINE API
+==================================================
+H1. [PY] Given the engine, when its routes are listed, then POST /GetWordContent, POST /Init_RAG and POST /Update_Collections exist.
+H2. [PY] Given ready collections, when POST /GetWordContent is called with 2 words, then 200 and [{ "name", "content" }] are returned for words with content.
+H3. [PY] Given a body without words, with an empty name, or with more than 50 words, when it is called, then the answer is 422.
+H4. [PY] Given empty collections, when POST /Init_RAG is called, then 202 {"status":"building"} is returned and one background build starts.
+H5. [PY] Given a running build, when POST /Init_RAG is called again, then 202 is returned and no second build starts.
+H6. [PY] Given a completed build, when POST /Init_RAG is called, then 200 {"status":"ready"} is returned and nothing is built.
+H7. [PY] Given a running build, when POST /GetWordContent is called, then the answer is 503.
+H8. [PY] Given ready collections, when POST /Update_Collections is called, then it rebuilds and answers 200 when the rebuild ends.
+H9. [PY] Given a running build, when POST /Update_Collections is called, then the answer is 503.
+H10. [PY] Given a request from an origin in FUXI_CORS_ORIGINS, when it is sent, then the CORS headers allow it; another origin is not allowed.
+H11. [PY] Given an error inside the engine, when it answers, then the body has no stack trace and no secret.
+H12. [PY] Given a GetWordContent request in flight, when Update_Collections starts, then the update waits for it to finish, and new GetWordContent requests answer 503.
+H13. [PY] Given a build that stopped partway, when Init_RAG is called, then a new build starts.
+H14. [PY] Given a build that found 0 documents or had a failed resource, when Init_RAG is called again in the same engine run, then 200 {"status":"empty"} is returned and no new build starts.
+H15. [PY] Given a name with a trailing space, when content is generated, then the answer uses the same name with the space.
+
+==================================================
+I. FRONTEND
+==================================================
+I1. [FE] Given cards with empty Content, when content is asked, then POST /GetWordContent is called with { words: [{ name, translation }] } in groups of at most 5 words.
+I2. [FE] Given the app, when it opens, then POST /Init_RAG is called once and a failure does not show an error.
+I3. [FE] Given a 503 from GetWordContent, when it returns, then the waiting cards say "Content is not available.".
+I4. [FE] Given a returned content JSON, when it is merged, then UpdateWordContent stores the same JSON string.
+I5. [FE] Given content with a text method, when the back side is shown, then its title and content are shown as plain text.
+I6. [FE] Given content with method photo, when the back side is shown, then the image is shown with the Word's name as its alt text.
+I7. [FE] Given content with method music, when the back side is shown, then the song title, artist, the lyric excerpt in quotes (when present) and a link to the song are shown.
+I8. [FE] Given a music link, when it is rendered, then it opens in a new tab with rel "noopener noreferrer".
+I9. [FE] Given an image_url or song_url that is not https, when it is rendered, then no image or link is created and "Content is not available." is shown.
+I10. [FE] Given an old plain-text Content, when the back side is shown, then it is shown as a story text.
+I11. [FE] Given content JSON with an unknown method or missing fields, when it is shown, then "Content is not available." is shown.
+I12. [FE] Given a picture that fails to load, when the error comes, then "Content is not available." is shown instead of a broken image.
+I13. [RV] Given the built page, when its Content-Security-Policy is read, then img-src allows https: and nothing else is loosened.
+I15. [FE] Given 12 cards without content, when content is asked, then 3 requests of 5, 5 and 2 words are sent one after another.
+I16. [FE] Given a failed second group, when it returns, then only its cards say "Content is not available." and the third group is still asked.
+I17. [FE] Given the first group's answer, when it arrives, then its cards show content before the next group returns.
+I18. [FE] Given text content with a source_reference, when the back side is shown, then the source is shown as a caption; without one, no caption.
+I19. [FE] Given music content without a lyric excerpt, when the back side is shown, then title, artist and link are shown without a quote.
+I14. [RV] Given the new components, when they are read, then each has its own .tsx and .less file, a snake_case name and no logic.
+
+==================================================
+J. STRUCTURE AND QUALITY
+==================================================
+J1. [RV] Given /rag, when "pytest" runs, then no test fails and the LIVE tests are skipped unless RAG_LIVE_TESTS=true.
+J2. [RV] Given the frontend, when "npm run build" and "npm test" run, then there is no TypeScript error, no warning and no failed test.
+J3. [RV] Given the backend, when "dotnet test" runs, then no test fails (no backend change in 5a).
+J4. [RV] Given the Python code, when it is read, then names follow the coding standards and no secret or magic value is hardcoded.
+J5. [RV] Given project.md, when it is read, then it holds the agreed decisions, the new GetWordContent contract and google_search.
+J6. [LIVE] Given the real models, Notion and Gemini, when the engine runs, then Init_RAG builds fuxi_text and a card on /active shows generated content.
+J7. [RV] Given the tracked files, when they are read, then no secret value is in them.
+
+==================================================
+K. OUT OF SCOPE CHECKS
+==================================================
+K1. [RV] Given /rag, when it is read, then no Google Drive, Letterboxd, TMDB or Spotify resource exists (5b, 5c, 5d).
+K2. [RV] Given /rag, when it is read, then no evaluation file exists (version 2).
+K3. [RV] Given the database, when the migrations are listed, then no new migration exists.
+K4. [RV] Given the prompts folder, when it is compared with main, then nothing is changed.

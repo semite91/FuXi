@@ -1,18 +1,35 @@
 import { RAG_URL_KEY, createApiClient } from './api_client';
 
-// Assumed contract until the RAG phase builds the engine.
 const GET_WORD_CONTENT = '/GetWordContent';
+const INIT_RAG = '/Init_RAG';
 const UPDATE_COLLECTIONS = '/Update_Collections';
-const NAME_SEPARATOR = ',';
 
+/** A Word and its translation, which the engine uses as the meaning. */
+export interface WordMeaning {
+  name: string;
+  translation: string;
+}
+
+/** content is the Word Content JSON as a string. A Word without content is left out. */
 export interface WordContent {
   name: string;
   content: string;
 }
 
+export interface RagState {
+  status: 'ready' | 'building';
+}
+
 const client = createApiClient(RAG_URL_KEY);
 
-export const getWordContent = (names: readonly string[]): Promise<WordContent[]> =>
-  client.get(GET_WORD_CONTENT, { words: names.join(NAME_SEPARATOR) });
+export const getWordContent = (words: readonly WordMeaning[]): Promise<WordContent[]> =>
+  client.post(GET_WORD_CONTENT, { words });
+
+export const initRag = (): Promise<RagState> => client.post(INIT_RAG);
+
+/** Starts the engine without waiting. A failure is not shown; the cards say their content is not available. */
+export const startRag = (): void => {
+  initRag().catch(() => undefined);
+};
 
 export const updateCollections = (): Promise<void> => client.post(UPDATE_COLLECTIONS);

@@ -342,12 +342,17 @@ const WITHOUT_CONTENT = [
   cardWord(WORD_TWO_ID, 'Serendipity', { content: '   ' }),
 ];
 
-test('I1 Words without content are asked for once, joined with a comma; I3 spaces count as empty', async () => {
-  const api = openActive(WITHOUT_CONTENT, { 'GET /GetWordContent': { body: [] } });
+test('I1 Words without content are asked for once; I3 spaces count as empty', async () => {
+  const api = openActive(WITHOUT_CONTENT, { 'POST /GetWordContent': { body: [] } });
   await word('Ephemeral');
   await waitFor(() => expect(api.callsTo('GetWordContent')).toHaveLength(1));
 
-  expect(api.callsTo('GetWordContent')[0].url.searchParams.get('words')).toBe('Ephemeral,Serendipity');
+  expect(api.callsTo('GetWordContent')[0].body).toEqual({
+    words: [
+      { name: 'Ephemeral', translation: 'Ephemeral translation' },
+      { name: 'Serendipity', translation: 'Serendipity translation' },
+    ],
+  });
 });
 
 test('I2 cards that all have content do not call GetWordContent', async () => {
@@ -359,7 +364,7 @@ test('I2 cards that all have content do not call GetWordContent', async () => {
 
 test('I4 generated content is set by Name, I5 stored once per Word, I6 a missing Word gets none', async () => {
   const api = openActive(WITHOUT_CONTENT, {
-    'GET /GetWordContent': { body: [{ name: 'Ephemeral', content: 'A story about a mayfly.' }] },
+    'POST /GetWordContent': { body: [{ name: 'Ephemeral', content: 'A story about a mayfly.' }] },
   });
   await word('Ephemeral');
   await waitFor(() => expect(api.callsTo('UpdateWordContent')).toHaveLength(1));
@@ -374,7 +379,7 @@ test('I4 generated content is set by Name, I5 stored once per Word, I6 a missing
 
 test('I7 a pending content shows a skeleton and I8 the content replaces it; I11 cards are not blocked', async () => {
   const pending = deferred<Answer>();
-  openActive(WITHOUT_CONTENT, { 'GET /GetWordContent': () => pending.promise });
+  openActive(WITHOUT_CONTENT, { 'POST /GetWordContent': () => pending.promise });
   await word('Ephemeral');
 
   answerYes();
@@ -389,7 +394,7 @@ test('I7 a pending content shows a skeleton and I8 the content replaces it; I11 
 });
 
 test('I9 a failed GetWordContent shows that content is not available and the card still works', async () => {
-  openActive(WITHOUT_CONTENT, { 'GET /GetWordContent': networkFailure });
+  openActive(WITHOUT_CONTENT, { 'POST /GetWordContent': networkFailure });
   await word('Ephemeral');
 
   answerYes();
@@ -401,7 +406,7 @@ test('I9 a failed GetWordContent shows that content is not available and the car
 
 test('I10 a failed UpdateWordContent keeps the generated content on the card', async () => {
   openActive([WITHOUT_CONTENT[0]], {
-    'GET /GetWordContent': { body: [{ name: 'Ephemeral', content: 'Kept.' }] },
+    'POST /GetWordContent': { body: [{ name: 'Ephemeral', content: 'Kept.' }] },
     'POST /api/UpdateWordContent': problem(500, 'Failed.'),
   });
   await word('Ephemeral');

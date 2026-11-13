@@ -29,6 +29,12 @@ readonly VAPID_SUBJECT_KEY="VAPID_SUBJECT"
 readonly DEFAULT_VAPID_SUBJECT="mailto:learner@fuxi.local"
 readonly BACKEND_PROJECT="backend/fuxi_api"
 readonly GENERATE_VAPID_KEYS_COMMAND="generate-vapid-keys"
+# RAG engine (Python). Secrets stay empty for the developer to fill.
+readonly RAG_PYTHON="python3.13"
+readonly RAG_DIRECTORY="rag"
+readonly RAG_VENV=".venv"
+readonly RAG_SECRET_KEYS=("RAG_NOTION_TOKEN" "RAG_GEMINI_API_KEY" "RAG_LIVE_TESTS")
+readonly RAG_DEFAULT_SETTINGS=("RAG_GEMINI_MODEL=gemini-3.8-flash" "RAG_TEXT_THRESHOLD=0.5" "RAG_IMAGE_THRESHOLD=0.25" "RAG_BATCH_SIZE=16")
 readonly PASSWORD_BYTES=24
 readonly PRIVATE_FILE_UMASK=077
 readonly REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -99,6 +105,7 @@ create_env_files() {
     ensure_env_value "${file}" "${RAG_URL_KEY}" "${DEFAULT_RAG_URL}"
     ensure_env_value "${file}" "${VAPID_SUBJECT_KEY}" "${DEFAULT_VAPID_SUBJECT}"
     ensure_vapid_keys "${file}"
+    ensure_rag_keys "${file}"
   done
   give_to_invoking_user "${env_file}" "${test_env_file}"
 }
@@ -161,6 +168,34 @@ ensure_vapid_keys() {
   echo "VAPID keys were generated for ${env_file}."
 }
 
+# Adds the RAG keys: settings get their defaults, secrets are added empty for the developer.
+ensure_rag_keys() {
+  local env_file="$1" key setting
+  for setting in "${RAG_DEFAULT_SETTINGS[@]}"; do
+    ensure_env_value "${env_file}" "${setting%%=*}" "${setting#*=}"
+  done
+  for key in "${RAG_SECRET_KEYS[@]}"; do
+    if ! grep -q -E "^${key}=" "${env_file}"; then
+      append_env_line "${env_file}" "${key}="
+    fi
+  done
+}
+
+# Creates rag/.venv and installs the locked Python packages when Python 3.13 exists.
+# The packages are large (PyTorch), so this step can take several minutes the first time.
+create_rag_environment() {
+  local rag_path="${REPOSITORY_ROOT}/${RAG_DIRECTORY}"
+  if ! command -v "${RAG_PYTHON}" >/dev/null; then
+    RAG_ENVIRONMENT_MISSING="true"
+    return
+  fi
+  give_to_invoking_user "${rag_path}/${RAG_VENV}"
+  if [ ! -d "${rag_path}/${RAG_VENV}" ]; then
+    run_as_invoking_user "${RAG_PYTHON}" -m venv "${rag_path}/${RAG_VENV}"
+  fi
+  run_as_invoking_user "${rag_path}/${RAG_VENV}/bin/pip" install --quiet -r "${rag_path}/requirements.txt"
+}
+
 # Creates or updates the role and creates the development database.
 # Values reach psql through the environment, so no shell parses them again.
 create_role_and_database() {
@@ -184,4 +219,9 @@ install_packages
 start_postgres
 create_env_files
 create_role_and_database
-echo "Environment is ready."
+create_rag_environment
+if [ "${RAG_ENVIRONMENT_MISSING:-}" = "true" ]; then
+  echo "Environment is ready, except the RAG engine: install ${RAG_PYTHON} and run this script again." >&2
+else
+  echo "Environment is ready."
+fi
