@@ -1,7 +1,7 @@
 FuXi - Phase 5a - RAG engine core and Notion
 Test scenarios, shredded to atomic processes.
 Created: 2026-11-13 11:03 UTC
-Status: WAITING FOR THE LEARNER'S CONFIRMATION
+Status: CONFIRMED BY THE LEARNER ON 2026-11-13, with the proposals by Claude
 
 Every scenario has one purpose. "Given / When / Then" is used.
 Phase 5a builds the Python RAG engine in /rag (FastAPI, ChromaDB, Qwen3-Embedding-0.6B, CLIP, Gemini) with one real
