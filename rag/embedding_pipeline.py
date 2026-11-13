@@ -13,9 +13,10 @@ from chromadb.api import ClientAPI
 from base import Document, Resource, ResourceKind
 from chroma_store import (
     COLLECTION_BY_KIND,
+    OLD_COLLECTION_BY_KIND,
     STAGING_COLLECTION_BY_KIND,
+    collection_names,
     delete_collections,
-    delete_collections_except,
     mark_build_complete,
     open_collection,
     rename_collection,
@@ -27,6 +28,10 @@ LOG_FILE_NAME_FORMAT = "%Y_%m_%d_%H_%M"
 LOG_FILE_SUFFIX = ".txt"
 LOG_LINE_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 LOG_ENCODING = "utf-8"
+
+LIVE_NAMES = list(COLLECTION_BY_KIND.values())
+STAGING_NAMES = list(STAGING_COLLECTION_BY_KIND.values())
+OLD_NAMES = list(OLD_COLLECTION_BY_KIND.values())
 
 Clock = Callable[[], datetime]
 CollectionNames = dict[ResourceKind, str]
@@ -77,12 +82,12 @@ def run(
     logs_dir: Path = DEFAULT_LOGS_DIR,
     clock: Clock = datetime.now,
 ) -> PipelineResult:
+    """Create and update both build into staging collections; the live ones change only when the build succeeded."""
     run_mode = Mode(mode)
     log = EmbeddingLog(logs_dir, clock)
     log.write(f"start mode={run_mode}")
-    build = _update if run_mode is Mode.UPDATE else _create
     try:
-        result = build(resources, embedders, chroma_client, batch_size, log)
+        result = _build(run_mode, resources, embedders, chroma_client, batch_size, log)
     except Exception as error:
         log.write(f"run failed: {type(error).__name__}: {error}")
         raise
@@ -93,45 +98,69 @@ def run(
     return result
 
 
-def _create(
+def _build(
+    mode: Mode,
     resources: Sequence[Resource],
     embedders: Embedders,
     chroma_client: ClientAPI,
     batch_size: int,
     log: EmbeddingLog,
 ) -> PipelineResult:
-    """Adds to the stored collections; marks the build complete only at its successful end."""
-    result = _embed_all(resources, embedders, chroma_client, batch_size, log, COLLECTION_BY_KIND)
-    if result.complete:
-        _mark_complete(chroma_client, log)
-    return result
-
-
-def _update(
-    resources: Sequence[Resource],
-    embedders: Embedders,
-    chroma_client: ClientAPI,
-    batch_size: int,
-    log: EmbeddingLog,
-) -> PipelineResult:
-    """Builds into staging collections; the stored collections change only when every resource succeeded."""
-    staging_names = list(STAGING_COLLECTION_BY_KIND.values())
-    delete_collections(chroma_client, staging_names)
+    _clean_leftovers(chroma_client, log)
     try:
         result = _embed_all(resources, embedders, chroma_client, batch_size, log, STAGING_COLLECTION_BY_KIND)
     except Exception:
-        delete_collections(chroma_client, staging_names)
+        delete_collections(chroma_client, STAGING_NAMES)
         raise
     if not result.complete:
-        delete_collections(chroma_client, staging_names)
-        log.write("update failed, the old collections are kept")
+        delete_collections(chroma_client, STAGING_NAMES)
+        log.write(f"{mode} failed, the old collections are kept")
         return result
-    log.write(f"deleted collections: {sorted(delete_collections_except(chroma_client, staging_names))}")
-    for kind, name in COLLECTION_BY_KIND.items():
-        rename_collection(chroma_client, STAGING_COLLECTION_BY_KIND[kind], name)
-    log.write(f"collections replaced: {', '.join(COLLECTION_BY_KIND.values())}")
-    _mark_complete(chroma_client, log)
+    _swap(chroma_client, log)
     return result
+
+
+def _clean_leftovers(chroma_client: ClientAPI, log: EmbeddingLog) -> None:
+    """Removes what an interrupted build left; an old collection whose live one is missing is put back."""
+    existing = collection_names(chroma_client)
+    for kind, old_name in OLD_COLLECTION_BY_KIND.items():
+        if old_name in existing and COLLECTION_BY_KIND[kind] not in existing:
+            rename_collection(chroma_client, old_name, COLLECTION_BY_KIND[kind])
+            log.write(f"restored {COLLECTION_BY_KIND[kind]} from {old_name}")
+    deleted = delete_collections(chroma_client, STAGING_NAMES + OLD_NAMES)
+    if deleted:
+        log.write(f"deleted leftover collections: {deleted}")
+
+
+def _swap(chroma_client: ClientAPI, log: EmbeddingLog) -> None:
+    """Live to *_old, staging to live, marker, then *_old and any other collection are deleted."""
+    existing = collection_names(chroma_client)
+    moved: list[ResourceKind] = []
+    try:
+        for kind, name in COLLECTION_BY_KIND.items():
+            if name in existing:
+                rename_collection(chroma_client, name, OLD_COLLECTION_BY_KIND[kind])
+                moved.append(kind)
+        for kind, name in COLLECTION_BY_KIND.items():
+            rename_collection(chroma_client, STAGING_COLLECTION_BY_KIND[kind], name)
+        _mark_complete(chroma_client, log)
+    except Exception:
+        _restore(chroma_client, existing, moved)
+        log.write("swap failed, the old collections are restored")
+        raise
+    log.write(f"collections replaced: {', '.join(LIVE_NAMES)}")
+    log.write(f"deleted collections: {delete_collections(chroma_client, kept=LIVE_NAMES)}")
+
+
+def _restore(chroma_client: ClientAPI, existing: set[str], moved: list[ResourceKind]) -> None:
+    """Deletes the new live collections, renames *_old back and deletes the staging ones."""
+    replaced = [
+        name for kind, name in COLLECTION_BY_KIND.items() if kind in moved or name not in existing
+    ]
+    delete_collections(chroma_client, replaced)
+    for kind in moved:
+        rename_collection(chroma_client, OLD_COLLECTION_BY_KIND[kind], COLLECTION_BY_KIND[kind])
+    delete_collections(chroma_client, STAGING_NAMES)
 
 
 def _mark_complete(chroma_client: ClientAPI, log: EmbeddingLog) -> None:

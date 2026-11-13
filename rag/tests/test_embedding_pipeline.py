@@ -15,7 +15,7 @@ from chroma_store import (
     open_collection,
 )
 from embedding_pipeline import Embedders, Mode, run
-from fakes import FakeEmbedder
+from fakes import FakeEmbedder, RenameFailingClient
 
 FIXED_TIME = datetime(2026, 11, 13, 9, 5, 42)
 LOG_FILE_NAME = "2026_11_13_09_05.txt"
@@ -77,11 +77,13 @@ def test_documents_are_embedded_in_batches(chroma_client, embedders, tmp_path):
 def test_each_document_gets_a_new_unique_guid(chroma_client, embedders, tmp_path):
     # E2
     run_pipeline(Mode.CREATE, [ListResource("notion", 20)], chroma_client, embedders, tmp_path)
+    first_ids = open_collection(chroma_client, TEXT_COLLECTION_NAME).get()["ids"]
     run_pipeline(Mode.CREATE, [ListResource("notion", 20)], chroma_client, embedders, tmp_path)
 
     ids = open_collection(chroma_client, TEXT_COLLECTION_NAME).get()["ids"]
-    assert len(ids) == len(set(ids)) == 40
-    assert all(uuid.UUID(item).version == 4 for item in ids)
+    assert len(ids) == len(set(ids)) == 20
+    assert set(ids).isdisjoint(first_ids)  # the same documents get new ids in a new build
+    assert all(uuid.UUID(item).version == 4 for item in ids + first_ids)
 
 
 def test_text_document_goes_to_the_text_collection_together(chroma_client, embedders, tmp_path):
@@ -113,7 +115,7 @@ def test_image_documents_go_to_the_image_collection(chroma_client, embedders, tm
 
 def test_collections_use_cosine_space(chroma_client, embedders, tmp_path):
     # E4
-    run_pipeline(Mode.CREATE, [], chroma_client, embedders, tmp_path)
+    run_pipeline(Mode.CREATE, [ListResource("notion", 1)], chroma_client, embedders, tmp_path)
 
     for name in (TEXT_COLLECTION_NAME, IMAGE_COLLECTION_NAME):
         assert chroma_client.get_collection(name, embedding_function=None).configuration["hnsw"]["space"] == "cosine"
@@ -211,13 +213,13 @@ def test_build_is_marked_complete_only_when_it_ends_with_documents_and_no_failur
 def test_every_step_is_logged_to_a_dated_file(chroma_client, embedders, tmp_path):
     # E6
     logs_dir = tmp_path / "logs" / "embedding"
-    run_pipeline(Mode.CREATE, [], chroma_client, embedders, tmp_path)
+    run_pipeline(Mode.CREATE, [ListResource("old", 1)], chroma_client, embedders, tmp_path)
 
     run_pipeline(Mode.UPDATE, [ListResource("notion", 20)], chroma_client, embedders, logs_dir)
 
     lines = (logs_dir / LOG_FILE_NAME).read_text(encoding="utf-8").splitlines()
     assert "start mode=update" in lines[0]
-    assert any("deleted collections: ['fuxi_image', 'fuxi_text']" in line for line in lines)
+    assert any("deleted collections: ['fuxi_image_old', 'fuxi_text_old']" in line for line in lines)
     assert any("notion: 20 documents read" in line for line in lines)
     assert any("batch 2 added 4 documents to fuxi_text" in line for line in lines)
     assert "end" in lines[-1] and "20 documents" in lines[-1]
@@ -233,7 +235,7 @@ def test_failing_resource_is_logged_and_others_continue(chroma_client, embedders
     assert result.failed_resources == ["broken"]
     assert result.added_documents == 4
     assert result.complete is False
-    assert open_collection(chroma_client, TEXT_COLLECTION_NAME).count() == 4
+    assert collection_names(chroma_client) == []  # an incomplete build is not stored
     log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
     assert "broken failed: RuntimeError: source is down" in log
 
@@ -254,3 +256,89 @@ def test_chroma_client_is_persistent_without_telemetry(monkeypatch, tmp_path):
     assert calls[0]["path"] == str(tmp_path)
     assert calls[0]["settings"].anonymized_telemetry is False
     assert DEFAULT_CHROMA_PATH == Path(chroma_store.__file__).resolve().parent / "chroma_data"
+
+
+def test_failed_create_keeps_the_existing_collections(chroma_client, embedders, tmp_path):
+    # E12
+    run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
+
+    result = run_pipeline(
+        Mode.CREATE, [ListResource("fresh", 3), FailingResource()], chroma_client, embedders, tmp_path
+    )
+
+    assert result.complete is False
+    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert is_build_complete(chroma_client)
+    assert collection_names(chroma_client) == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
+    assert "create failed, the old collections are kept" in (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+
+
+def test_create_reads_before_touching_the_stored_collections(chroma_client, embedders, tmp_path):
+    # E12
+    run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
+    resource = StoreCheckingResource(chroma_client)
+
+    run_pipeline(Mode.CREATE, [resource], chroma_client, embedders, tmp_path)
+
+    assert resource.seen == ["stale note 0", "stale note 1"]
+    assert stored_documents(chroma_client) == ["fresh note 0", "fresh note 1"]
+
+
+@pytest.mark.parametrize(
+    "failing_name",
+    ["fuxi_image_old", "fuxi_text", "fuxi_image"],
+    ids=["live-to-old", "first-staging", "second-staging"],
+)
+def test_failed_rename_restores_the_old_collections(chroma_client, embedders, tmp_path, failing_name):
+    # E13
+    run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
+    failing_client = RenameFailingClient(chroma_client, {failing_name})
+
+    with pytest.raises(RuntimeError, match="rename"):
+        run_pipeline(Mode.UPDATE, [ListResource("fresh", 3)], failing_client, embedders, tmp_path)
+
+    assert collection_names(chroma_client) == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
+    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert is_build_complete(chroma_client)
+    assert "swap failed, the old collections are restored" in (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+
+
+class CollectionNamesResource(ListResource):
+    """Records the collection names at the moment it is read."""
+
+    def __init__(self, chroma_client):
+        super().__init__("fresh", 2)
+        self.chroma_client = chroma_client
+        self.seen: list[str] = []
+
+    def read_documents(self) -> list[Document]:
+        self.seen = collection_names(self.chroma_client)
+        return super().read_documents()
+
+
+def test_leftover_old_and_staging_collections_are_removed_before_a_build(chroma_client, embedders, tmp_path):
+    # E13
+    run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
+    open_collection(chroma_client, "fuxi_text_old").add(ids=["x"], documents=["older"], embeddings=[[1.0] * 8])
+    open_collection(chroma_client, "fuxi_image_next").add(ids=["y"], documents=["partial"], embeddings=[[1.0] * 8])
+    resource = CollectionNamesResource(chroma_client)
+
+    run_pipeline(Mode.UPDATE, [resource], chroma_client, embedders, tmp_path)
+
+    assert "fuxi_text_old" not in resource.seen
+    assert set(resource.seen) >= {TEXT_COLLECTION_NAME, IMAGE_COLLECTION_NAME}
+    assert collection_names(chroma_client) == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
+    assert stored_documents(chroma_client) == ["fresh note 0", "fresh note 1"]
+
+
+def test_old_collection_without_a_live_one_is_restored_before_a_build(chroma_client, embedders, tmp_path):
+    # E13
+    run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
+    chroma_store.rename_collection(chroma_client, TEXT_COLLECTION_NAME, "fuxi_text_old")
+
+    result = run_pipeline(Mode.UPDATE, [FailingResource()], chroma_client, embedders, tmp_path)
+
+    assert result.complete is False
+    assert collection_names(chroma_client) == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
+    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert is_build_complete(chroma_client)

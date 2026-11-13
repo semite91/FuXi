@@ -16,14 +16,16 @@ from base import ResourceKind
 DEFAULT_CHROMA_PATH = Path(__file__).resolve().parent / "chroma_data"
 TEXT_COLLECTION_NAME = "fuxi_text"
 IMAGE_COLLECTION_NAME = "fuxi_image"
-COLLECTION_NAMES = (TEXT_COLLECTION_NAME, IMAGE_COLLECTION_NAME)
 COLLECTION_BY_KIND = {
     ResourceKind.TEXT: TEXT_COLLECTION_NAME,
     ResourceKind.IMAGE: IMAGE_COLLECTION_NAME,
 }
-# An update builds into these collections first and renames them only when it succeeded.
+# A build writes into these collections first; the live ones are replaced only when it succeeded.
 STAGING_SUFFIX = "_next"
 STAGING_COLLECTION_BY_KIND = {kind: f"{name}{STAGING_SUFFIX}" for kind, name in COLLECTION_BY_KIND.items()}
+# During the swap the live collections are kept under these names until the new ones are in place.
+OLD_SUFFIX = "_old"
+OLD_COLLECTION_BY_KIND = {kind: f"{name}{OLD_SUFFIX}" for kind, name in COLLECTION_BY_KIND.items()}
 # fuxi_text carries this metadata only after a build reached its end with documents and no failed resource.
 BUILD_MARKER_KEY = "fuxi_build"
 BUILD_COMPLETE_VALUE = "complete"
@@ -44,21 +46,20 @@ def open_collection(client: ClientAPI, name: str) -> Collection:
     )
 
 
-def delete_all_collections(client: ClientAPI) -> list[str]:
-    return delete_collections_except(client, ())
+def collection_names(client: ClientAPI) -> set[str]:
+    return {collection.name for collection in client.list_collections()}
 
 
-def delete_collections_except(client: ClientAPI, kept: Names[str]) -> list[str]:
-    names = [collection.name for collection in client.list_collections() if collection.name not in kept]
-    for name in names:
+def delete_collections(
+    client: ClientAPI, names: Names[str] | None = None, *, kept: Names[str] = ()
+) -> list[str]:
+    """Deletes the named collections that exist (every collection when names is None) except kept; sorted names."""
+    deleted = sorted(
+        name for name in collection_names(client) if (names is None or name in names) and name not in kept
+    )
+    for name in deleted:
         client.delete_collection(name)
-    return names
-
-
-def delete_collections(client: ClientAPI, names: Names[str]) -> None:
-    for collection in client.list_collections():
-        if collection.name in names:
-            client.delete_collection(collection.name)
+    return deleted
 
 
 def rename_collection(client: ClientAPI, name: str, new_name: str) -> None:

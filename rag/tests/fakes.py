@@ -20,7 +20,7 @@ class FakeNotionClient:
         self,
         recorded: dict[str, Any],
         errors: list[Exception] | None = None,
-        page_errors: dict[str, Exception] | None = None,
+        page_errors: dict[str, Exception | list[Exception]] | None = None,
     ):
         self.recorded = recorded
         self.errors = list(errors or [])
@@ -59,8 +59,11 @@ class _FakePages:
 
     def retrieve(self, page_id: str, **kwargs: Any) -> dict[str, Any]:
         self.owner._record("pages.retrieve", {"page_id": page_id})
-        if page_id in self.owner.page_errors:
-            raise self.owner.page_errors[page_id]
+        error = self.owner.page_errors.get(page_id)
+        if isinstance(error, list):  # one error per call while the list lasts
+            error = error.pop(0) if error else None
+        if error is not None:
+            raise error
         return self.owner.recorded["pages"][page_id]
 
 
@@ -123,3 +126,33 @@ class ScriptedRandom:
         value = self.choices.pop(0)
         assert value in options
         return value
+
+
+class RenameFailingClient:
+    """Wraps a real Chroma client; the first rename to each of failing_names raises, later ones work."""
+
+    def __init__(self, client: Any, failing_names: set[str] | None = None):
+        self._client = client
+        # The caller's set is kept, so names added later fail too.
+        self.failing_names = failing_names if failing_names is not None else set()
+
+    def get_or_create_collection(self, *args: Any, **kwargs: Any) -> "_RenameFailingCollection":
+        return _RenameFailingCollection(self._client.get_or_create_collection(*args, **kwargs), self)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
+
+
+class _RenameFailingCollection:
+    def __init__(self, collection: Any, owner: RenameFailingClient):
+        self._collection = collection
+        self._owner = owner
+
+    def modify(self, name: str | None = None, **kwargs: Any) -> None:
+        if name in self._owner.failing_names:
+            self._owner.failing_names.discard(name)
+            raise RuntimeError(f"rename to {name} failed")
+        self._collection.modify(name=name, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._collection, name)

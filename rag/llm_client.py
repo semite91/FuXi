@@ -20,7 +20,6 @@ PROMPTS_DIR = REPO_ROOT / "prompts"
 RETRIEVAL_PROMPT_FILE = "retrieval.txt"
 TEXT_PROMPT_FILE = "llm.txt"
 WEB_PROMPT_FILE = "llm_web.txt"
-PROMPT_FILES = (RETRIEVAL_PROMPT_FILE, TEXT_PROMPT_FILE, WEB_PROMPT_FILE)
 PROMPT_ENCODING = "utf-8"
 
 STORY = "story"
@@ -71,7 +70,7 @@ class LlmClient:
         self._gemini_client: Any = None
         self._random = random_source or random.SystemRandom()
         self._prompts_dir = prompts_dir
-        self._prompts: dict[str, str] | None = None
+        self._prompts: dict[str, str] = {}
         self._prompts_lock = threading.Lock()
 
     def gemini_client(self) -> Any:
@@ -81,12 +80,10 @@ class LlmClient:
         return self._gemini_client
 
     def prompt(self, prompt_file: str) -> str:
-        """The prompt text; the three prompt files are read once, on first use, and kept."""
+        """The prompt text; each file is read on its own first use and kept, so a missing file breaks only its calls."""
         with self._prompts_lock:
-            if self._prompts is None:
-                self._prompts = {
-                    name: (self._prompts_dir / name).read_text(encoding=PROMPT_ENCODING) for name in PROMPT_FILES
-                }
+            if prompt_file not in self._prompts:
+                self._prompts[prompt_file] = (self._prompts_dir / prompt_file).read_text(encoding=PROMPT_ENCODING)
             return self._prompts[prompt_file]
 
     def build_search_query(self, word: str, meaning: str) -> str:

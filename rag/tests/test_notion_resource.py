@@ -222,3 +222,25 @@ def test_path_stops_at_the_first_unreadable_parent():
     documents = by_name(make_resource(client).read_documents())
 
     assert documents["Poems"].metadata["path"] == "Archive"
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [(500, "internal_server_error"), (401, "unauthorized"), (RATE_LIMITED_STATUS, "rate_limited")],
+)
+def test_parent_page_server_or_auth_error_fails_the_resource(status, code):
+    # C12
+    errors = [api_error(status, code)] * (MAX_ATTEMPTS if status == RATE_LIMITED_STATUS else 1)
+    client = FakeNotionClient(recorded(), page_errors={PAGE_D: errors})
+
+    with pytest.raises(APIResponseError) as raised:
+        make_resource(client).read_documents()
+
+    assert raised.value.status == status
+
+
+def test_not_found_code_with_another_status_still_ends_the_path():
+    # C11
+    client = FakeNotionClient(recorded(), page_errors={PAGE_D: api_error(400, "object_not_found")})
+
+    assert by_name(make_resource(client).read_documents())["Poems"].metadata["path"] == ""

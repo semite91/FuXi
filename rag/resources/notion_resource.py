@@ -28,6 +28,9 @@ DEFAULT_RETRY_AFTER_SECONDS = 1.0
 MIN_RETRY_AFTER_SECONDS = 0.0
 MAX_RETRY_AFTER_SECONDS = 60.0
 RATE_LIMITED_STATUS = 429
+# A parent page answering with one of these is not shared with the integration; other errors fail the resource.
+UNREADABLE_PAGE_STATUSES = frozenset({403, 404})
+UNREADABLE_PAGE_CODES = frozenset({"object_not_found", "restricted_resource"})
 RETRY_AFTER_HEADER = "retry-after"
 
 PAGE_FILTER = {"property": "object", "value": "page"}
@@ -133,11 +136,13 @@ class NotionResource(Resource):
         return titles
 
     def _parent_page(self, client: Any, parent_id: str, page_cache: PageCache) -> dict[str, Any] | None:
-        """The parent page, or None when it is not shared with the integration (403, 404 or another API error)."""
+        """The parent page, or None when it is not shared with the integration (403 or 404); other errors raise."""
         if parent_id not in page_cache:
             try:
                 page_cache[parent_id] = self._call_with_retry(lambda: client.pages.retrieve(page_id=parent_id))
-            except APIResponseError:
+            except APIResponseError as error:
+                if not _is_unreadable_page(error):
+                    raise
                 page_cache[parent_id] = None
         return page_cache[parent_id]
 
@@ -170,6 +175,10 @@ def _page_title(page: dict[str, Any]) -> str:
 
 def _plain_text(rich_text: list[dict[str, Any]]) -> str:
     return "".join(item.get(PLAIN_TEXT_KEY, "") for item in rich_text)
+
+
+def _is_unreadable_page(error: APIResponseError) -> bool:
+    return error.status in UNREADABLE_PAGE_STATUSES or error.code in UNREADABLE_PAGE_CODES
 
 
 def _retry_after_seconds(error: APIResponseError) -> float:
