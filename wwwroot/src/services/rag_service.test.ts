@@ -9,7 +9,7 @@ const WORDS = [
 ];
 
 test('5a I1 GetWordContent is a POST with every Word and its translation', async () => {
-  const content = [{ name: 'Ephemeral', content: '{"method":"photo","image_url":"https://i.test/a.jpg"}' }];
+  const content = [{ name: 'Ephemeral', translation: 'geçici', content: '{"method":"photo","image_url":"https://i.test/a.jpg"}' }];
   const api = mockApi({ 'POST /GetWordContent': { body: content } });
 
   await expect(getWordContent(WORDS)).resolves.toEqual(content);
@@ -21,6 +21,7 @@ test('5a I1 GetWordContent is a POST with every Word and its translation', async
 test.each([
   [200, 'ready'],
   [202, 'building'],
+  [200, 'empty'],
 ])('5a I2 Init_RAG is a POST that reads %s as "%s"', async (status, state) => {
   const api = mockApi({ 'POST /Init_RAG': { status, body: { status: state } } });
 

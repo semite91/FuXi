@@ -75,7 +75,7 @@ test('5a I3 a 503 from GetWordContent makes the waiting cards say "Content is no
 });
 
 test('5a I4 a returned content JSON is stored by UpdateWordContent as the same string', async () => {
-  const api = openActive(WITHOUT_CONTENT, { 'POST /GetWordContent': { body: [{ name: 'Serendipity', content: MUSIC }] } });
+  const api = openActive(WITHOUT_CONTENT, { 'POST /GetWordContent': { body: [{ name: 'Serendipity', translation: 'Serendipity translation', content: MUSIC }] } });
   await waitFor(() => expect(api.callsTo('UpdateWordContent')).toHaveLength(1));
 
   expect(api.callsTo('UpdateWordContent')[0].body).toEqual({ id: WORD_TWO_ID, content: MUSIC });
@@ -152,7 +152,7 @@ test('5a I12 a picture that fails to load is replaced by "Content is not availab
 });
 
 test('5a I6 a photo returned by the engine is shown after it arrives', async () => {
-  openActive([WITHOUT_CONTENT[0]], { 'POST /GetWordContent': { body: [{ name: 'Ephemeral', content: PHOTO }] } });
+  openActive([WITHOUT_CONTENT[0]], { 'POST /GetWordContent': { body: [{ name: 'Ephemeral', translation: 'Ephemeral translation', content: PHOTO }] } });
   await screen.findByRole('heading', { level: 1, name: 'Ephemeral' });
 
   fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
@@ -195,9 +195,11 @@ const nameOf = (position: number) => `Word ${position}`;
 const storyOf = (name: string) => `${name} story`;
 const manyCards = (count: number) =>
   Array.from({ length: count }, (_, offset) => cardWord(`id-${offset + 1}`, nameOf(offset + 1), { content: null }));
-const namesIn = (call: RecordedCall) => (call.body as { words: { name: string }[] }).words.map((word) => word.name);
+const meaningsIn = (call: RecordedCall) => (call.body as { words: { name: string; translation: string }[] }).words;
+const namesIn = (call: RecordedCall) => meaningsIn(call).map((word) => word.name);
+/** The engine echoes each asked name and translation with its content. */
 const storiesFor = (call: RecordedCall): Answer => ({
-  body: namesIn(call).map((name) => ({ name, content: storyOf(name) })),
+  body: meaningsIn(call).map(({ name, translation }) => ({ name, translation, content: storyOf(name) })),
 });
 
 /** Every GetWordContent call waits until the test answers it. */
@@ -258,7 +260,7 @@ test('5a I15 while a group is waiting, the next group is not sent', async () => 
   expect(api.callsTo('GetWordContent')).toHaveLength(1);
 });
 
-test('5a I15 cards with the same name are asked once and share one result', async () => {
+test('5a I21 given two cards with the same name and translation, when content is asked, then the pair is sent once and both cards get the content', async () => {
   const cards = [
     cardWord(WORD_ONE_ID, 'Ephemeral', { content: null }),
     cardWord(WORD_TWO_ID, 'Ephemeral', { content: null }),
@@ -267,11 +269,61 @@ test('5a I15 cards with the same name are asked once and share one result', asyn
   await waitFor(() => expect(api.callsTo('UpdateWordContent')).toHaveLength(2));
 
   expect(api.callsTo('GetWordContent')).toHaveLength(1);
-  expect(namesIn(api.callsTo('GetWordContent')[0])).toEqual(['Ephemeral']);
+  expect(meaningsIn(api.callsTo('GetWordContent')[0])).toEqual([
+    { name: 'Ephemeral', translation: 'Ephemeral translation' },
+  ]);
   expect(api.callsTo('UpdateWordContent').map((call) => call.body)).toEqual([
     { id: WORD_ONE_ID, content: 'Ephemeral story' },
     { id: WORD_TWO_ID, content: 'Ephemeral story' },
   ]);
+  await showBack('Ephemeral');
+  expect(screen.getByText('Ephemeral story')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Next word' }));
+  await showBack('Ephemeral');
+  expect(screen.getByText('Ephemeral story')).toBeInTheDocument();
+});
+
+const BANK_MONEY = 'banka';
+const BANK_RIVER = 'kıyı';
+const bankStoryOf = (translation: string) => `bank as ${translation}`;
+
+const showBankBack = async (translation: string) => {
+  await screen.findByRole('heading', { level: 1, name: 'bank' });
+  fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+  await screen.findByRole('heading', { level: 2, name: translation });
+};
+
+test("5a I20 given two cards named 'bank' with different translations, when content is asked, then both pairs are sent and each card gets the content of its own translation", async () => {
+  const cards = [
+    cardWord(WORD_ONE_ID, 'bank', { translation: BANK_MONEY, content: null }),
+    cardWord(WORD_TWO_ID, 'bank', { translation: BANK_RIVER, content: null }),
+  ];
+  // The answer comes in reverse order, so only the name and translation can match it to a card.
+  const api = openActive(cards, {
+    'POST /GetWordContent': (call: RecordedCall): Answer => ({
+      body: [...meaningsIn(call)].reverse().map(({ name, translation }) => ({
+        name,
+        translation,
+        content: bankStoryOf(translation),
+      })),
+    }),
+  });
+  await waitFor(() => expect(api.callsTo('UpdateWordContent')).toHaveLength(2));
+
+  expect(api.callsTo('GetWordContent')).toHaveLength(1);
+  expect(meaningsIn(api.callsTo('GetWordContent')[0])).toEqual([
+    { name: 'bank', translation: BANK_MONEY },
+    { name: 'bank', translation: BANK_RIVER },
+  ]);
+  expect(api.callsTo('UpdateWordContent').map((call) => call.body)).toEqual([
+    { id: WORD_ONE_ID, content: bankStoryOf(BANK_MONEY) },
+    { id: WORD_TWO_ID, content: bankStoryOf(BANK_RIVER) },
+  ]);
+  await showBankBack(BANK_MONEY);
+  expect(screen.getByText(bankStoryOf(BANK_MONEY))).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Next word' }));
+  await showBankBack(BANK_RIVER);
+  expect(screen.getByText(bankStoryOf(BANK_RIVER))).toBeInTheDocument();
 });
 
 test('5a I16 a failed second group makes only its cards say "Content is not available." and the third group is asked', async () => {

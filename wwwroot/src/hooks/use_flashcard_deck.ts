@@ -44,44 +44,51 @@ const CONTENT_GROUP_SIZE = 5;
 
 const isWaiting = (card: Flashcard): boolean => card.contentStatus === 'loading';
 
-/** The waiting Words in card order, one per Name: cards with the same Name share one result. */
+/** Cards with the same name and translation share one content; a homonym with another translation gets its own. */
+const meaningKey = ({ name, translation }: WordMeaning): string => JSON.stringify([name, translation]);
+
+/** The waiting Words in card order, one per name and translation. */
 const uniqueMeanings = (waiting: readonly Flashcard[]): WordMeaning[] => {
-  const byName = new Map<string, WordMeaning>();
+  const byMeaning = new Map<string, WordMeaning>();
   waiting.forEach(({ word }) => {
-    if (!byName.has(word.name)) {
-      byName.set(word.name, { name: word.name, translation: word.translation });
+    const key = meaningKey(word);
+
+    if (!byMeaning.has(key)) {
+      byMeaning.set(key, { name: word.name, translation: word.translation });
     }
   });
 
-  return [...byName.values()];
+  return [...byMeaning.values()];
 };
 
 const toGroups = <T>(items: readonly T[], size: number): T[][] =>
   Array.from({ length: Math.ceil(items.length / size) }, (_, group) => items.slice(group * size, (group + 1) * size));
 
-/** The generated contents by Name. A failed request gives none, so its Words show that content is not available. */
+/** The generated contents by meaning key. A failed request gives none, so its Words show that content is not available. */
 const askContent = async (group: readonly WordMeaning[]): Promise<Map<string, string>> => {
   try {
     const generated = await getWordContent(group);
 
-    return new Map(generated.map((item) => [item.name, item.content]));
+    return new Map(generated.map((item) => [meaningKey(item), item.content]));
   } catch {
     return new Map();
   }
 };
 
-/** Sets each generated content on the waiting cards of the group with the same Name. A Word without one gets none. */
+/** Sets each generated content on the waiting cards of the group with the same name and translation. A Word without one gets none. */
 const mergeContent = (
   cards: Flashcard[],
-  groupNames: ReadonlySet<string>,
-  contentByName: ReadonlyMap<string, string>,
+  groupKeys: ReadonlySet<string>,
+  contentByMeaning: ReadonlyMap<string, string>,
 ): Flashcard[] =>
   cards.map((card) => {
-    if (!isWaiting(card) || !groupNames.has(card.word.name)) {
+    const key = meaningKey(card.word);
+
+    if (!isWaiting(card) || !groupKeys.has(key)) {
       return card;
     }
 
-    const content = contentByName.get(card.word.name);
+    const content = contentByMeaning.get(key);
 
     return content === undefined || isEmptyContent(content)
       ? { ...card, contentStatus: 'unavailable' }
@@ -91,13 +98,13 @@ const mergeContent = (
 /** The content stays on the card even when it cannot be stored. */
 const storeContent = (
   waiting: readonly Flashcard[],
-  groupNames: ReadonlySet<string>,
-  contentByName: ReadonlyMap<string, string>,
+  groupKeys: ReadonlySet<string>,
+  contentByMeaning: ReadonlyMap<string, string>,
 ) =>
   waiting
-    .filter((card) => groupNames.has(card.word.name))
+    .filter((card) => groupKeys.has(meaningKey(card.word)))
     .forEach((card) => {
-      const content = contentByName.get(card.word.name);
+      const content = contentByMeaning.get(meaningKey(card.word));
 
       if (content !== undefined && !isEmptyContent(content)) {
         updateWordContent(card.word.id, content).catch(() => undefined);
@@ -123,15 +130,15 @@ export const useFlashcardDeck = (wordIds: string | null) => {
       const waiting = loaded.filter(isWaiting);
 
       for (const group of toGroups(uniqueMeanings(waiting), CONTENT_GROUP_SIZE)) {
-        const contentByName = await askContent(group);
+        const contentByMeaning = await askContent(group);
 
         if (!isCurrent) {
           return;
         }
 
-        const groupNames = new Set(group.map((meaning) => meaning.name));
-        setCards((current) => mergeContent(current, groupNames, contentByName));
-        storeContent(waiting, groupNames, contentByName);
+        const groupKeys = new Set(group.map(meaningKey));
+        setCards((current) => mergeContent(current, groupKeys, contentByMeaning));
+        storeContent(waiting, groupKeys, contentByMeaning);
       }
     };
 

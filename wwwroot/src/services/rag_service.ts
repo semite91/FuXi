@@ -10,14 +10,14 @@ export interface WordMeaning {
   translation: string;
 }
 
-/** content is the Word Content JSON as a string. A Word without content is left out. */
-export interface WordContent {
-  name: string;
+/** content is the Word Content JSON as a string, for the name and translation as they were sent. A Word without content is left out. */
+export interface WordContent extends WordMeaning {
   content: string;
 }
 
+/** The app does not act on the status yet. */
 export interface RagState {
-  status: 'ready' | 'building';
+  status: 'ready' | 'building' | 'empty';
 }
 
 const client = createApiClient(RAG_URL_KEY);

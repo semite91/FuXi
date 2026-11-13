@@ -362,9 +362,9 @@ test('I2 cards that all have content do not call GetWordContent', async () => {
   expect(api.callsTo('GetWordContent')).toHaveLength(0);
 });
 
-test('I4 generated content is set by Name, I5 stored once per Word, I6 a missing Word gets none', async () => {
+test('I4 generated content is set by Name and translation, I5 stored once per Word, I6 a missing Word gets none', async () => {
   const api = openActive(WITHOUT_CONTENT, {
-    'POST /GetWordContent': { body: [{ name: 'Ephemeral', content: 'A story about a mayfly.' }] },
+    'POST /GetWordContent': { body: [{ name: 'Ephemeral', translation: 'Ephemeral translation', content: 'A story about a mayfly.' }] },
   });
   await word('Ephemeral');
   await waitFor(() => expect(api.callsTo('UpdateWordContent')).toHaveLength(1));
@@ -387,7 +387,7 @@ test('I7 a pending content shows a skeleton and I8 the content replaces it; I11 
   expect(screen.getByText('Loading content')).toBeInTheDocument();
   expect(document.querySelector('.skeleton')).not.toBeNull();
 
-  await act(async () => pending.resolve({ body: [{ name: 'Ephemeral', content: 'Arrived.' }] }));
+  await act(async () => pending.resolve({ body: [{ name: 'Ephemeral', translation: 'Ephemeral translation', content: 'Arrived.' }] }));
 
   expect(await screen.findByText('Arrived.')).toBeInTheDocument();
   expect(document.querySelector('.skeleton')).toBeNull();
@@ -406,7 +406,7 @@ test('I9 a failed GetWordContent shows that content is not available and the car
 
 test('I10 a failed UpdateWordContent keeps the generated content on the card', async () => {
   openActive([WITHOUT_CONTENT[0]], {
-    'POST /GetWordContent': { body: [{ name: 'Ephemeral', content: 'Kept.' }] },
+    'POST /GetWordContent': { body: [{ name: 'Ephemeral', translation: 'Ephemeral translation', content: 'Kept.' }] },
     'POST /api/UpdateWordContent': problem(500, 'Failed.'),
   });
   await word('Ephemeral');
