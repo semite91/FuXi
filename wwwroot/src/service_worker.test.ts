@@ -5,6 +5,7 @@ import serviceWorkerCode from '../public/service_worker.js?raw';
 import { deferred } from './test/api_mock';
 
 const ICON = '/fuxi_192.png';
+const NOTIFICATION_TAG = 'fuxi-due-words';
 const TITLE = 'apple, river';
 const WORD_IDS = 'id-1,id-2';
 const FLASHCARD_URL = '/flashcard?wordIds=id-1%2Cid-2';
@@ -87,10 +88,22 @@ test('G2 the notification data holds the wordIds and its icon is the FuXi icon',
   const { kept } = dispatch('push', { data: pushData({ title: TITLE, wordIds: WORD_IDS }) });
   await Promise.all(kept);
 
-  expect(self.registration.showNotification).toHaveBeenCalledWith(TITLE, {
-    data: { wordIds: WORD_IDS },
-    icon: ICON,
-  });
+  expect(self.registration.showNotification).toHaveBeenCalledWith(
+    TITLE,
+    expect.objectContaining({ data: { wordIds: WORD_IDS }, icon: ICON }),
+  );
+});
+
+test('G5 Given a push, when the notification is shown, then it has the FuXi tag and renotify true', async () => {
+  const { self, dispatch } = loadServiceWorker();
+
+  const { kept } = dispatch('push', { data: pushData({ title: TITLE, wordIds: WORD_IDS }) });
+  await Promise.all(kept);
+
+  expect(self.registration.showNotification).toHaveBeenCalledWith(
+    TITLE,
+    expect.objectContaining({ tag: NOTIFICATION_TAG, renotify: true }),
+  );
 });
 
 test('G3 the push work is kept inside event.waitUntil', async () => {

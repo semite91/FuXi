@@ -27,22 +27,32 @@ const AUTH = 'auth-secret';
 const KEY_BYTES = Uint8Array.from({ length: 65 }, (_, index) => (index === 0 ? 4 : 0xfb + (index % 5)));
 const PUBLIC_KEY = btoa(String.fromCharCode(...KEY_BYTES)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-const fakeSubscription = (endpoint = ENDPOINT) => ({
+// The key of an older VAPID key pair, so an existing subscription made with it is stale.
+const OTHER_KEY_BYTES = Uint8Array.from(KEY_BYTES, (byte, index) => (index === 0 ? byte : byte ^ 0xff));
+const NEW_ENDPOINT = 'https://fcm.googleapis.com/fcm/send/endpoint-new';
+const SERVICE_WORKER_READY_TIMEOUT_MS = 10_000;
+
+/** A subscription made with the key bytes. By default the current key, as the browser keeps it: an ArrayBuffer. */
+const fakeSubscription = (endpoint = ENDPOINT, key: Uint8Array | null = KEY_BYTES) => ({
+  options: { applicationServerKey: key === null ? null : key.slice().buffer },
   toJSON: () => ({ endpoint, keys: { p256dh: P256DH, auth: AUTH } }),
+  unsubscribe: vi.fn(async () => true),
 });
 
 type FakeSubscription = ReturnType<typeof fakeSubscription>;
 
+const NEVER_READY = new Promise<never>(() => undefined);
+
 /** A browser with a service worker and PushManager. jsdom has neither. */
-const stubPush = (existing: FakeSubscription | null = null) => {
+const stubPush = (existing: FakeSubscription | null = null, isReady = true) => {
   const pushManager = {
     getSubscription: vi.fn(async () => existing),
-    subscribe: vi.fn(async (_options: PushSubscriptionOptionsInit) => fakeSubscription()),
+    subscribe: vi.fn(async (_options: PushSubscriptionOptionsInit) => fakeSubscription(NEW_ENDPOINT)),
   };
   vi.stubGlobal('PushManager', class {});
   Object.defineProperty(navigator, 'serviceWorker', {
     configurable: true,
-    value: { ready: Promise.resolve({ pushManager }) },
+    value: { ready: isReady ? Promise.resolve({ pushManager }) : NEVER_READY },
   });
   onTestFinished(() => {
     delete (navigator as { serviceWorker?: unknown }).serviceWorker;
@@ -244,17 +254,21 @@ test('I6 SavePushSubscription gets endpoint, p256dh and auth of the subscription
   const saves = api.callsTo('SavePushSubscription');
   expect(saves).toHaveLength(1);
   expect(saves[0].method).toBe('POST');
-  expect(saves[0].body).toEqual({ endpoint: ENDPOINT, p256dh: P256DH, auth: AUTH });
+  expect(saves[0].body).toEqual({ endpoint: NEW_ENDPOINT, p256dh: P256DH, auth: AUTH });
 });
 
-test('I7 a saved subscription shows "Notifications: allowed" and no error', async () => {
+test('I7 a saved subscription shows "Notifications: allowed" and no error, not before the save ends', async () => {
   stubNotification('default', 'granted');
   stubPush();
-  const api = openSettings(PUSH_ROUTES);
+  const saving = deferred();
+  const api = openSettings({ ...PUSH_ROUTES, 'POST /api/SavePushSubscription': () => saving.promise });
 
   await enableNotifications();
-
   expect(api.callsTo('SavePushSubscription')).toHaveLength(1);
+  expect(screen.getByText('Notifications: not asked')).toBeInTheDocument();
+  expect(screen.queryByText('Notifications: allowed')).not.toBeInTheDocument();
+  await act(async () => saving.resolve({ status: 204 }));
+
   expect(screen.getByText('Notifications: allowed')).toBeInTheDocument();
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(button('Enable notifications')).toBeEnabled();
@@ -279,6 +293,8 @@ test.each([
 
   expect(screen.getByRole('alert')).toHaveTextContent('Notifications could not be enabled.');
   expect(button('Enable notifications')).toBeEnabled();
+  expect(screen.queryByText('Notifications: allowed')).not.toBeInTheDocument();
+  expect(screen.getByText('Notifications: not asked')).toBeInTheDocument();
 });
 
 test('I8 the error goes away when a later click succeeds', async () => {
@@ -312,7 +328,7 @@ test('I9 a click while the subscription is pending sends no second request', asy
   expect(button('Enable notifications')).toBeEnabled();
 });
 
-test('I10 with "granted" and a browser subscription, a click sends it again and creates no new one', async () => {
+test('I10 with "granted" and a browser subscription of the current key, a click sends it again and creates no new one', async () => {
   const existing = fakeSubscription('https://updates.push.services.mozilla.com/wpush/v2/existing');
   stubNotification('granted');
   const pushManager = stubPush(existing);
@@ -322,7 +338,8 @@ test('I10 with "granted" and a browser subscription, a click sends it again and 
   await enableNotifications();
 
   expect(pushManager.subscribe).not.toHaveBeenCalled();
-  expect(api.callsTo('GetVapidPublicKey')).toHaveLength(0);
+  expect(existing.unsubscribe).not.toHaveBeenCalled();
+  expect(api.callsTo('GetVapidPublicKey')).toHaveLength(1);
   expect(api.callsTo('SavePushSubscription')[0].body).toEqual({
     endpoint: 'https://updates.push.services.mozilla.com/wpush/v2/existing',
     p256dh: P256DH,
@@ -349,4 +366,63 @@ test('I11 a browser without service workers reads "not supported" and disables t
 
   expect(await screen.findByText('Notifications: not supported')).toBeInTheDocument();
   expect(button('Enable notifications')).toBeDisabled();
+});
+
+test.each([
+  ['another key', OTHER_KEY_BYTES],
+  ['no key', null],
+])(
+  'I13 Given an existing subscription made with %s, when the button is clicked, then it is unsubscribed, a new one is made with the current key and the new one is saved',
+  async (_, key) => {
+    const existing = fakeSubscription(ENDPOINT, key);
+    stubNotification('granted');
+    const pushManager = stubPush(existing);
+    const api = openSettings(PUSH_ROUTES);
+
+    await enableNotifications();
+
+    expect(existing.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(pushManager.subscribe).toHaveBeenCalledTimes(1);
+    expect(existing.unsubscribe.mock.invocationCallOrder[0]).toBeLessThan(
+      pushManager.subscribe.mock.invocationCallOrder[0],
+    );
+    expect(pushManager.subscribe.mock.calls[0][0].applicationServerKey).toEqual(KEY_BYTES);
+    expect(api.callsTo('GetVapidPublicKey')).toHaveLength(1);
+    const saves = api.callsTo('SavePushSubscription');
+    expect(saves).toHaveLength(1);
+    expect(saves[0].body).toEqual({ endpoint: NEW_ENDPOINT, p256dh: P256DH, auth: AUTH });
+    expect(screen.getByText('Notifications: allowed')).toBeInTheDocument();
+  },
+);
+
+test("I14 Given a service worker that is never ready, when 10 seconds pass, then 'Notifications could not be enabled.' is shown and the button is enabled again", async () => {
+  vi.useFakeTimers();
+  stubNotification('default', 'granted');
+  stubPush(null, false);
+  const api = openSettings(PUSH_ROUTES);
+
+  await enableNotifications();
+  await act(async () => vi.advanceTimersByTimeAsync(SERVICE_WORKER_READY_TIMEOUT_MS - 1));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(button('Enable notifications')).toBeDisabled();
+
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+
+  expect(screen.getByRole('alert')).toHaveTextContent('Notifications could not be enabled.');
+  expect(button('Enable notifications')).toBeEnabled();
+  expect(screen.queryByText('Notifications: allowed')).not.toBeInTheDocument();
+  expect(api.callsTo('SavePushSubscription')).toHaveLength(0);
+});
+
+test('I14 the timeout is cleared when the service worker is ready', async () => {
+  vi.useFakeTimers();
+  stubNotification('default', 'granted');
+  stubPush();
+  openSettings(PUSH_ROUTES);
+
+  await enableNotifications();
+  await act(async () => vi.advanceTimersByTimeAsync(0));
+
+  expect(screen.getByText('Notifications: allowed')).toBeInTheDocument();
+  expect(vi.getTimerCount()).toBe(0);
 });

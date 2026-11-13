@@ -2,6 +2,8 @@
 // It is plain JavaScript, served unbundled at /service_worker.js, so it cannot import app code.
 
 const NOTIFICATION_ICON = '/fuxi_192.png';
+// One tag for every push, so the newest notification replaces the older one; renotify still alerts.
+const NOTIFICATION_TAG = 'fuxi-due-words';
 const FLASHCARD_PATH = '/flashcard';
 const WORD_IDS_QUERY = 'wordIds';
 const WINDOW_CLIENT_TYPE = 'window';
@@ -43,6 +45,8 @@ const showWordsNotification = async (data) => {
   await self.registration.showNotification(payload.title, {
     data: { wordIds: payload.wordIds },
     icon: NOTIFICATION_ICON,
+    tag: NOTIFICATION_TAG,
+    renotify: true,
   });
 };
 

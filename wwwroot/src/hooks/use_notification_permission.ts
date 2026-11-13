@@ -23,11 +23,15 @@ export const useNotificationPermission = () => {
 
     try {
       const answer = await requestPermission();
-      setPermission(answer);
 
-      if (answer === GRANTED) {
-        await subscribeToPush();
+      if (answer !== GRANTED) {
+        setPermission(answer);
+        return;
       }
+
+      // "allowed" is shown only once the subscription is saved; on a failure the previous state stays.
+      await subscribeToPush();
+      setPermission(GRANTED);
     } catch {
       setHasFailed(true);
     } finally {
