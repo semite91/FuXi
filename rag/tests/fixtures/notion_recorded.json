@@ -1,0 +1,765 @@
+{
+  "_comment": "Recorded examples of Notion API answers (version 2025-09-03), trimmed and anonymised for tests.",
+  "search": {
+    "start": {
+      "object": "list",
+      "results": [
+        {
+          "object": "page",
+          "id": "1a2b3c4d-0001-4000-8000-00000000000a",
+          "created_time": "2026-09-01T08:00:00.000Z",
+          "last_edited_time": "2026-10-01T09:30:00.000Z",
+          "created_by": {
+            "object": "user",
+            "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+          },
+          "last_edited_by": {
+            "object": "user",
+            "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+          },
+          "cover": null,
+          "icon": null,
+          "parent": {
+            "type": "workspace",
+            "workspace": true
+          },
+          "archived": false,
+          "in_trash": false,
+          "is_locked": false,
+          "properties": {
+            "title": {
+              "id": "title",
+              "type": "title",
+              "title": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Travel ",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Travel ",
+                  "href": null
+                },
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Notes",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Notes",
+                  "href": null
+                }
+              ]
+            }
+          },
+          "url": "https://www.notion.so/1a2b3c4d00014000800000000000000a",
+          "public_url": null
+        },
+        {
+          "object": "page",
+          "id": "1a2b3c4d-0002-4000-8000-00000000000b",
+          "created_time": "2026-09-01T08:00:00.000Z",
+          "last_edited_time": "2026-10-02T10:00:00.000Z",
+          "created_by": {
+            "object": "user",
+            "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+          },
+          "last_edited_by": {
+            "object": "user",
+            "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+          },
+          "cover": null,
+          "icon": null,
+          "parent": {
+            "type": "page_id",
+            "page_id": "1a2b3c4d-0001-4000-8000-00000000000a"
+          },
+          "archived": false,
+          "in_trash": false,
+          "is_locked": false,
+          "properties": {
+            "title": {
+              "id": "title",
+              "type": "title",
+              "title": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Lisbon",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Lisbon",
+                  "href": null
+                }
+              ]
+            }
+          },
+          "url": "https://www.notion.so/1a2b3c4d00024000800000000000000b",
+          "public_url": null
+        }
+      ],
+      "next_cursor": "cursor-search-2",
+      "has_more": true,
+      "type": "page_or_data_source",
+      "page_or_data_source": {},
+      "request_id": "a1b2c3d4-0000-4000-8000-000000000000"
+    },
+    "cursor-search-2": {
+      "object": "list",
+      "results": [
+        {
+          "object": "page",
+          "id": "1a2b3c4d-0003-4000-8000-00000000000c",
+          "created_time": "2026-09-01T08:00:00.000Z",
+          "last_edited_time": "2026-10-03T11:15:00.000Z",
+          "created_by": {
+            "object": "user",
+            "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+          },
+          "last_edited_by": {
+            "object": "user",
+            "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+          },
+          "cover": null,
+          "icon": null,
+          "parent": {
+            "type": "page_id",
+            "page_id": "1a2b3c4d-0004-4000-8000-00000000000d"
+          },
+          "archived": false,
+          "in_trash": false,
+          "is_locked": false,
+          "properties": {
+            "title": {
+              "id": "title",
+              "type": "title",
+              "title": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Poems",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Poems",
+                  "href": null
+                }
+              ]
+            }
+          },
+          "url": "https://www.notion.so/1a2b3c4d00034000800000000000000c",
+          "public_url": null
+        },
+        {
+          "object": "page",
+          "id": "1a2b3c4d-0005-4000-8000-00000000000e",
+          "created_time": "2026-09-01T08:00:00.000Z",
+          "last_edited_time": "2026-10-04T12:00:00.000Z",
+          "created_by": {
+            "object": "user",
+            "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+          },
+          "last_edited_by": {
+            "object": "user",
+            "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+          },
+          "cover": null,
+          "icon": null,
+          "parent": {
+            "type": "workspace",
+            "workspace": true
+          },
+          "archived": false,
+          "in_trash": false,
+          "is_locked": false,
+          "properties": {
+            "title": {
+              "id": "title",
+              "type": "title",
+              "title": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Empty page",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Empty page",
+                  "href": null
+                }
+              ]
+            }
+          },
+          "url": "https://www.notion.so/1a2b3c4d00054000800000000000000e",
+          "public_url": null
+        }
+      ],
+      "next_cursor": null,
+      "has_more": false,
+      "type": "page_or_data_source",
+      "page_or_data_source": {},
+      "request_id": "a1b2c3d4-0000-4000-8000-000000000000"
+    }
+  },
+  "pages": {
+    "1a2b3c4d-0004-4000-8000-00000000000d": {
+      "object": "page",
+      "id": "1a2b3c4d-0004-4000-8000-00000000000d",
+      "created_time": "2026-09-01T08:00:00.000Z",
+      "last_edited_time": "2026-08-20T07:45:00.000Z",
+      "created_by": {
+        "object": "user",
+        "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+      },
+      "last_edited_by": {
+        "object": "user",
+        "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+      },
+      "cover": null,
+      "icon": null,
+      "parent": {
+        "type": "workspace",
+        "workspace": true
+      },
+      "archived": false,
+      "in_trash": false,
+      "is_locked": false,
+      "properties": {
+        "title": {
+          "id": "title",
+          "type": "title",
+          "title": [
+            {
+              "type": "text",
+              "text": {
+                "content": "Archive",
+                "link": null
+              },
+              "annotations": {
+                "bold": false,
+                "italic": false,
+                "strikethrough": false,
+                "underline": false,
+                "code": false,
+                "color": "default"
+              },
+              "plain_text": "Archive",
+              "href": null
+            }
+          ]
+        }
+      },
+      "url": "https://www.notion.so/1a2b3c4d00044000800000000000000d",
+      "public_url": null
+    }
+  },
+  "block_children": {
+    "1a2b3c4d-0001-4000-8000-00000000000a": {
+      "start": {
+        "object": "list",
+        "results": [
+          {
+            "object": "block",
+            "id": "b-a-1",
+            "parent": {
+              "type": "page_id",
+              "page_id": "1a2b3c4d-0001-4000-8000-00000000000a"
+            },
+            "created_time": "2026-09-01T08:00:00.000Z",
+            "last_edited_time": "2026-09-01T08:00:00.000Z",
+            "created_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "last_edited_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "has_children": false,
+            "archived": false,
+            "in_trash": false,
+            "type": "paragraph",
+            "paragraph": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "The Paris trip ",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "The Paris trip ",
+                  "href": null
+                },
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "started in the rain.",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "started in the rain.",
+                  "href": null
+                }
+              ],
+              "color": "default"
+            }
+          },
+          {
+            "object": "block",
+            "id": "2b3c4d5e-0001-4000-8000-0000000000f1",
+            "parent": {
+              "type": "page_id",
+              "page_id": "1a2b3c4d-0001-4000-8000-00000000000a"
+            },
+            "created_time": "2026-09-01T08:00:00.000Z",
+            "last_edited_time": "2026-09-01T08:00:00.000Z",
+            "created_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "last_edited_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "has_children": true,
+            "archived": false,
+            "in_trash": false,
+            "type": "toggle",
+            "toggle": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Hidden memory",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Hidden memory",
+                  "href": null
+                }
+              ],
+              "color": "default"
+            }
+          }
+        ],
+        "next_cursor": "cursor-a-2",
+        "has_more": true,
+        "type": "block",
+        "block": {},
+        "request_id": "a1b2c3d4-0000-4000-8000-000000000000"
+      },
+      "cursor-a-2": {
+        "object": "list",
+        "results": [
+          {
+            "object": "block",
+            "id": "b-a-3",
+            "parent": {
+              "type": "page_id",
+              "page_id": "1a2b3c4d-0001-4000-8000-00000000000a"
+            },
+            "created_time": "2026-09-01T08:00:00.000Z",
+            "last_edited_time": "2026-09-01T08:00:00.000Z",
+            "created_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "last_edited_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "has_children": false,
+            "archived": false,
+            "in_trash": false,
+            "type": "heading_2",
+            "heading_2": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Food",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Food",
+                  "href": null
+                }
+              ],
+              "color": "default"
+            }
+          },
+          {
+            "object": "block",
+            "id": "b-a-4",
+            "parent": {
+              "type": "page_id",
+              "page_id": "1a2b3c4d-0001-4000-8000-00000000000a"
+            },
+            "created_time": "2026-09-01T08:00:00.000Z",
+            "last_edited_time": "2026-09-01T08:00:00.000Z",
+            "created_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "last_edited_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "has_children": false,
+            "archived": false,
+            "in_trash": false,
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Croissants every morning",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Croissants every morning",
+                  "href": null
+                }
+              ],
+              "color": "default"
+            }
+          }
+        ],
+        "next_cursor": null,
+        "has_more": false,
+        "type": "block",
+        "block": {},
+        "request_id": "a1b2c3d4-0000-4000-8000-000000000000"
+      }
+    },
+    "2b3c4d5e-0001-4000-8000-0000000000f1": {
+      "start": {
+        "object": "list",
+        "results": [
+          {
+            "object": "block",
+            "id": "b-t-1",
+            "parent": {
+              "type": "page_id",
+              "page_id": "2b3c4d5e-0001-4000-8000-0000000000f1"
+            },
+            "created_time": "2026-09-01T08:00:00.000Z",
+            "last_edited_time": "2026-09-01T08:00:00.000Z",
+            "created_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "last_edited_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "has_children": false,
+            "archived": false,
+            "in_trash": false,
+            "type": "paragraph",
+            "paragraph": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "A stranger lent me an umbrella.",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "A stranger lent me an umbrella.",
+                  "href": null
+                }
+              ],
+              "color": "default"
+            }
+          }
+        ],
+        "next_cursor": null,
+        "has_more": false,
+        "type": "block",
+        "block": {},
+        "request_id": "a1b2c3d4-0000-4000-8000-000000000000"
+      }
+    },
+    "1a2b3c4d-0002-4000-8000-00000000000b": {
+      "start": {
+        "object": "list",
+        "results": [
+          {
+            "object": "block",
+            "id": "b-b-1",
+            "parent": {
+              "type": "page_id",
+              "page_id": "1a2b3c4d-0002-4000-8000-00000000000b"
+            },
+            "created_time": "2026-09-01T08:00:00.000Z",
+            "last_edited_time": "2026-09-01T08:00:00.000Z",
+            "created_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "last_edited_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "has_children": false,
+            "archived": false,
+            "in_trash": false,
+            "type": "paragraph",
+            "paragraph": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Tram 28 climbs the hills of Alfama.",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Tram 28 climbs the hills of Alfama.",
+                  "href": null
+                }
+              ],
+              "color": "default"
+            }
+          },
+          {
+            "object": "block",
+            "id": "b-b-2",
+            "parent": {
+              "type": "page_id",
+              "page_id": "1a2b3c4d-0002-4000-8000-00000000000b"
+            },
+            "created_time": "2026-09-01T08:00:00.000Z",
+            "last_edited_time": "2026-09-01T08:00:00.000Z",
+            "created_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "last_edited_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "has_children": true,
+            "archived": false,
+            "in_trash": false,
+            "type": "child_page",
+            "child_page": {
+              "title": "Sub page"
+            }
+          }
+        ],
+        "next_cursor": null,
+        "has_more": false,
+        "type": "block",
+        "block": {},
+        "request_id": "a1b2c3d4-0000-4000-8000-000000000000"
+      }
+    },
+    "1a2b3c4d-0003-4000-8000-00000000000c": {
+      "start": {
+        "object": "list",
+        "results": [
+          {
+            "object": "block",
+            "id": "b-c-1",
+            "parent": {
+              "type": "page_id",
+              "page_id": "1a2b3c4d-0003-4000-8000-00000000000c"
+            },
+            "created_time": "2026-09-01T08:00:00.000Z",
+            "last_edited_time": "2026-09-01T08:00:00.000Z",
+            "created_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "last_edited_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "has_children": false,
+            "archived": false,
+            "in_trash": false,
+            "type": "quote",
+            "quote": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Hope is the thing with feathers.",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Hope is the thing with feathers.",
+                  "href": null
+                }
+              ],
+              "color": "default"
+            }
+          }
+        ],
+        "next_cursor": null,
+        "has_more": false,
+        "type": "block",
+        "block": {},
+        "request_id": "a1b2c3d4-0000-4000-8000-000000000000"
+      }
+    },
+    "1a2b3c4d-0005-4000-8000-00000000000e": {
+      "start": {
+        "object": "list",
+        "results": [
+          {
+            "object": "block",
+            "id": "b-e-1",
+            "parent": {
+              "type": "page_id",
+              "page_id": "1a2b3c4d-0005-4000-8000-00000000000e"
+            },
+            "created_time": "2026-09-01T08:00:00.000Z",
+            "last_edited_time": "2026-09-01T08:00:00.000Z",
+            "created_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "last_edited_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "has_children": false,
+            "archived": false,
+            "in_trash": false,
+            "type": "divider",
+            "divider": {}
+          },
+          {
+            "object": "block",
+            "id": "b-e-2",
+            "parent": {
+              "type": "page_id",
+              "page_id": "1a2b3c4d-0005-4000-8000-00000000000e"
+            },
+            "created_time": "2026-09-01T08:00:00.000Z",
+            "last_edited_time": "2026-09-01T08:00:00.000Z",
+            "created_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "last_edited_by": {
+              "object": "user",
+              "id": "6f1c2b9e-0d0a-4c51-9a35-0c1f6c7e2a11"
+            },
+            "has_children": false,
+            "archived": false,
+            "in_trash": false,
+            "type": "paragraph",
+            "paragraph": {
+              "rich_text": [],
+              "color": "default"
+            }
+          }
+        ],
+        "next_cursor": null,
+        "has_more": false,
+        "type": "block",
+        "block": {},
+        "request_id": "a1b2c3d4-0000-4000-8000-000000000000"
+      }
+    }
+  }
+}
