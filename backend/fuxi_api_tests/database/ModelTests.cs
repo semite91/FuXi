@@ -337,10 +337,10 @@ public sealed class ModelTests : IDisposable
     }
 
     [Fact]
-    public void NoQuartzJobExists()
+    public void OnlyNotificationJobIsQuartzJob()
     {
-        // K2
-        ApiTypes().Where(type => typeof(IJob).IsAssignableFrom(type)).Should().BeEmpty();
+        // K2 until Phase 3. Since Phase 4 the timed task is the one Quartz.NET job.
+        ApiTypes().Where(type => typeof(IJob).IsAssignableFrom(type)).Should().Equal(typeof(FuXi.Api.Push.NotificationJob));
     }
 
     [Fact]

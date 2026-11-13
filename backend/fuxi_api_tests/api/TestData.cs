@@ -20,6 +20,8 @@ public static class TestData
     public const string WORD_NAME = "apple";
     public const string OTHER_WORD_NAME = "banana";
     public const string TRANSLATION = "elma";
+    public const string PUSH_P256DH = "p256dh-of-a-test-";
+    public const string PUSH_AUTH = "auth-of-a-test-";
 
     // Months before the real date, so a rule that reads the real clock gives another result.
     private const string NOW_TEXT = "2026-01-15T10:00:00+00:00";
@@ -125,6 +127,21 @@ public static class TestData
         context.SaveChanges();
 
         return schedule;
+    }
+
+    public static PushSubscription AddPushSubscription(FuXiDbContext context, string endpoint)
+    {
+        var subscription = new PushSubscription
+        {
+            Endpoint = endpoint,
+            P256dh = PUSH_P256DH + endpoint.Length,
+            Auth = PUSH_AUTH + endpoint.Length,
+            CreatedDate = Now,
+        };
+        context.PushSubscriptions.Add(subscription);
+        context.SaveChanges();
+
+        return subscription;
     }
 
     public static Config ConfigOf(FuXiDbContext context, string code) =>

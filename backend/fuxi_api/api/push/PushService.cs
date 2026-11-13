@@ -26,7 +26,7 @@ public sealed class PushService(FuXiDbContext database, IConfiguration configura
             throw ApiException.BadRequest(FIELD_MISSING);
         }
 
-        if (!IsAllowedEndpoint(request.Endpoint))
+        if (!PushHosts.IsAllowedEndpoint(request.Endpoint))
         {
             throw ApiException.BadRequest(ENDPOINT_NOT_ALLOWED);
         }
@@ -45,12 +45,4 @@ public sealed class PushService(FuXiDbContext database, IConfiguration configura
         });
         await database.SaveChangesAsync(cancellationToken);
     }
-
-    // Only https on the default port of an allowed push host, sent without surrounding whitespace.
-    private static bool IsAllowedEndpoint(string endpoint) =>
-        endpoint.Length == endpoint.Trim().Length
-        && Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
-        && uri.Scheme == Uri.UriSchemeHttps
-        && uri.IsDefaultPort
-        && PushHosts.IsAllowed(uri.IdnHost);
 }

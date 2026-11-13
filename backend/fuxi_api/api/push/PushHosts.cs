@@ -17,6 +17,14 @@ public static class PushHosts
 
     public static bool IsAllowed(string host) => ALLOWED.Any(allowed => Matches(host, allowed));
 
+    /// <summary>Only https on the default port of an allowed push host, without surrounding whitespace (SSRF protection).</summary>
+    public static bool IsAllowedEndpoint(string endpoint) =>
+        endpoint.Length == endpoint.Trim().Length
+        && Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && uri.IsDefaultPort
+        && IsAllowed(uri.IdnHost);
+
     private static bool Matches(string host, string allowed)
     {
         if (!allowed.StartsWith(SUBDOMAIN_WILDCARD, StringComparison.Ordinal))

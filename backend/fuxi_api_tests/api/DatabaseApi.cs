@@ -1,4 +1,5 @@
 using FuXi.Api.Database;
+using FuXi.Api.Push;
 using FuXi.Api.Tests.Database;
 using FuXi.Api.Words;
 using Microsoft.Extensions.Configuration;
@@ -12,12 +13,12 @@ namespace FuXi.Api.Tests.Api;
 /// Starts the API on the database of .env.test. The first use recreates and migrates that database,
 /// or skips the calling test when .env.test is missing.
 /// </summary>
-public sealed class DatabaseApi : IDisposable
+public sealed class DatabaseApi(bool startsNotificationTimer = false) : IDisposable
 {
     private const string MISSING_ORIGINS_REASON =
         $"{TestDatabase.ENV_FILE_NAME} must give {CorsSettings.ORIGINS_KEY} a value; the API does not start without it.";
 
-    private readonly ApiHost host = new();
+    private readonly ApiHost host = new(startsNotificationTimer: startsNotificationTimer);
     private TestDatabase? database;
     private HttpClient? client;
 
@@ -25,7 +26,17 @@ public sealed class DatabaseApi : IDisposable
 
     public RecordingNotificationTimer Timer => host.Timer;
 
+    public FakePushMessageSender PushSender => host.PushSender;
+
+    public RecordingLoggerProvider Logs => host.Logs;
+
+    /// <summary>Configuration values that win over .env.test. Set them before the first call.</summary>
+    public Dictionary<string, string?> Settings => host.Settings;
+
     public HttpClient Client => client ??= CreateClient();
+
+    /// <summary>The API's own Quartz.NET timer. Only started when this host was created with startsNotificationTimer.</summary>
+    public QuartzNotificationTimer NotificationTimer => StartedServices().GetRequiredService<QuartzNotificationTimer>();
 
     private TestDatabase Database => database ??= Recreate();
 
@@ -54,6 +65,15 @@ public sealed class DatabaseApi : IDisposable
         var wordService = scope.ServiceProvider.GetRequiredService<WordService>();
 
         return await wordService.GetNotificationWordsAsync(date, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>Runs the timed task's work once, the way a Quartz.NET firing does.</summary>
+    public async Task SendDueWordsAsync()
+    {
+        await using var scope = StartedServices().CreateAsyncScope();
+        var notificationService = scope.ServiceProvider.GetRequiredService<NotificationService>();
+
+        await notificationService.SendDueWordsAsync(TestContext.Current.CancellationToken);
     }
 
     public void Dispose()
