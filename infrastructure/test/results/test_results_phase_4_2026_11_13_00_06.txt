@@ -1,0 +1,125 @@
+FuXi - Phase 4 - Push Notifications
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_12_22_06.txt
+Run: 2026-11-13 00:06 UTC, branch claude/dazzling-keller-4n8p3o
+Commits verified: 5331589 (setup and documents), 3149f6a (frontend), 1fbad79 (backend)
+
+Totals
+- Backend: infrastructure/test/recreate_test_database.sh, then "dotnet build -warnaserror": 0 warnings, 0 errors.
+  "dotnet test": 353 total, 353 passed, 0 failed, 0 skipped (309 before Phase 4).
+- Frontend: "npm run build": 0 TypeScript errors, no warning. "npm test": 12 files, 180 tests, 180 passed (135 before Phase 4).
+- Scenarios: 76. PASS 75. NOT RUN 1 (J5, needs the Learner's own browser; see below).
+
+Status words: PASS, NOT RUN. Evidence is a test name, file:line or the command that was run.
+
+A. LIBRARY AND SETUP
+A1  PASS  Lib.Net.Http.WebPush 3.3.1 was vetted and the checklist was reported to the Learner on 2026-11-12, before installation.
+          WebPush (web-push-csharp) was vetted first and replaced by the Learner's decision (aesgcm only).
+A2  PASS  FuXi.Api.csproj:14 Version="3.3.1"; packages.lock.json lists it as Direct with EncryptedContentEncoding 2.1.1.
+A3  PASS  git diff main -- wwwroot/package.json wwwroot/package-lock.json is empty.
+A4  PASS  .env.example and .env.test.example contain VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT without a value.
+
+B. VAPID KEY GENERATION
+B1  PASS  VapidKeyGeneratorTests.CommandPrintsPublicAndPrivateKeyInUrlSafeBase64
+B2  PASS  VapidKeyGeneratorTests.PublicKeyIsUncompressedP256Point
+B3  PASS  VapidKeyGeneratorTests.PrivateKeyIs32Bytes
+B4  PASS  VapidKeyGeneratorTests.TwoRunsGiveDifferentKeyPairs
+B5  PASS  VapidKeyGeneratorTests.CommandNeedsNoEnvFileNoDatabaseAndStartsNoApi, OtherArgumentsAreNotCommand; Program.cs:6
+B6  PASS  ensure_vapid_keys on a copy with empty keys: public key 87 characters, private key 43 characters written.
+B7  PASS  ensure_vapid_keys on a filled copy and a second run on the generated copy: files unchanged (cmp).
+          A copy with only one key filled is refused with exit 1.
+B8  PASS  VAPID_SUBJECT=mailto:learner@fuxi.local is added when it is missing.
+B9  PASS  The private key value appears 0 times in the script's terminal output.
+B10 PASS  No VAPID key value is in a tracked file; .env and .env.test are not tracked.
+
+C. TIMED TASK (QUARTZ.NET)
+C1  PASS  NotificationTimerTests.ApiRegistersQuartzTimerAsNotificationTimerAndHostedService; UpdateNotificationPeriodTests M9, M10
+C2  PASS  NotificationTimerTests.SchedulerUsesRamJobStore; QuartzNotificationTimer.cs:87
+C3  PASS  NotificationTimerDatabaseTests.StartCreatesOneTriggerWithNotificationPeriod
+C4  PASS  NotificationTimerDatabaseTests.FirstFireIsOnePeriodAfterStart
+C5  PASS  NotificationTimerDatabaseTests.UpdateNotificationPeriodLeavesOneTriggerWithNewInterval
+C6  PASS  NotificationTimerDatabaseTests.FirstFireAfterRestartIsOneNewPeriodAfterRestart
+C7  PASS  NotificationTimerTests.JobDoesNotRunConcurrently; NotificationJob.cs:6
+C8  PASS  NotificationTimerTests.FailedRunIsLoggedAndNextRunStillFires (real Quartz, unreachable database, two failed runs logged)
+C9  PASS  NotificationTimerTests.StopShutsSchedulerDown, HostStopShutsSchedulerDown
+
+D. NOTIFICATION WINDOW CHECK (NotificationServiceTests)
+D1  PASS  NoWindowSendsNothingAndDoesNotReadWords
+D2  PASS  WindowThatHoldsNowContinuesToWords
+D3  PASS  WindowThatEndedBeforeNowSendsNothing
+D4  PASS  WindowThatStartsAfterNowSendsNothing
+D5  PASS  WindowThatStartsAtNowContinues
+D6  PASS  WindowThatEndsAtNowSendsNothing
+D7  PASS  WindowCheckIsFilteredInSql (EF command log holds "StartDate" <= and "EndDate" >)
+
+E. WORDS AND PAYLOAD
+E1  PASS  NotificationServiceTests.WordsAreReadWithClockNow. Shown by its effect (a Word Due one minute later is not sent);
+          WordService is a sealed class, so the call itself is not counted.
+E2  PASS  NotificationServiceTests.NoDueWordSendsNothing
+E3  PASS  NotificationServiceTests.TitleIsWordNamesJoinedWithComma
+E4  PASS  NotificationServiceTests.WordIdsAreJoinedWithCommaInOrderOfNames
+E5  PASS  PushSendingNowTests.PayloadIsCamelCaseJsonWithTitleAndWordIdsOnly
+E6  PASS  NotificationServiceTests.IgnoredNotificationIsSentAgainWithSameWords
+E7  PASS  NotificationServiceTests.RunChangesNoRotationOrShownCount
+
+F. SENDING
+F1  PASS  NotificationServiceTests.NoSubscriptionSendsNothingAndFailsNothing
+F2  PASS  NotificationServiceTests.EverySubscriptionIsCalledOnce
+F3  PASS  NotificationServiceTests.SendUsesSubscriptionKeysAndConfiguredVapidDetails
+F4  PASS  NotificationServiceTests.GoneSubscriptionIsDeleted
+F5  PASS  NotificationServiceTests.OnlyGoneSubscriptionIsDeletedAndOtherStillReceivesPush
+F6  PASS  NotificationServiceTests.OtherFailureIsLoggedAndSubscriptionIsKept (500, 404), NetworkFailureIsLoggedAndSubscriptionIsKept
+F7  PASS  PushSendingNowTests.EmptyVapidKeysSendNothingAndLogWarning (3 cases)
+F8  PASS  PushSendingNowTests.PushClientIsBehindInterface; IPushMessageSender.cs:6
+F9  PASS  NotificationServiceTests.EndpointOfUnknownHostIsNotCalled. Mark changed from [NOW] to [BE], because the subscriptions come from the database.
+F10 PASS  PushSendingNowTests.PushClientGetsHttpClientWithTimeoutFromFactory; ApiRegistration.cs:48-49
+
+G. SERVICE WORKER - PUSH (wwwroot/src/service_worker.test.ts)
+G1  PASS  line 74
+G2  PASS  line 84 (data { wordIds }, icon /fuxi_192.png)
+G3  PASS  line 96
+G4  PASS  line 116 (no data, invalid JSON, missing title, missing wordIds, non-object, null)
+
+H. SERVICE WORKER - NOTIFICATION CLICK
+H1  PASS  service_worker.test.ts:132
+H2  PASS  service_worker.test.ts:142
+H3  PASS  service_worker.test.ts:153; fallback when navigate is missing or rejected: :165,
+          service_worker_message_service.test.ts:20, :30
+H4  PASS  service_worker.test.ts:182
+H5  PASS  flashcard_page.test.tsx:43 (Phase 3 test, unchanged)
+
+I. SETTINGS PAGE - SUBSCRIBE (wwwroot/src/pages/settings_page.test.tsx)
+I1  PASS  line 175
+I2  PASS  line 188
+I3  PASS  line 198
+I4  PASS  line 212
+I5  PASS  line 223
+I6  PASS  line 237
+I7  PASS  line 250
+I8  PASS  line 263, line 284
+I9  PASS  line 297
+I10 PASS  line 315
+I11 PASS  line 334, line 345
+I12 PASS  The subscribe logic is in src/services/push_service.ts; the component only shows it.
+
+J. STRUCTURE AND QUALITY
+J1  PASS  See Totals.
+J2  PASS  See Totals.
+J3  PASS  New frontend files: service_worker.test.ts, push_service.ts, service_worker_message_service(.test).ts, base64_url(.test).ts.
+J4  PASS  project.md says "Enable notifications" is on the Settings page and names Lib.Net.Http.WebPush.
+J5  NOT RUN  The API and the app were started and VAPID keys were written to the local .env. Chromium in this container
+          refuses pushManager.subscribe ("AbortError: Registration failed - permission denied") headless and under Xvfb,
+          because open-source Chromium builds cannot reach Google's push service. The Learner runs J5 once in their own
+          Chrome, Edge, Firefox or Safari (steps are in the PR description).
+J6  PASS  No secret value is in a tracked file.
+
+K. OUT OF SCOPE CHECKS
+K1  PASS  git diff main -- rag is empty.
+K2  PASS  git diff main -- backend/fuxi_api/database/migrations is empty.
+
+Changed earlier tests
+- UpdateNotificationPeriodTests M9, M10: now assert the Quartz timer instead of the idle timer.
+- database/ModelTests.cs K2 guard: from "no Quartz job exists" to "only the notification job is a Quartz job".
+- settings_page.test.tsx M0 to M7: stub the push API that jsdom lacks; M6 no longer asserts that nothing is subscribed (I4, I6 replace it).
+
+Code review (Claude Code built-in, high, main...HEAD): 10 findings. They are listed as SRS items in the terminal and wait for
+the Learner's decision before they are changed.
