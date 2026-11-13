@@ -1,0 +1,66 @@
+FuXi - Phase 4 - Push Notifications - Code review fixes
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_12_22_06.txt (amended twice on 2026-11-13)
+Run: 2026-11-13 04:22 UTC, branch claude/dazzling-keller-4n8p3o, last commit ae3f404
+The first run is in test_results_phase_4_2026_11_13_00_06.txt. This file covers the fixes after it.
+
+Totals
+- Backend: recreate_test_database.sh, then "dotnet build -warnaserror": 0 warnings, 0 errors.
+  "dotnet test": 380 total, 380 passed, 0 failed, 0 skipped (353 at the first run).
+- Frontend: "npm run build": 0 TypeScript errors, no warning. "npm test": 185 passed, 0 failed (180 at the first run).
+- Scenarios: 91. PASS 90. NOT RUN 1 (J5, needs the Learner's own browser; unchanged from the first run).
+
+==================================================
+CODE REVIEW ROUND 1 (10 findings, all fixed, approved by the Learner on 2026-11-13)
+==================================================
+FIXED  R1  A subscription made with another key is unsubscribed and replaced.
+           I13 settings_page.test.tsx:375 (another key, no key); I10 :331 (same key is reused).
+FIXED  R2  404 Not Found deletes the subscription like 410 Gone.
+           F4 GoneOrNotFoundSubscriptionIsDeleted(Gone|NotFound), GoneAndNotFoundSubscriptionsAreDeletedWithOneStatement;
+           F6 OtherFailureIsLoggedAndSubscriptionIsKept(500|403|413), NetworkFailureIsLoggedAndSubscriptionIsKept.
+FIXED  R3  An unreadable Notification Period is logged and the API still starts.
+           C10 UnreadableNotificationPeriodLogsErrorAndApiStillStarts, UnreachableDatabaseAtStartLogsErrorAndLaterRestartCreatesTrigger,
+           CancelledStartIsNotSwallowed.
+FIXED  R4  The payload is at most 3993 bytes.
+           E8 PayloadHoldsFirstWordsThatFitInMaxPayloadBytes, PayloadOfExactlyMaxPayloadBytesIsBuilt, FullPayloadHoldsFirstWordsThatFit;
+           E9 WordsLeftOutOfFullPayloadStayDue.
+FIXED  R5  Notifications have one tag and renotify true. G5 service_worker.test.ts:97.
+FIXED  R6  Waiting for the service worker stops after 10 seconds with the error alert. I14 settings_page.test.tsx:398, :417.
+FIXED  R7  The key command runs as the user who called sudo. B11: run_as_invoking_user checked with a test user.
+FIXED  R8  "Notifications: allowed" is shown only after the subscription is saved. I7 settings_page.test.tsx:260; I8 :282.
+FIXED  R9  A restart after stop returns without an error. C11 RestartOfStoppedTimerCreatesNoTrigger,
+           RestartOfShutDownSchedulerDoesNotThrow, RestartAfterDisposeDoesNotThrow.
+FIXED  R10 Sends run in parallel and the 410/404 deletes are one statement. F12 SlowEndpointDoesNotHoldOtherEndpoint.
+           (The "one authentication per run" part was replaced in round 2, fix 3.)
+
+==================================================
+CODE REVIEW ROUND 2 (10 findings: 7 fixed, 2 left unchanged, 1 merged; decided by the Learner on 2026-11-13)
+==================================================
+FIXED  1   Due Words come in a fixed order: never shown first, then the oldest LastShownDate, then Name, then Id.
+           E10 DueWordsComeNeverShownFirstThenOldestShownThenByName, GetWordsByActiveTests.ItemsComeInOrderOfGetNotificationWords;
+           E3 and E4 now assert the exact order.
+FIXED  2   A Word too long for one push is skipped with a warning and the next Words are sent.
+           E11 TooLongFirstWordIsSkippedWithWarningAndNextWordsAreSent, TooLongFirstWordIsSkippedAndNextWordsAreKept,
+           WordThatNoLongerFitsIsSkippedAndSmallerNextWordIsAdded.
+FIXED  3   Each send signs with its own VAPID authentication. F11 EachSendGetsItsOwnVapidAuthentication (real sender,
+           two parallel requests, both ES256 signatures verified). Note: the test shows both parallel sends are valid;
+           it cannot prove the instances are different objects.
+FIXED  4   With sudo, .env, .env.test and existing backend bin/ and obj/ are given to the calling user. B11: checked with
+           a test user on root-owned files and folders; modes 600 and 755 kept; nothing changes without sudo.
+FIXED  5   The payload is UTF-8 JSON without \uXXXX escapes. E12 NonAsciiLettersAreWrittenAsUtf8,
+           PayloadOfExactlyMaxPayloadBytesWithNonAsciiNameIsBuilt, QuotesBackslashesAndControlCharactersAreStillEscaped.
+FIXED  6   A cancelled send is logged and kept, and the 410/404 delete still runs.
+           F13 CancelledSendKeepsItsSubscriptionAndGoneOneIsStillDeleted.
+NO CHANGE 7  After a failed subscribe and a reload, the state reads the browser permission ("allowed"). It is the real
+           permission, and clicking the button again saves the subscription.
+NO CHANGE 8  The old subscription is unsubscribed before the new one is made. Browsers do not allow a new key while the
+           old subscription exists. The backend deletes the stale endpoint when its push answers 410 or 404.
+MERGED 9   Same cause as 4.
+FIXED  10  StopAsync takes the lock only to mark the timer stopped; the shutdown waits outside the lock.
+           C12 RestartDuringStopThatWaitsForRunningJobReturnsAtOnce.
+
+==================================================
+SCENARIOS CHANGED OR ADDED BY THE FIXES
+==================================================
+PASS  B11, C10, C11, C12, E3, E4, E8, E9, E10, E11, E12, F4, F6, F11, F12, F13, G5, I4, I7, I8, I10, I13, I14 (evidence above).
+Every other scenario: PASS as in the first run (all tests still pass).
+J5    NOT RUN. Chromium in this container cannot subscribe to a push service. The Learner runs it in their own browser.
