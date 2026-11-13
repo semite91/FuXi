@@ -4,6 +4,8 @@ Created: 2026-11-12 22:06 UTC
 Status: CONFIRMED BY THE LEARNER ON 2026-11-12, with the defaults proposed by Claude
 Amended on 2026-11-13 at the Learner's request: the 10 code review fixes (R1 to R10) changed F6, I4, I7, I8 and I10
 and added C10, C11, E8, E9, F11, F12, G5, I13, I14 and B11.
+Amended on 2026-11-13 again: the second code review round (fixes 1 to 6 and 10) changed B11, E3, E4, E8 and F11
+and added C12, E10, E11, E12 and F13. Items 7 and 8 of that round were left unchanged by the Learner's decision.
 
 Every scenario has one purpose. "Given / When / Then" is used.
 Phase 4 adds the VAPID key generation, the Quartz.NET timed task that sends push notifications,
@@ -45,6 +47,7 @@ B8. [RV] Given an env file without VAPID_SUBJECT, when the setup script runs, th
 B9. [RV] Given the setup script, when it runs, then the private key is never printed to the terminal.
 B10. [RV] Given the tracked files, when they are read, then no VAPID key value is in them.
 B11. [RV] Given the setup script run through sudo, when it generates the keys, then dotnet runs as the user who called sudo, so bin/ and obj/ are not owned by root. (R7)
+     Also .env, .env.test and existing bin/ and obj/ folders are given to that user. (round 2, fix 4)
 
 ==================================================
 C. TIMED TASK (QUARTZ.NET)
@@ -60,6 +63,7 @@ C8. [NOW] Given a run that throws an error, when the error is caught, then it is
 C9. [NOW] Given the API stops, when shutdown runs, then the scheduler is shut down.
 C10. [BE] Given a NotificationPeriod that cannot be read, when the API starts, then an error is logged, the API answers requests and no trigger exists; a later UpdateNotificationPeriod creates one trigger. (R3)
 C11. [NOW] Given a stopped timer, when RestartAsync is called, then it returns without an error and no trigger is created. (R9)
+C12. [NOW] Given a stop that waits for a running job, when RestartAsync is called meanwhile, then it returns at once without waiting for the job. (round 2, fix 10)
 
 ==================================================
 D. NOTIFICATION WINDOW CHECK
@@ -77,13 +81,16 @@ E. WORDS AND PAYLOAD
 ==================================================
 E1. [BE] Given now inside a Notification Window, when the job runs, then GetNotificationWords is called once with now.
 E2. [BE] Given GetNotificationWords returns no word, when the job runs, then no push is sent.
-E3. [BE] Given Due Words "apple" and "river", when the payload is built, then title is "apple, river".
+E3. [BE] Given Due Words "apple" and "river" that were never shown, when the payload is built, then title is "apple, river" (E10 order).
 E4. [BE] Given the same Words, when the payload is built, then wordIds is their ids joined with a comma, in the same order as the names.
 E5. [NOW] Given the payload, when it is serialised, then it is JSON with camelCase fields title and wordIds only.
 E6. [BE] Given a sent notification that the Learner ignores, when the job runs again, then the same Words are sent again.
 E7. [BE] Given a run, when it ends, then no RotatedWords LastShownDate, Counter or Words ShownCount is changed by the job.
 E8. [BE] Given more Due Words than fit in 3993 bytes, when the payload is built, then it holds the first Words that fit, its JSON is at most 3993 bytes, and title and wordIds list the same Words. (R4)
 E9. [BE] Given Words left out of a full payload, when the next run comes, then they are still Due. (R4)
+E10. [BE] Given Due Words with null and different LastShownDate values, when GetNotificationWords runs, then never shown Words come first, then the oldest shown, then by Name. (round 2, fix 1)
+E11. [BE] Given a first Due Word too long for one push, when a run sends, then it is skipped with a warning and the next Words are sent. (round 2, fix 2)
+E12. [BE] Given a Word name with non-ASCII letters, when the payload is built, then they are written as UTF-8, not \uXXXX. (round 2, fix 5)
 
 ==================================================
 F. SENDING
@@ -98,8 +105,9 @@ F7. [NOW] Given empty VAPID keys, when the job runs, then no push is sent and a 
 F8. [NOW] Given the push client, when it is read, then it is behind an interface, so tests use a fake client and no real push service is called.
 F9. [NOW] Given a subscription endpoint whose host is not in PushHosts, when the job runs, then it is not called (SSRF protection).
 F10. [NOW] Given the push client, when it is read, then its HttpClient comes from IHttpClientFactory with a timeout.
-F11. [BE] Given two subscriptions, when a run sends, then the VAPID authentication is built once. (R10)
+F11. [BE] Given two subscriptions, when a run sends, then each send gets its own VAPID authentication, so no signer is shared by parallel sends. (R10, changed by round 2, fix 3)
 F12. [BE] Given a slow endpoint, when a run sends, then the other endpoint is not waited for. (R10)
+F13. [BE] Given one endpoint that answers 410 and another whose send is cancelled, when the run ends, then the 410 subscription is deleted and the cancelled one is kept. (round 2, fix 6)
 
 ==================================================
 G. SERVICE WORKER - PUSH

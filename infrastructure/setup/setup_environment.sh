@@ -91,6 +91,8 @@ create_env_files() {
   create_env_file "${test_env_file}" "${DEFAULT_DB_NAME}${TEST_DB_SUFFIX}" "${user}" "${password}"
   ensure_env_value "${env_file}" "${CORS_ORIGINS_KEY}" "${DEFAULT_CORS_ORIGINS}"
   ensure_env_value "${test_env_file}" "${CORS_ORIGINS_KEY}" "${DEFAULT_CORS_ORIGINS}"
+  # Build output left by root from an earlier run would stop the key command below.
+  give_to_invoking_user "${REPOSITORY_ROOT}/${BACKEND_PROJECT}/bin" "${REPOSITORY_ROOT}/${BACKEND_PROJECT}/obj"
   local file
   for file in "${env_file}" "${test_env_file}"; do
     ensure_env_value "${file}" "${API_URL_KEY}" "${DEFAULT_API_URL}"
@@ -98,16 +100,40 @@ create_env_files() {
     ensure_env_value "${file}" "${VAPID_SUBJECT_KEY}" "${DEFAULT_VAPID_SUBJECT}"
     ensure_vapid_keys "${file}"
   done
+  give_to_invoking_user "${env_file}" "${test_env_file}"
 }
 
-# The script runs as root through sudo. Build output in the repository must belong to the
-# developer who called sudo, or their own later "dotnet build" cannot write bin/ and obj/.
-run_as_invoking_user() {
+# The script runs as root through sudo. Files it creates in the repository must belong to the
+# developer who called sudo, or their own later "dotnet build" and "dotnet run" cannot write
+# bin/ and obj/ or read the env files. Prints nothing when there is no such developer.
+invoking_user() {
   if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
-    runuser -u "${SUDO_USER}" -- "$@"
+    printf '%s' "${SUDO_USER}"
+  fi
+}
+
+run_as_invoking_user() {
+  local user
+  user="$(invoking_user)"
+  if [ -n "${user}" ]; then
+    runuser -u "${user}" -- "$@"
     return
   fi
   "$@"
+}
+
+# Gives the paths that exist to the developer who called sudo, with their login group.
+give_to_invoking_user() {
+  local user path
+  user="$(invoking_user)"
+  if [ -z "${user}" ]; then
+    return
+  fi
+  for path in "$@"; do
+    if [ -e "${path}" ]; then
+      chown -R "${user}:" "${path}"
+    fi
+  done
 }
 
 # Generates the VAPID keys once with the backend command and writes them to the env file.
