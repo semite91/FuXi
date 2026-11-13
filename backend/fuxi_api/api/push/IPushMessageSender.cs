@@ -1,10 +1,8 @@
-using FuXi.Api.Database.Entities;
-
 namespace FuXi.Api.Push;
 
-/// <summary>Delivers one signed push message to the push service of one Push Subscription.</summary>
+/// <summary>Delivers signed push messages to the push services of Push Subscriptions.</summary>
 public interface IPushMessageSender
 {
-    /// <summary>Sends the payload. A refusal of the push service throws Lib.Net.Http.WebPush.PushServiceClientException with its status code.</summary>
-    Task SendAsync(PushSubscription subscription, string payload, VapidDetails vapid, CancellationToken cancellationToken);
+    /// <summary>Builds the VAPID authentication once for one run of the timed task. The caller disposes the run after its pushes.</summary>
+    IPushRun StartRun(VapidDetails vapid);
 }

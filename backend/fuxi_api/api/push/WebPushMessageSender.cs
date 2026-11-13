@@ -12,31 +12,47 @@ public sealed class WebPushMessageSender(HttpClient httpClient) : IPushMessageSe
     /// <summary>How long one request to a push service may take.</summary>
     public static readonly TimeSpan REQUEST_TIMEOUT = TimeSpan.FromSeconds(30);
 
-    public async Task SendAsync(Database.Entities.PushSubscription subscription, string payload, VapidDetails vapid, CancellationToken cancellationToken)
+    public IPushRun StartRun(VapidDetails vapid)
     {
-        using var authentication = CreateAuthentication(vapid);
-        var pushServiceClient = new PushServiceClient(httpClient);
+        var authentication = CreateAuthentication(vapid);
 
-        await pushServiceClient.RequestPushMessageDeliveryAsync(ToTarget(subscription), new PushMessage(payload), authentication, cancellationToken);
+        return new WebPushRun(new PushServiceClient(httpClient) { DefaultAuthentication = authentication }, authentication);
     }
 
     private static VapidAuthentication CreateAuthentication(VapidDetails vapid)
     {
         var authentication = new VapidAuthentication(vapid.PublicKey, vapid.PrivateKey);
-        if (vapid.Subject is not null)
+        try
         {
-            authentication.Subject = vapid.Subject;
-        }
+            if (vapid.Subject is not null)
+            {
+                authentication.Subject = vapid.Subject;
+            }
 
-        return authentication;
+            return authentication;
+        }
+        catch
+        {
+            authentication.Dispose();
+            throw;
+        }
     }
 
-    private static PushSubscription ToTarget(Database.Entities.PushSubscription subscription)
+    // One client and one authentication for every push of the run; the authentication is disposed with the run.
+    private sealed class WebPushRun(PushServiceClient pushServiceClient, VapidAuthentication authentication) : IPushRun
     {
-        var target = new PushSubscription { Endpoint = subscription.Endpoint };
-        target.SetKey(PushEncryptionKeyName.P256DH, subscription.P256dh);
-        target.SetKey(PushEncryptionKeyName.Auth, subscription.Auth);
+        public Task SendAsync(Database.Entities.PushSubscription subscription, string payload, CancellationToken cancellationToken) =>
+            pushServiceClient.RequestPushMessageDeliveryAsync(ToTarget(subscription), new PushMessage(payload), cancellationToken);
 
-        return target;
+        public void Dispose() => authentication.Dispose();
+
+        private static PushSubscription ToTarget(Database.Entities.PushSubscription subscription)
+        {
+            var target = new PushSubscription { Endpoint = subscription.Endpoint };
+            target.SetKey(PushEncryptionKeyName.P256DH, subscription.P256dh);
+            target.SetKey(PushEncryptionKeyName.Auth, subscription.Auth);
+
+            return target;
+        }
     }
 }

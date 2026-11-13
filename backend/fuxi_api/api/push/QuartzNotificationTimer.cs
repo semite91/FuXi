@@ -9,8 +9,9 @@ namespace FuXi.Api.Push;
 /// <summary>
 /// The timed task on Quartz.NET with the in-memory (RAM) job store. At startup it schedules one repeating trigger from the
 /// Notification Period; a restart replaces that trigger. The first run always comes one period after the start or restart.
+/// Start, restart and stop share one lock, and once stopped the timer never schedules again.
 /// </summary>
-public sealed class QuartzNotificationTimer(IServiceScopeFactory scopeFactory, TimeProvider timeProvider)
+public sealed partial class QuartzNotificationTimer(IServiceScopeFactory scopeFactory, TimeProvider timeProvider, ILogger<QuartzNotificationTimer> logger)
     : INotificationTimer, IHostedService, IAsyncDisposable, IDisposable
 {
     public const string JOB_NAME = "SendNotifications";
@@ -19,22 +20,47 @@ public sealed class QuartzNotificationTimer(IServiceScopeFactory scopeFactory, T
     public static readonly JobKey JOB_KEY = new(JOB_NAME);
     public static readonly TriggerKey TRIGGER_KEY = new(TRIGGER_NAME);
 
+    // Never disposed: it holds no wait handle, and a disposed lock would make a late RestartAsync throw.
     private readonly SemaphoreSlim schedulerLock = new(1, 1);
     private StandaloneSchedulerFactory? schedulerFactory;
     private IScheduler? scheduler;
+    private bool isStopped;
 
     /// <summary>True once the scheduler was shut down.</summary>
     public bool IsShutDown => scheduler?.Status == SchedulerStatus.Shutdown;
 
-    /// <summary>Reads the Notification Period and schedules the trigger.</summary>
-    public async Task StartAsync(CancellationToken cancellationToken) =>
-        await RestartAsync(TimeSpan.FromMinutes(await ReadNotificationPeriodAsync(cancellationToken)), cancellationToken);
+    /// <summary>
+    /// Reads the Notification Period and schedules the trigger. When the period cannot be read (database down, value missing
+    /// or not a number) the error is logged and the API starts without a trigger; UpdateNotificationPeriod creates it later.
+    /// </summary>
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        int minutes;
+        try
+        {
+            minutes = await ReadNotificationPeriodAsync(cancellationToken);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            LogNotificationPeriodUnreadable(logger, exception);
+            return;
+        }
 
+        await RestartAsync(TimeSpan.FromMinutes(minutes), cancellationToken);
+    }
+
+    /// <summary>Replaces the trigger. After the timer was stopped it only logs a warning, because the scheduler is gone.</summary>
     public async Task RestartAsync(TimeSpan interval, CancellationToken cancellationToken)
     {
         await schedulerLock.WaitAsync(cancellationToken);
         try
         {
+            if (isStopped)
+            {
+                LogRestartAfterStop(logger);
+                return;
+            }
+
             var running = scheduler ??= await StartSchedulerAsync(cancellationToken);
 
             // Replacing the job with the same trigger key leaves exactly one trigger.
@@ -58,24 +84,40 @@ public sealed class QuartzNotificationTimer(IServiceScopeFactory scopeFactory, T
     public async Task<SchedulerMetadata?> ReadMetadataAsync(CancellationToken cancellationToken) =>
         scheduler is null ? null : await scheduler.GetMetadata(cancellationToken);
 
-    /// <summary>Shuts the scheduler down and lets a running job finish.</summary>
+    /// <summary>Marks the timer stopped, shuts the scheduler down and lets a running job finish.</summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (scheduler is not null && scheduler.Status != SchedulerStatus.Shutdown)
+        await schedulerLock.WaitAsync(cancellationToken);
+        try
         {
-            await scheduler.Shutdown(waitForJobsToComplete: true, cancellationToken);
+            isStopped = true;
+            if (scheduler is not null && scheduler.Status != SchedulerStatus.Shutdown)
+            {
+                await scheduler.Shutdown(waitForJobsToComplete: true, cancellationToken);
+            }
+        }
+        finally
+        {
+            schedulerLock.Release();
         }
     }
 
     public async ValueTask DisposeAsync()
     {
         await StopAsync(CancellationToken.None);
-        if (schedulerFactory is not null)
+        await schedulerLock.WaitAsync();
+        try
         {
-            await schedulerFactory.DisposeAsync();
+            if (schedulerFactory is not null)
+            {
+                await schedulerFactory.DisposeAsync();
+                schedulerFactory = null;
+            }
         }
-
-        schedulerLock.Dispose();
+        finally
+        {
+            schedulerLock.Release();
+        }
     }
 
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
@@ -118,4 +160,10 @@ public sealed class QuartzNotificationTimer(IServiceScopeFactory scopeFactory, T
             ? minutes
             : throw new InvalidOperationException($"Config value {ConfigCodes.NOTIFICATION_PERIOD} is missing or is not a whole number.");
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The Notification Period could not be read at startup, so no push notification is scheduled until it is updated.")]
+    private static partial void LogNotificationPeriodUnreadable(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The notification timer is stopped, so the new Notification Period is saved but not scheduled.")]
+    private static partial void LogRestartAfterStop(ILogger logger);
 }

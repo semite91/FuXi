@@ -1,6 +1,9 @@
 using System.Net;
 using FluentAssertions;
 using FuXi.Api.Database.Entities;
+using FuXi.Api.Push;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Quartz;
 using Xunit;
 
@@ -13,6 +16,7 @@ public sealed class NotificationTimerDatabaseTests : IDisposable
     private const int SEEDED_PERIOD_MINUTES = 15;
     private const string NEW_VALUE = "30";
     private const int NEW_PERIOD_MINUTES = 30;
+    private const string NOT_A_NUMBER = "not-a-number";
 
     // Less than the period, so the fake clock never reaches a fire time.
     private const int MINUTES_BEFORE_RESTART = 10;
@@ -75,6 +79,23 @@ public sealed class NotificationTimerDatabaseTests : IDisposable
         api.Dispose();
 
         timer.IsShutDown.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UnreadableNotificationPeriodLogsErrorAndApiStillStarts()
+    {
+        // C10: the stored value is not a number; the API starts without a trigger and a later update creates one.
+        api.Arrange(context => context.Configs.Where(config => config.Code == ConfigCodes.NOTIFICATION_PERIOD)
+            .ExecuteUpdate(setters => setters.SetProperty(config => config.Value, NOT_A_NUMBER)));
+
+        await api.Client.GetApiAsync(ApiRoutes.GET_CONFIGS).ShouldHaveStatusAsync(HttpStatusCode.OK);
+
+        api.Logs.Of(typeof(QuartzNotificationTimer).FullName!).Should().ContainSingle(entry => entry.Level == LogLevel.Error);
+        (await api.NotificationTimer.ReadTriggersAsync(Token)).Should().BeEmpty();
+
+        await UpdateNotificationPeriodAsync();
+
+        (await SingleTriggerAsync()).RepeatInterval.Should().Be(TimeSpan.FromMinutes(NEW_PERIOD_MINUTES));
     }
 
     public void Dispose() => api.Dispose();

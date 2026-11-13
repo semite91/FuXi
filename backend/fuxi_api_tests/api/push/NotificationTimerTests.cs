@@ -99,6 +99,73 @@ public sealed class NotificationTimerTests : IDisposable
         Timer.IsShutDown.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task UnreachableDatabaseAtStartLogsErrorAndLaterRestartCreatesTrigger()
+    {
+        // C10: the Notification Period cannot be read because the database is down.
+        var start = () => Timer.StartAsync(Token);
+
+        await start.Should().NotThrowAsync();
+
+        logs.Of(typeof(QuartzNotificationTimer).FullName!).Should().ContainSingle(entry => entry.Level == LogLevel.Error);
+        (await Timer.ReadTriggersAsync(Token)).Should().BeEmpty();
+
+        await Timer.RestartAsync(LongInterval, Token);
+
+        (await Timer.ReadTriggersAsync(Token)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task CancelledStartIsNotSwallowed()
+    {
+        // C10: a start that the host cancels still ends with the cancellation.
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        var start = () => Timer.StartAsync(cancellation.Token);
+
+        await start.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task RestartOfStoppedTimerCreatesNoTrigger()
+    {
+        // C11: the host stopped the timer before it was ever started; a late restart must not start a new scheduler.
+        await Timer.StopAsync(Token);
+
+        var restart = () => Timer.RestartAsync(LongInterval, Token);
+
+        await restart.Should().NotThrowAsync();
+        (await Timer.ReadTriggersAsync(Token)).Should().BeEmpty();
+        logs.Of(typeof(QuartzNotificationTimer).FullName!).Should().ContainSingle(entry => entry.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task RestartOfShutDownSchedulerDoesNotThrow()
+    {
+        // C11: the scheduler was shut down; a late restart leaves it alone.
+        await Timer.RestartAsync(LongInterval, Token);
+        await Timer.StopAsync(Token);
+
+        var restart = () => Timer.RestartAsync(LongInterval, Token);
+
+        await restart.Should().NotThrowAsync();
+        Timer.IsShutDown.Should().BeTrue();
+        logs.Of(typeof(QuartzNotificationTimer).FullName!).Should().ContainSingle(entry => entry.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task RestartAfterDisposeDoesNotThrow()
+    {
+        // C11: a request that arrives while the host disposes the timer.
+        await Timer.RestartAsync(LongInterval, Token);
+        await Timer.DisposeAsync();
+
+        var restart = () => Timer.RestartAsync(LongInterval, Token);
+
+        await restart.Should().NotThrowAsync();
+    }
+
     public void Dispose()
     {
         services.Dispose();

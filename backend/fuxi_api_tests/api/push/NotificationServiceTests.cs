@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using FuXi.Api.Database;
@@ -33,11 +34,18 @@ public sealed class NotificationServiceTests : IDisposable
     private const string SCHEDULE_TABLE_SQL = "FROM \"Schedule\"";
     private const string START_DATE_FILTER_SQL = "\"StartDate\" <=";
     private const string END_DATE_FILTER_SQL = "\"EndDate\" >";
+    private const string DELETE_SUBSCRIPTION_SQL = "DELETE FROM \"PushSubscription\"";
     private const int WINDOW_HOURS = 1;
     private const int ROTATION_PERIOD_MINUTES = TestData.SEEDED_ROTATION_PERIOD;
     private const int ONE_MINUTE = 1;
+    private const int LONG_NAME_LENGTH = 300;
+    private const int LONG_WORD_COUNT = 20;
+    private const char LONG_NAME_LETTER = 'x';
 
     private static readonly DateTimeOffset Now = TestData.Now;
+
+    // Only reached when a test fails: a held push that is never called.
+    private static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(10);
 
     private readonly DatabaseApi api = new();
 
@@ -220,6 +228,55 @@ public sealed class NotificationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task FullPayloadHoldsFirstWordsThatFit()
+    {
+        // E8: twenty Words of 300 letters do not fit in one push message.
+        var words = ArrangeLongDueWords();
+
+        await api.SendDueWordsAsync();
+
+        var payload = api.PushSender.Sent.Single().Payload;
+        Encoding.UTF8.GetByteCount(payload).Should().BeLessThanOrEqualTo(NotificationPayload.MAX_PAYLOAD_BYTES);
+        var namesById = words.ToDictionary(word => word.Id, word => word.Name);
+        var sentIds = WordIdsOf(payload);
+        sentIds.Length.Should().BeInRange(1, LONG_WORD_COUNT - 1);
+        sentIds.Select(id => namesById[id]).Should().Equal(TitleOf(payload).Split(TITLE_SEPARATOR));
+    }
+
+    [Fact]
+    public async Task WordsLeftOutOfFullPayloadStayDue()
+    {
+        // E9: the run changes no data, so the left-out Words are still Due for a later run.
+        var words = ArrangeLongDueWords();
+        var before = ReadRotationState();
+
+        await api.SendDueWordsAsync();
+
+        var leftOut = words.Select(word => word.Id).Except(WordIdsOf(api.PushSender.Sent.Single().Payload)).ToList();
+        leftOut.Should().NotBeEmpty();
+        ReadRotationState().Should().BeEquivalentTo(before);
+        (await api.GetNotificationWordsAsync(Now)).Select(word => word.Id).Should().Contain(leftOut);
+    }
+
+    [Fact]
+    public async Task WordTooLongForOnePushSendsNothingAndLogsWarning()
+    {
+        // E8: not even the first Word fits, so nothing is sent this run.
+        api.Arrange(context =>
+        {
+            var word = TestData.AddWord(context, new string(LONG_NAME_LETTER, NotificationPayload.MAX_PAYLOAD_BYTES));
+            TestData.AddRotatedWord(context, word);
+            TestData.AddPushSubscription(context, FCM_ENDPOINT);
+        });
+        AddOpenWindow();
+
+        await api.SendDueWordsAsync();
+
+        api.PushSender.Sent.Should().BeEmpty();
+        api.Logs.Of(typeof(NotificationService).FullName!).Should().ContainSingle(entry => entry.Level == LogLevel.Warning);
+    }
+
+    [Fact]
     public async Task NoSubscriptionSendsNothingAndFailsNothing()
     {
         // F1
@@ -262,17 +319,35 @@ public sealed class NotificationServiceTests : IDisposable
         sent.Vapid.Should().Be(new VapidDetails(PUBLIC_KEY, PRIVATE_KEY, SUBJECT));
     }
 
-    [Fact]
-    public async Task GoneSubscriptionIsDeleted()
+    [Theory]
+    [InlineData(HttpStatusCode.Gone)]
+    [InlineData(HttpStatusCode.NotFound)]
+    public async Task GoneOrNotFoundSubscriptionIsDeleted(HttpStatusCode statusCode)
     {
-        // F4
+        // F4: 410 Gone and 404 Not Found both mean the push service no longer knows the subscription.
         ArrangeDueWordAndSubscription();
         AddOpenWindow();
-        api.PushSender.FailFor(FCM_ENDPOINT, new PushServiceClientException(GONE, HttpStatusCode.Gone));
+        api.PushSender.FailFor(FCM_ENDPOINT, new PushServiceClientException(GONE, statusCode));
 
         await api.SendDueWordsAsync();
 
         StoredEndpoints().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GoneAndNotFoundSubscriptionsAreDeletedWithOneStatement()
+    {
+        // F4: the deletes wait until every push of the run answered, then go to the database at once.
+        ArrangeDueWordAndSubscription();
+        api.Arrange(context => TestData.AddPushSubscription(context, MOZILLA_ENDPOINT));
+        AddOpenWindow();
+        api.PushSender.FailFor(FCM_ENDPOINT, new PushServiceClientException(GONE, HttpStatusCode.Gone));
+        api.PushSender.FailFor(MOZILLA_ENDPOINT, new PushServiceClientException(GONE, HttpStatusCode.NotFound));
+
+        await api.SendDueWordsAsync();
+
+        StoredEndpoints().Should().BeEmpty();
+        api.Logs.Of(EF_COMMAND_CATEGORY).Count(entry => entry.Message.Contains(DELETE_SUBSCRIPTION_SQL)).Should().Be(1);
     }
 
     [Fact]
@@ -292,7 +367,8 @@ public sealed class NotificationServiceTests : IDisposable
 
     [Theory]
     [InlineData(HttpStatusCode.InternalServerError)]
-    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge)]
     public async Task OtherFailureIsLoggedAndSubscriptionIsKept(HttpStatusCode statusCode)
     {
         // F6
@@ -320,6 +396,42 @@ public sealed class NotificationServiceTests : IDisposable
 
         StoredEndpoints().Should().Equal(FCM_ENDPOINT);
         ErrorLogs().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task VapidAuthenticationIsBuiltOncePerRun()
+    {
+        // F11: one run for both subscriptions, disposed after the pushes.
+        ArrangeDueWordAndSubscription();
+        api.Arrange(context => TestData.AddPushSubscription(context, MOZILLA_ENDPOINT));
+        AddOpenWindow();
+
+        await api.SendDueWordsAsync();
+
+        api.PushSender.Sent.Should().HaveCount(2);
+        api.PushSender.RunsStarted.Should().Be(1);
+        api.PushSender.RunsDisposed.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SlowEndpointDoesNotHoldOtherEndpoint()
+    {
+        // F12: both pushes are held; each is called while the other has not answered, so they are not sent one after another.
+        ArrangeDueWordAndSubscription();
+        api.Arrange(context => TestData.AddPushSubscription(context, MOZILLA_ENDPOINT));
+        AddOpenWindow();
+        var fcmAnswer = api.PushSender.HoldFor(FCM_ENDPOINT);
+        var mozillaAnswer = api.PushSender.HoldFor(MOZILLA_ENDPOINT);
+
+        var run = api.SendDueWordsAsync();
+        await Task.WhenAll(api.PushSender.CalledAsync(FCM_ENDPOINT), api.PushSender.CalledAsync(MOZILLA_ENDPOINT))
+            .WaitAsync(WaitLimit, TestContext.Current.CancellationToken);
+
+        run.IsCompleted.Should().BeFalse();
+        fcmAnswer.SetResult();
+        mozillaAnswer.SetResult();
+        await run;
+        api.PushSender.Sent.Should().HaveCount(2);
     }
 
     [Fact]
@@ -356,6 +468,19 @@ public sealed class NotificationServiceTests : IDisposable
             TestData.AddPushSubscription(context, FCM_ENDPOINT);
 
             return new[] { apple, river };
+        });
+        AddOpenWindow();
+
+        return words;
+    }
+
+    private IReadOnlyList<Word> ArrangeLongDueWords()
+    {
+        var words = api.Arrange(context =>
+        {
+            TestData.AddPushSubscription(context, FCM_ENDPOINT);
+
+            return TestData.AddRotatedWords(context, LONG_WORD_COUNT, new string(LONG_NAME_LETTER, LONG_NAME_LENGTH));
         });
         AddOpenWindow();
 
