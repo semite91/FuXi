@@ -46,7 +46,7 @@ This file is initializer instructor of my project.
   - RAG technologies will be defined at next parts.
   - Phase 5 is split: 5a builds the engine core with Notion; Google Drive (5b), letterboxd - TMDB (5c) and Spotify (5d) follow one by one.
   - The engine runs on the Learner's Windows laptop with Python 3.13 and CPU-only PyTorch. It is started from /rag with: uvicorn engine:app --port 8000
-  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE and RAG_LIVE_TESTS.
+  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
 
   -- Words --
   - Words will be added to database manually by the Learner. There is no add word page or api.
@@ -278,7 +278,7 @@ This file is initializer instructor of my project.
       # NOTION
       - Notion API will be used
       - All data will be taken
-      - A parent page that is not shared with the integration ends the page's path; the page is still read.
+      - A parent page that is not shared with the integration (403 or 404) ends the page's path; the page is still read. Other Notion errors make the source fail.
 
       # Google Drive
       - Google Drive API will be used
@@ -390,7 +390,7 @@ This file is initializer instructor of my project.
     - Response methods will be story, picture, quote, music, movie reference.
     - Response method will be chosen randomly by the code: story, quote, film reference, photo (picture) or music. It is sent to Gemini as "available_methods": ["<chosen>"], so the prompt files are not changed.
     - If the answer is insufficient_context, invalid or an error, one other random method is tried once. Then the word gets no content.
-    - Prompt files are read once. Words are generated one after another, because of the free-tier rate limits.
+    - Each prompt file is read once, on its first use. Words are generated one after another, because of the free-tier rate limits.
     - The answer is stored as a JSON string. Text methods: {"method","title","content","source_reference"}. photo: {"method","image_url"}. music: {"method","song_title","artist","song_url","lyrics_excerpt"}. Links must be https.
     - In 5a, photo is a web image found by Google Search. From 5b, Gemini may also choose the Learner's own Google Drive image.
     - Response will create using Google AI Studio API and gemini-3.8-flash model. Model name and search tool name were verified on 2026-11-13: gemini-3.8-flash and google_search.
@@ -410,14 +410,16 @@ This file is initializer instructor of my project.
     - There will be API both .NET and python. This file will keep python api's created by fastapi. 
     - APIs listed as below
       + GetWordContent
-        POST /GetWordContent with { "words": [{ "name", "translation" }] } (1 to 50 words). Names are answered exactly as sent; a repeated name is generated once.
-        It will get response of rag_client's generate function and answer [{ "name", "content" }]. A word without content is left out.
+        POST /GetWordContent with { "words": [{ "name", "translation" }] } (1 to 50 words). Names are answered exactly as sent; the same trimmed name and translation is generated once.
+        It will get response of rag_client's generate function and answer [{ "name", "translation", "content" }]. A word without content is left out.
+        Words are told apart by name and translation, so two Words with the same name and different translations get their own content.
         While a build runs, it answers 503.
       + Init_RAG
         POST /Init_RAG. If the collections have data, it answers 200 {"status":"ready"}.
         Otherwise it starts one background build (embedding_pipeline mode create, then rag_client.init) and answers 202 {"status":"building"}.
         A call during a build does not start a second one. A build is ready only when it ended completely (a marker on fuxi_text); a build that stopped partway is started again.
-        If the last build found nothing or a source failed, it answers 200 {"status":"empty"} and does not build again until the engine restarts or Update_Collections runs.
+        If the last build found nothing or a source failed, it answers 200 {"status":"empty"} and does not build again until RAG_REBUILD_COOLDOWN_MINUTES (10) have passed, the engine restarts or Update_Collections runs.
+        Every build, the first one included, writes into staging collections. The old collections are renamed aside, the new ones renamed into place, and the old ones deleted last; a failure moves the old ones back.
       + Update_Collections
         POST /Update_Collections. It will trigger embedding_pipeline with mode update argument and answer 200 when the rebuild ends.
         Every source is read and embedded into staging collections first. The old collections are replaced only when every source succeeded; otherwise they are kept and it answers 502.
