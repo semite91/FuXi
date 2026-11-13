@@ -20,6 +20,7 @@ IMAGE_THRESHOLD_KEY = "RAG_IMAGE_THRESHOLD"
 BATCH_SIZE_KEY = "RAG_BATCH_SIZE"
 LIVE_TESTS_KEY = "RAG_LIVE_TESTS"
 CORS_ORIGINS_KEY = "FUXI_CORS_ORIGINS"
+REBUILD_COOLDOWN_MINUTES_KEY = "RAG_REBUILD_COOLDOWN_MINUTES"
 
 DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 DEFAULT_TEXT_THRESHOLD = 0.5
@@ -28,6 +29,8 @@ DEFAULT_BATCH_SIZE = 16
 MIN_THRESHOLD = 0.0
 MAX_THRESHOLD = 1.0
 MIN_BATCH_SIZE = 1
+DEFAULT_REBUILD_COOLDOWN_MINUTES = 10.0
+MIN_REBUILD_COOLDOWN_MINUTES = 0.0
 
 TRUE_VALUE = "true"
 LIST_SEPARATOR = ","
@@ -50,6 +53,8 @@ class Settings:
     batch_size: int = DEFAULT_BATCH_SIZE
     live_tests: bool = False
     cors_origins: tuple[str, ...] = ()
+    # After a failed or empty build, Init_RAG answers empty for this long before it builds again.
+    rebuild_cooldown_minutes: float = DEFAULT_REBUILD_COOLDOWN_MINUTES
     notion_token: str | None = field(default=None, repr=False)
     gemini_api_key: str | None = field(default=None, repr=False)
 
@@ -74,6 +79,7 @@ def load_settings(
         batch_size=_batch_size(values),
         live_tests=(_text(values, LIVE_TESTS_KEY) or "").lower() == TRUE_VALUE,
         cors_origins=_list(values, CORS_ORIGINS_KEY),
+        rebuild_cooldown_minutes=_rebuild_cooldown_minutes(values),
     )
 
 
@@ -120,6 +126,20 @@ def _batch_size(values: Mapping[str, str]) -> int:
     if batch_size < MIN_BATCH_SIZE:
         raise SettingsError(f"{BATCH_SIZE_KEY} must be a whole number of at least 1")
     return batch_size
+
+
+def _rebuild_cooldown_minutes(values: Mapping[str, str]) -> float:
+    raw = _text(values, REBUILD_COOLDOWN_MINUTES_KEY)
+    if raw is None:
+        return DEFAULT_REBUILD_COOLDOWN_MINUTES
+    message = f"{REBUILD_COOLDOWN_MINUTES_KEY} must be a number of minutes, at least 0"
+    try:
+        minutes = float(raw)
+    except ValueError as error:
+        raise SettingsError(message) from error
+    if not minutes >= MIN_REBUILD_COOLDOWN_MINUTES:  # also rejects nan
+        raise SettingsError(message)
+    return minutes
 
 
 def _list(values: Mapping[str, str], key: str) -> tuple[str, ...]:

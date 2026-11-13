@@ -276,3 +276,20 @@ def test_each_prompt_file_is_read_once_over_several_calls(monkeypatch, tmp_path)
 
     assert sorted(reads) == ["llm.txt", "llm_web.txt", "retrieval.txt"]
     assert gemini.calls[-1]["config"].system_instruction == "prompt llm_web.txt"
+
+
+def test_missing_web_prompt_does_not_break_text_methods_or_the_search_query(tmp_path):
+    # G19
+    for name in ("retrieval.txt", "llm.txt"):
+        (tmp_path / name).write_text(f"prompt {name}", encoding="utf-8")
+    gemini = FakeGeminiClient([RECORDED["retrieval_query"], RECORDED["story_success"]])
+    client = LlmClient(
+        SETTINGS, gemini_client_factory=lambda: gemini, random_source=ScriptedRandom(["story"]), prompts_dir=tmp_path
+    )
+
+    query = client.build_search_query(WORD, MEANING)
+    content = generate(client)
+
+    assert query.startswith("unexpected discoveries")
+    assert json.loads(content)["method"] == "story"
+    assert [call["config"].system_instruction for call in gemini.calls] == ["prompt retrieval.txt", "prompt llm.txt"]

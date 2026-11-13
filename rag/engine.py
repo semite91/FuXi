@@ -2,6 +2,7 @@
 
 import logging
 import threading
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ from chromadb.api import ClientAPI
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import AfterValidator, BaseModel, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, Field
 
 import chroma_store
 from base import Resource
@@ -40,36 +41,51 @@ BUILDING_DETAIL = "The RAG collections are being built. Try again later."
 ERROR_DETAIL = "The RAG engine could not complete the request."
 UPDATE_FAILED_DETAIL = "The RAG collections could not be updated. The old collections are kept."
 BLANK_NAME_MESSAGE = "name must not be blank"
+LONG_NAME_MESSAGE = "name must have at most {limit} characters without the surrounding spaces"
+LONG_TRANSLATION_MESSAGE = "translation must have at most {limit} characters without the surrounding spaces"
 
 MIN_WORDS = 1
 MAX_WORDS = 50
-MIN_NAME_LENGTH = 1
 MAX_NAME_LENGTH = 200
 MAX_TRANSLATION_LENGTH = 1000
 CORS_METHODS = ["POST"]
 CORS_HEADERS = ["Content-Type"]
 BUILD_WAIT_SECONDS = 30.0
 BUILD_THREAD_NAME = "rag-build"
+SECONDS_PER_MINUTE = 60
 
 logger = logging.getLogger(__name__)
 
 ResourceFactory = Callable[[Settings], list[Resource]]
+# Seconds that only move forward; differences between two readings are measured.
+MonotonicClock = Callable[[], float]
+# A word is generated once per trimmed name and trimmed translation.
+WordKey = tuple[str, str]
 
 
-def _require_text(value: str) -> str:
-    """Rejects a blank name but keeps the name exactly as sent."""
-    if not value.strip():
+def _check_name(value: str) -> str:
+    """Rejects a blank or long name (measured without surrounding spaces) but keeps it exactly as sent."""
+    trimmed = value.strip()
+    if not trimmed:
         raise ValueError(BLANK_NAME_MESSAGE)
+    if len(trimmed) > MAX_NAME_LENGTH:
+        raise ValueError(LONG_NAME_MESSAGE.format(limit=MAX_NAME_LENGTH))
+    return value
+
+
+def _check_translation(value: str) -> str:
+    """Rejects a long translation (measured without surrounding spaces) but keeps it exactly as sent."""
+    if len(value.strip()) > MAX_TRANSLATION_LENGTH:
+        raise ValueError(LONG_TRANSLATION_MESSAGE.format(limit=MAX_TRANSLATION_LENGTH))
     return value
 
 
 class WordRequest(BaseModel):
-    name: Annotated[
-        str,
-        StringConstraints(min_length=MIN_NAME_LENGTH, max_length=MAX_NAME_LENGTH),
-        AfterValidator(_require_text),
-    ]
-    translation: Annotated[str, StringConstraints(strip_whitespace=True, max_length=MAX_TRANSLATION_LENGTH)]
+    name: Annotated[str, AfterValidator(_check_name)]
+    translation: Annotated[str, AfterValidator(_check_translation)]
+
+    def key(self) -> WordKey:
+        return self.name.strip(), self.translation.strip()
 
 
 class GetWordContentRequest(BaseModel):
@@ -78,12 +94,13 @@ class GetWordContentRequest(BaseModel):
 
 class WordContentResponse(BaseModel):
     name: str
+    translation: str
     content: str
 
 
 @dataclass
 class EngineDependencies:
-    """Every seam tests replace: settings, Chroma, embedders, resources and Gemini."""
+    """Every seam tests replace: settings, Chroma, embedders, resources, Gemini and the clock."""
 
     settings: Settings
     chroma_client_factory: Callable[[], ClientAPI]
@@ -91,6 +108,7 @@ class EngineDependencies:
     resource_factory: ResourceFactory
     llm_client: Any
     logs_dir: Path = DEFAULT_LOGS_DIR
+    clock: MonotonicClock = time.monotonic
 
 
 def default_resources(settings: Settings) -> list[Resource]:
@@ -167,8 +185,9 @@ class RagEngine:
         self._chroma_client: ClientAPI | None = None
         self._chroma_lock = threading.Lock()
         self._guard = ReadWriteGuard()
-        # True after a build or update of this process ended with 0 documents or a failed resource.
-        self._last_build_failed = False
+        # Clock reading when this process's last build or update ended with 0 documents, a failed
+        # resource or an error; None after a successful one.
+        self._failed_build_at: float | None = None
         self.rag_client = RagClient(
             self.chroma_client, dependencies.embedders, dependencies.settings, dependencies.llm_client
         )
@@ -196,13 +215,13 @@ class RagEngine:
                 self._guard.stop_reading()
 
     def init_rag(self) -> str:
-        """Ready when the last build completed; empty when this run's build failed; otherwise start one build."""
+        """Ready when the last build completed; empty within the cooldown after a failed build; otherwise build."""
         if self.is_building():
             return BUILDING_STATUS
         if chroma_store.is_build_complete(self.chroma_client()):
             self.rag_client.init()
             return READY_STATUS
-        if self._last_build_failed:
+        if self._in_rebuild_cooldown():
             return EMPTY_STATUS
         if self._guard.try_start_writing():
             threading.Thread(target=self._background_build, name=BUILD_THREAD_NAME, daemon=True).start()
@@ -216,6 +235,12 @@ class RagEngine:
             return self._build(Mode.UPDATE)
         finally:
             self._guard.stop_writing()
+
+    def _in_rebuild_cooldown(self) -> bool:
+        if self._failed_build_at is None:
+            return False
+        cooldown_seconds = self._dependencies.settings.rebuild_cooldown_minutes * SECONDS_PER_MINUTE
+        return self._dependencies.clock() - self._failed_build_at < cooldown_seconds
 
     def run_pipeline(self, mode: Mode) -> PipelineResult:
         dependencies = self._dependencies
@@ -237,17 +262,23 @@ class RagEngine:
             self._guard.stop_writing()
 
     def _build(self, mode: Mode) -> PipelineResult:
-        """Runs once no GetWordContent request is in flight; a create starts from empty collections."""
+        """Runs once no GetWordContent request is in flight; the stored collections change only on success."""
         self._guard.wait_for_readers()
-        self._last_build_failed = True
+        complete = False
         try:
-            if mode is Mode.CREATE:
-                chroma_store.delete_all_collections(self.chroma_client())
             result = self.run_pipeline(mode)
-            self._last_build_failed = not result.complete
+            complete = result.complete
             return result
         finally:
+            self._failed_build_at = None if complete else self._dependencies.clock()
+            self._refresh_rag_client()
+
+    def _refresh_rag_client(self) -> None:
+        """A refresh failure is logged on its own; it never replaces the build's result or error."""
+        try:
             self.rag_client.refresh()
+        except Exception as error:
+            logger.error("RAG client refresh failed: %s", type(error).__name__)
 
 
 def create_app(dependencies: EngineDependencies | None = None) -> FastAPI:
@@ -301,15 +332,17 @@ def create_app(dependencies: EngineDependencies | None = None) -> FastAPI:
 
 
 def _generate_contents(rag_client: RagClient, words: list[WordRequest]) -> list[dict[str, str]]:
-    """Each name once, generated from its trimmed form and answered exactly as sent."""
-    unique_words: dict[str, WordRequest] = {}
+    """Generated once per trimmed (name, translation); each distinct pair as sent is answered as sent."""
+    sent_words: dict[WordKey, WordRequest] = {}
     for word in words:
-        unique_words.setdefault(word.name, word)
-    results = rag_client.generate([Word(word.name.strip(), word.translation) for word in unique_words.values()])
+        sent_words.setdefault((word.name, word.translation), word)
+    keys = list(dict.fromkeys(word.key() for word in sent_words.values()))
+    results = rag_client.generate([Word(name, translation) for name, translation in keys])
+    contents = {key: result.content for key, result in zip(keys, results)}
     return [
-        {"name": name, "content": result.content}
-        for name, result in zip(unique_words, results)
-        if result.content
+        {"name": word.name, "translation": word.translation, "content": contents[word.key()]}
+        for word in sent_words.values()
+        if contents[word.key()]
     ]
 
 

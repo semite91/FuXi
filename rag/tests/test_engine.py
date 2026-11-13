@@ -1,3 +1,4 @@
+import logging
 import threading
 from collections.abc import Callable
 
@@ -7,8 +8,8 @@ from fastapi.testclient import TestClient
 import engine
 from base import Document, Resource, ResourceKind
 from embedding_pipeline import Embedders
-from engine import BUILD_WAIT_SECONDS, EngineDependencies, create_app
-from fakes import FakeEmbedder
+from engine import BUILD_WAIT_SECONDS, MAX_NAME_LENGTH, EngineDependencies, create_app
+from fakes import FakeEmbedder, RenameFailingClient
 from chroma_store import TEXT_COLLECTION_NAME, create_chroma_client, is_build_complete, open_collection
 from resources.notion_resource import create_notion_resource
 from settings import Settings
@@ -16,6 +17,7 @@ from settings import Settings
 ALLOWED_ORIGIN = "http://localhost:5173"
 SECRET = "super-secret-test-key"
 POLL_SECONDS = 0.01
+SECONDS_PER_MINUTE = 60
 WORDS_BODY = {"words": [{"name": "serendipity", "translation": "şans"}, {"name": "gloomy", "translation": "kasvetli"}]}
 
 
@@ -45,15 +47,25 @@ class FakeLlm:
         self.contents = contents or {}
         self.error = error
         self.words: list[str] = []
+        self.pairs: list[tuple[str, str]] = []
 
     def build_search_query(self, word, meaning):
         self.words.append(word)
+        self.pairs.append((word, meaning))
         return word
 
     def generate(self, word, meaning, text_results, image_results):
         if self.error:
             raise self.error
-        return self.contents.get(word)
+        return self.contents.get((word, meaning), self.contents.get(word))
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
 
 
 class BlockingLlm(FakeLlm):
@@ -93,10 +105,13 @@ def in_thread(call: Callable[[], object]) -> tuple[threading.Thread, list]:
 
 
 class Harness:
-    def __init__(self, tmp_path, resource=None, llm=None, settings=None, resource_factory=None):
+    def __init__(
+        self, tmp_path, resource=None, llm=None, settings=None, resource_factory=None, clock=None, failing_renames=None
+    ):
         self.resource = resource or NotesResource()
         self.factory_calls = 0
         self.chroma_path = tmp_path / "chroma"
+        self.failing_renames = failing_renames if failing_renames is not None else set()
 
         def resources(_settings):
             self.factory_calls += 1
@@ -104,11 +119,14 @@ class Harness:
 
         self.dependencies = EngineDependencies(
             settings=settings or Settings(cors_origins=(ALLOWED_ORIGIN,)),
-            chroma_client_factory=lambda: create_chroma_client(self.chroma_path),
+            chroma_client_factory=lambda: RenameFailingClient(
+                create_chroma_client(self.chroma_path), self.failing_renames
+            ),
             embedders=Embedders(text=FakeEmbedder(), image=FakeEmbedder()),
             resource_factory=resource_factory or resources,
             llm_client=llm or FakeLlm(),
             logs_dir=tmp_path / "logs",
+            **({"clock": clock} if clock is not None else {}),
         )
         self.app = create_app(self.dependencies)
         self.client = TestClient(self.app, raise_server_exceptions=False)
@@ -139,7 +157,9 @@ def test_get_word_content_returns_only_words_with_content(tmp_path):
     answer = harness.client.post("/GetWordContent", json=WORDS_BODY)
 
     assert answer.status_code == 200
-    assert answer.json() == [{"name": "serendipity", "content": '{"method":"story","title":"t","content":"c"}'}]
+    assert answer.json() == [
+        {"name": "serendipity", "translation": "şans", "content": '{"method":"story","title":"t","content":"c"}'}
+    ]
 
 
 @pytest.mark.parametrize(
@@ -151,6 +171,7 @@ def test_get_word_content_returns_only_words_with_content(tmp_path):
         {"words": [{"name": "   ", "translation": "x"}]},
         {"words": [{"name": "a"}]},
         {"words": [{"name": f"w{index}", "translation": ""} for index in range(51)]},
+        {"words": [{"name": "a" * (MAX_NAME_LENGTH + 1), "translation": "x"}]},
     ],
 )
 def test_invalid_body_is_rejected(tmp_path, body):
@@ -398,7 +419,9 @@ def test_name_is_returned_exactly_as_sent(tmp_path):
 
     answer = harness.client.post("/GetWordContent", json={"words": [{"name": "gloomy ", "translation": "kasvetli"}]})
 
-    assert answer.json() == [{"name": "gloomy ", "content": '{"method":"story","title":"t","content":"c"}'}]
+    assert answer.json() == [
+        {"name": "gloomy ", "translation": "kasvetli", "content": '{"method":"story","title":"t","content":"c"}'}
+    ]
     assert llm.words == ["gloomy"]
 
 
@@ -411,5 +434,155 @@ def test_duplicate_names_are_generated_and_returned_once(tmp_path):
 
     answer = harness.client.post("/GetWordContent", json={"words": [word, word]})
 
-    assert answer.json() == [{"name": "gloomy", "content": "content"}]
+    assert answer.json() == [{"name": "gloomy", "translation": "kasvetli", "content": "content"}]
     assert llm.words == ["gloomy"]
+
+
+def test_failed_create_build_keeps_the_existing_collections(tmp_path):
+    # E12
+    harness = Harness(tmp_path)
+    existing = open_collection(create_chroma_client(harness.chroma_path), TEXT_COLLECTION_NAME)
+    existing.add(ids=["existing"], documents=["existing note"], embeddings=[[1.0] * 8])
+    harness.resource.error = RuntimeError("source is down")
+
+    harness.build_ready()
+
+    assert harness.stored_documents() == ["existing note"]
+    assert harness.client.post("/Init_RAG").json() == {"status": "empty"}
+
+
+def test_failed_rename_during_update_restores_the_old_collections_and_answers_an_error(tmp_path):
+    # E13
+    harness = Harness(tmp_path)
+    harness.build_ready()
+    harness.failing_renames.add(TEXT_COLLECTION_NAME)
+
+    answer = harness.client.post("/Update_Collections")
+
+    assert answer.status_code == 500
+    assert answer.json() == {"detail": "The RAG engine could not complete the request."}
+    assert harness.stored_documents() == ["note 1"]
+    assert harness.client.post("/Init_RAG").json() == {"status": "ready"}
+    texts, _ = harness.app.state.engine.rag_client.retrieve("q")
+    assert [item.document for item in texts] == ["note 1"]
+
+
+def failing_refresh():
+    raise RuntimeError("refresh broke")
+
+
+def test_refresh_failure_after_a_successful_update_is_logged_and_answers_200(tmp_path, caplog):
+    # H16
+    harness = Harness(tmp_path)
+    harness.build_ready()
+    harness.app.state.engine.rag_client.refresh = failing_refresh
+
+    with caplog.at_level(logging.ERROR, logger="engine"):
+        answer = harness.client.post("/Update_Collections")
+
+    assert answer.status_code == 200
+    assert answer.json()["status"] == "updated"
+    assert "RAG client refresh failed: RuntimeError" in caplog.text
+
+
+def test_refresh_failure_does_not_hide_the_builds_own_error(tmp_path):
+    # H16
+    harness = Harness(tmp_path)
+    engine_under_test = harness.app.state.engine
+    engine_under_test.rag_client.refresh = failing_refresh
+    engine_under_test.run_pipeline = lambda mode: (_ for _ in ()).throw(ValueError("build broke"))
+
+    with pytest.raises(ValueError, match="build broke"):
+        engine_under_test.update()
+    assert engine_under_test.is_building() is False
+
+
+def test_same_name_with_different_translations_is_generated_and_answered_separately(tmp_path):
+    # H17
+    llm = FakeLlm({("bank", "banka"): "money content", ("bank", "kıyı"): "river content"})
+    harness = Harness(tmp_path, llm=llm)
+    harness.build_ready()
+    body = {"words": [{"name": "bank", "translation": "banka"}, {"name": "bank", "translation": "kıyı"}]}
+
+    answer = harness.client.post("/GetWordContent", json=body)
+
+    assert answer.json() == [
+        {"name": "bank", "translation": "banka", "content": "money content"},
+        {"name": "bank", "translation": "kıyı", "content": "river content"},
+    ]
+    assert llm.pairs == [("bank", "banka"), ("bank", "kıyı")]
+
+
+def test_translation_is_echoed_exactly_as_sent(tmp_path):
+    # H17
+    llm = FakeLlm({("bank", "Banka"): "money content"})
+    harness = Harness(tmp_path, llm=llm)
+    harness.build_ready()
+    body = {"words": [{"name": "bank", "translation": " Banka "}]}
+
+    answer = harness.client.post("/GetWordContent", json=body)
+
+    assert answer.json() == [{"name": "bank", "translation": " Banka ", "content": "money content"}]
+    assert llm.pairs == [("bank", "Banka")]
+
+
+def test_failed_build_is_retried_only_after_the_cooldown(tmp_path):
+    # H18
+    clock = FakeClock()
+    harness = Harness(tmp_path, settings=Settings(rebuild_cooldown_minutes=10), clock=clock)
+    harness.resource.count = 0
+    harness.build_ready()
+
+    clock.now += 10 * SECONDS_PER_MINUTE - 1
+    before = harness.client.post("/Init_RAG")
+    clock.now += 1
+    harness.resource.count = 1
+    after = harness.client.post("/Init_RAG")
+    harness.wait_for_build()
+
+    assert (before.status_code, before.json()) == (200, {"status": "empty"})
+    assert (after.status_code, after.json()) == (202, {"status": "building"})
+    assert harness.factory_calls == 2
+    assert harness.client.post("/Init_RAG").json() == {"status": "ready"}
+
+
+def test_zero_cooldown_starts_a_new_build_at_once(tmp_path):
+    # H18
+    harness = Harness(tmp_path, settings=Settings(rebuild_cooldown_minutes=0), clock=FakeClock())
+    harness.resource.count = 0
+    harness.build_ready()
+
+    assert harness.client.post("/Init_RAG").status_code == 202
+    harness.wait_for_build()
+    assert harness.factory_calls == 2
+
+
+def test_names_differing_only_by_spaces_are_generated_once_and_both_answered(tmp_path):
+    # H19
+    llm = FakeLlm({"Ephemeral": "content"})
+    harness = Harness(tmp_path, llm=llm)
+    harness.build_ready()
+    body = {"words": [
+        {"name": "Ephemeral", "translation": "geçici"},
+        {"name": "Ephemeral ", "translation": "geçici"},
+    ]}
+
+    answer = harness.client.post("/GetWordContent", json=body)
+
+    assert answer.json() == [
+        {"name": "Ephemeral", "translation": "geçici", "content": "content"},
+        {"name": "Ephemeral ", "translation": "geçici", "content": "content"},
+    ]
+    assert llm.words == ["Ephemeral"]
+
+
+def test_name_length_is_checked_after_trimming(tmp_path):
+    # H19
+    name = "a" * MAX_NAME_LENGTH
+    harness = Harness(tmp_path, llm=FakeLlm({name: "content"}))
+    harness.build_ready()
+
+    answer = harness.client.post("/GetWordContent", json={"words": [{"name": f"  {name}  ", "translation": "x"}]})
+
+    assert answer.status_code == 200
+    assert answer.json() == [{"name": f"  {name}  ", "translation": "x", "content": "content"}]

@@ -6,6 +6,7 @@ from settings import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_GEMINI_MODEL,
     DEFAULT_IMAGE_THRESHOLD,
+    DEFAULT_REBUILD_COOLDOWN_MINUTES,
     DEFAULT_TEXT_THRESHOLD,
     MissingSettingError,
     SettingsError,
@@ -21,6 +22,7 @@ RAG_IMAGE_THRESHOLD=0.3
 RAG_BATCH_SIZE=8
 RAG_LIVE_TESTS=true
 FUXI_CORS_ORIGINS=http://localhost:5173, https://fuxi.example
+RAG_REBUILD_COOLDOWN_MINUTES=2.5
 """
 
 
@@ -43,6 +45,7 @@ def test_every_rag_key_is_parsed(tmp_path):
     assert isinstance(settings.batch_size, int)
     assert settings.live_tests is True
     assert settings.cors_origins == ("http://localhost:5173", "https://fuxi.example")
+    assert settings.rebuild_cooldown_minutes == 2.5  # H18
 
 
 def test_process_environment_overrides_the_env_file(tmp_path):
@@ -59,6 +62,7 @@ def test_missing_numbers_use_defaults(tmp_path):
     assert settings.text_threshold == DEFAULT_TEXT_THRESHOLD == 0.5
     assert settings.image_threshold == DEFAULT_IMAGE_THRESHOLD == 0.25
     assert settings.batch_size == DEFAULT_BATCH_SIZE == 16
+    assert settings.rebuild_cooldown_minutes == DEFAULT_REBUILD_COOLDOWN_MINUTES == 10  # H18
 
 
 def test_missing_env_file_uses_defaults(tmp_path):
@@ -86,6 +90,8 @@ def test_missing_model_uses_default(tmp_path):
         ("RAG_IMAGE_THRESHOLD", "abc"),
         ("RAG_BATCH_SIZE", "0"),
         ("RAG_BATCH_SIZE", "1.5"),
+        ("RAG_REBUILD_COOLDOWN_MINUTES", "-1"),  # H18
+        ("RAG_REBUILD_COOLDOWN_MINUTES", "soon"),  # H18
     ],
 )
 def test_invalid_value_error_names_the_key(tmp_path, key, value):
@@ -119,3 +125,10 @@ def test_key_without_value_uses_the_default(tmp_path):
     settings = load_settings(write_env(tmp_path, "RAG_BATCH_SIZE\n"), environ={})
 
     assert settings.batch_size == DEFAULT_BATCH_SIZE
+
+
+def test_zero_cooldown_is_accepted(tmp_path):
+    # B4 H18
+    settings = load_settings(write_env(tmp_path, "RAG_REBUILD_COOLDOWN_MINUTES=0\n"), environ={})
+
+    assert settings.rebuild_cooldown_minutes == 0
