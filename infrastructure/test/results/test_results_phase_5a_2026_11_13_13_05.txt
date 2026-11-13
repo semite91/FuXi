@@ -1,0 +1,97 @@
+FuXi - Phase 5a - RAG engine core and Notion
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_13_11_03.txt (confirmed, amended twice for the reviews)
+Run: 2026-11-13 13:05 UTC, branch claude/dazzling-keller-4n8p3o, last code commit 16a0363
+
+Totals
+- RAG engine (rag/): "python -m pytest -q": 140 passed, 4 skipped (the LIVE tests; RAG_LIVE_TESTS is not true).
+- Frontend: "npm run build": 0 TypeScript errors, no warning. "npm test": 16 files, 251 passed (185 before Phase 5a).
+- Backend: recreate_test_database.sh, then "dotnet test": 380 passed, 0 skipped (no backend change in Phase 5a).
+- Scenarios: 122. PASS 116. NOT RUN 5 (C10, D4, D5, G17, J6: LIVE, they need the Learner's keys and the real models).
+  PARTIAL 1 (A4).
+
+Status words: PASS, PARTIAL, NOT RUN. PY and FE scenarios are proven by tests that carry the scenario id in a comment or name
+(rag/tests/test_*.py with "# <id>", wwwroot tests named "5a <id>" or "<id>").
+
+A. LIBRARIES AND SETUP
+A1  PASS     The checklist of the 10 libraries was reported to the Learner on 2026-11-13 before installation, including the 4
+             open ChromaDB server CVEs and the safeguards. python-dotenv 1.2.4 was checked the same way when it was added.
+A2  PASS     rag/requirements.in pins every direct library (11 plus pytest).
+A3  PASS     rag/requirements.txt locks 156 packages; 19 cuda-*, nvidia-* and triton lines carry sys_platform == "linux".
+A4  PARTIAL  The engine ran on an environment built from exactly these pins, and "pip check" reported no conflict. A fresh
+             "pip install -r requirements.txt" on Windows was not run in the container; the Learner does it on the laptop.
+A5  PASS     pip-audit over the environment reported only chromadb 1.5.9 (CVE-2026-45829, -45830, -45831, -45833, all in its
+             HTTP server, which FuXi does not run). python-dotenv 1.2.4 has no known vulnerability.
+A6  PASS     .gitignore covers .venv/, logs/ and rag/chroma_data/.
+A7  PASS     Both env examples hold the RAG_ keys, RAG_REBUILD_COOLDOWN_MINUTES included, without a secret value.
+A8  PASS     ensure_rag_keys fills defaults and adds empty secrets, unchanged on a second run (checked on a temp file).
+             Without python3.13 the last line names the missing RAG engine.
+
+B. SETTINGS                 B1-B6 PASS   rag/tests/test_settings.py
+C. NOTION RESOURCE          C1-C9, C11, C12 PASS   rag/tests/test_notion_resource.py.   C10 NOT RUN (LIVE).
+D. EMBEDDERS                D1-D3 PASS   rag/tests/test_embedders.py.   D4, D5 NOT RUN (LIVE).
+E. EMBEDDING PIPELINE       E1-E8, E10-E13 PASS   rag/tests/test_embedding_pipeline.py, test_engine.py.
+                            E9 PASS (RV): Chroma is opened only in rag/chroma_store.py, always with embedding_function=None;
+                            no Chroma server or HTTP client is used.
+F. RAG CLIENT               F1-F8 PASS   rag/tests/test_rag_client.py.
+G. LLM CLIENT               G1-G16, G18, G19 PASS   rag/tests/test_llm_client.py, test_rag_client.py.   G17 NOT RUN (LIVE).
+H. ENGINE API               H1-H19 PASS   rag/tests/test_engine.py.
+I. FRONTEND                 I1-I12, I15-I21 PASS   wwwroot/src/pages/word_content.test.tsx, flashcard_page.test.tsx,
+                            services/rag_service.test.ts, main.test.tsx, utils/word_content.test.ts.
+                            I13 PASS (RV): the built page has img-src 'self' data: https:, every other directive unchanged.
+                            I14 PASS (RV): word_content_text, word_content_picture and word_content_music each have a .tsx and
+                            a .less file, snake_case names and presentational props only.
+
+J. STRUCTURE AND QUALITY
+J1  PASS     See Totals.
+J2  PASS     See Totals.
+J3  PASS     See Totals.
+J4  PASS     Python follows PEP 8 (snake_case functions and variables, PascalCase classes, UPPERCASE constants for every
+             literal), as the Learner's project.md names the functions. No secret is in the code.
+J5  PASS     project.md holds the agreed decisions, the GetWordContent contract with translation, google_search, the
+             staging builds, the cooldown and the Notion rules.
+J6  NOT RUN  Needs the real models, a Notion token and a Gemini key on the Learner's laptop.
+J7  PASS     A scan for Notion and Gemini key patterns over rag/ found nothing; .env files are not tracked.
+
+K. OUT OF SCOPE CHECKS
+K1  PASS     rag/resources holds only notion_resource.py.
+K2  PASS     No evaluation file exists.
+K3  PASS     No backend file changed, so no migration was added.
+K4  PASS     git diff main -- prompts is empty.
+
+==================================================
+CODE REVIEW ROUND 1 (10 findings, decided by the Learner on 2026-11-13)
+==================================================
+FIXED      1  An unshared Notion parent ends the path instead of failing the source (C11).
+FIXED      2  Update reads every source first and keeps the old collections on failure or 0 documents (E5, E10, E11).
+FIXED      3  Covered by 8: content is asked in groups of 5 (I15-I17).
+FIXED      4  A read/write guard: updates wait for running content requests, new ones answer 503 (H12).
+FIXED      5  A completed-build marker; a partial build is redone; an empty build is not repeated (H13, H14).
+MOVED      6  Image input for CLIP moves to Phase 5b.
+FIXED      7  Names are answered exactly as sent (H15).
+FIXED      8  Groups of 5 in the frontend; prompts read once (G18, I15-I17).
+MESSAGE    9  The setup script names a missing Python 3.13 instead of skipping quietly (A8).
+FIXED      10 python-dotenv reads the .env file (B6).
+Also approved: the source reference is shown as a caption (I18) and the lyric excerpt is optional (I19).
+
+==================================================
+CODE REVIEW ROUND 2 (10 findings, all approved and fixed on 2026-11-13)
+==================================================
+FIXED      1  Every build, the first one included, writes into staging collections (E12).
+FIXED      2  The swap renames old aside, new into place, deletes old last, and restores old on failure (E13).
+FIXED      3  Only 403/404 end a Notion path; other errors fail the source (C12).
+FIXED      4  A refresh error is logged apart and does not hide the build's result (H16).
+FIXED      5  Content is keyed by name and translation; the answer echoes the translation (H17, I20, I21).
+FIXED      6  A failed build is retried after RAG_REBUILD_COOLDOWN_MINUTES, 10 by default (H18).
+FIXED      7  Each prompt file is cached on its own first use (G19).
+FIXED      8  The frontend type knows the "empty" Init_RAG answer (I2).
+FIXED      9  One delete helper in chroma_store.py; the unused constant is removed.
+FIXED      10 Name length is checked after trimming; equal trimmed pairs are generated once (H19).
+
+==================================================
+FOR THE LEARNER: LIVE RUN (C10, D4, D5, G17, J6)
+==================================================
+1. In the rag folder on Windows: py -3.13 -m venv .venv, then .venv\Scripts\pip install -r requirements.txt
+2. In the root .env: RAG_NOTION_TOKEN and RAG_GEMINI_API_KEY. Share the Notion pages with the integration.
+3. Live tests: set RAG_LIVE_TESTS=true in .env.test, then .venv\Scripts\python -m pytest -q from rag.
+4. Engine: .venv\Scripts\uvicorn engine:app --port 8000 from rag, then open the app and the Active Words page.
+   The first app open starts the build; cards show content after it ends.
