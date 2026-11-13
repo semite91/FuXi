@@ -186,7 +186,7 @@ ensure_rag_keys() {
 create_rag_environment() {
   local rag_path="${REPOSITORY_ROOT}/${RAG_DIRECTORY}"
   if ! command -v "${RAG_PYTHON}" >/dev/null; then
-    echo "${RAG_PYTHON} was not found, so the RAG engine environment was skipped." >&2
+    RAG_ENVIRONMENT_MISSING="true"
     return
   fi
   give_to_invoking_user "${rag_path}/${RAG_VENV}"
@@ -220,4 +220,8 @@ start_postgres
 create_env_files
 create_role_and_database
 create_rag_environment
-echo "Environment is ready."
+if [ "${RAG_ENVIRONMENT_MISSING:-}" = "true" ]; then
+  echo "Environment is ready, except the RAG engine: install ${RAG_PYTHON} and run this script again." >&2
+else
+  echo "Environment is ready."
+fi

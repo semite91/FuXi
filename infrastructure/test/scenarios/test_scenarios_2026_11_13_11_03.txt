@@ -2,6 +2,8 @@ FuXi - Phase 5a - RAG engine core and Notion
 Test scenarios, shredded to atomic processes.
 Created: 2026-11-13 11:03 UTC
 Status: CONFIRMED BY THE LEARNER ON 2026-11-13, with the proposals by Claude
+Amended on 2026-11-13 for the code review fixes approved by the Learner: A8, I1, I7, I11 and the requirements changed;
+B6, C11, E10, E11, G18, H12 to H15 and I15 to I19 were added. Review item 6 (image embedding input) moves to Phase 5b.
 
 Every scenario has one purpose. "Given / When / Then" is used.
 Phase 5a builds the Python RAG engine in /rag (FastAPI, ChromaDB, Qwen3-Embedding-0.6B, CLIP, Gemini) with one real
@@ -59,6 +61,7 @@ A6. [RV] Given .gitignore, when it is read, then rag/chroma_data/, logs/ and rag
 A7. [RV] Given .env.example and .env.test.example, when they are read, then RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GEMINI_MODEL,
     RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE and RAG_LIVE_TESTS exist without a secret value.
 A8. [RV] Given the setup script on Ubuntu, when it runs, then it creates rag/.venv, installs requirements.txt and adds the RAG_ keys with defaults.
+    Without python3.13, its last line says the environment is ready except the RAG engine.
 
 ==================================================
 B. SETTINGS
@@ -68,6 +71,7 @@ B2. [PY] Given a missing RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD or RAG_BATCH_SI
 B3. [PY] Given a missing RAG_GEMINI_MODEL, when the settings are read, then gemini-3.8-flash is used.
 B4. [PY] Given a threshold outside 0 to 1 or a batch size below 1, when the settings are read, then an error names the key.
 B5. [PY] Given a missing RAG_NOTION_TOKEN or RAG_GEMINI_API_KEY, when the engine starts, then it starts and the error names the key only when that key is used.
+B6. [PY] Given a .env line with an inline comment, when the settings are read, then the value without the comment is used (python-dotenv).
 
 ==================================================
 C. NOTION RESOURCE
@@ -81,6 +85,7 @@ C6. [PY] Given a page whose text is longer than 2000 characters, when it is chun
 C7. [PY] Given a page without text, when it is read, then it gives no document.
 C8. [PY] Given a Notion answer 429 with Retry-After, when the resource reads, then it waits and tries again.
 C9. [PY] Given a new resource class, when it is added, then it implements the Resource base and no existing class is changed (open-closed).
+C11. [PY] Given a shared page whose parent is not shared, when it is read, then the page is embedded and its path stops at the first unreadable parent.
 C10. [LIVE] Given the real Notion token, when the resource reads, then at least one document is returned.
 
 ==================================================
@@ -104,6 +109,8 @@ E6. [PY] Given a run, when it starts, ends or fails, then each step is written t
 E7. [PY] Given a resource that fails, when the pipeline runs, then the error is logged and the other resources are still embedded.
 E8. [PY] Given the Chroma client, when it is created, then it is a PersistentClient at rag/chroma_data with anonymized_telemetry off.
 E9. [RV] Given the engine code, when it is read, then no ChromaDB embedding function and no Chroma server is used.
+E10. [PY] Given a resource that fails during an update, when Update_Collections runs, then the old collections stay and the answer is an error.
+E11. [PY] Given an update that reads 0 documents, when it runs, then the old collections stay.
 
 ==================================================
 F. RAG CLIENT
@@ -136,6 +143,7 @@ G13. [PY] Given an answer with status insufficient_context, invalid JSON or empt
 G14. [PY] Given the second method also fails, when it is read, then the word gets no content.
 G15. [PY] Given Gemini refuses the google_search tool, when it answers with an error, then it counts as a failed method and the fallback rule applies.
 G16. [PY] Given a Gemini error for one word, when generate runs for 3 words, then the other words still get content.
+G18. [PY] Given several calls, when prompts are used, then each prompt file is read once.
 G17. [LIVE] Given the real Gemini key, when one word is generated, then the answer is a valid content JSON or no content, without an error.
 
 ==================================================
@@ -152,23 +160,32 @@ H8. [PY] Given ready collections, when POST /Update_Collections is called, then 
 H9. [PY] Given a running build, when POST /Update_Collections is called, then the answer is 503.
 H10. [PY] Given a request from an origin in FUXI_CORS_ORIGINS, when it is sent, then the CORS headers allow it; another origin is not allowed.
 H11. [PY] Given an error inside the engine, when it answers, then the body has no stack trace and no secret.
+H12. [PY] Given a GetWordContent request in flight, when Update_Collections starts, then the update waits for it to finish, and new GetWordContent requests answer 503.
+H13. [PY] Given a build that stopped partway, when Init_RAG is called, then a new build starts.
+H14. [PY] Given a build that found 0 documents, when Init_RAG is called again in the same engine run, then no new build starts.
+H15. [PY] Given a name with a trailing space, when content is generated, then the answer uses the same name with the space.
 
 ==================================================
 I. FRONTEND
 ==================================================
-I1. [FE] Given cards with empty Content, when content is asked, then POST /GetWordContent is called once with { words: [{ name, translation }] }.
+I1. [FE] Given cards with empty Content, when content is asked, then POST /GetWordContent is called with { words: [{ name, translation }] } in groups of at most 5 words.
 I2. [FE] Given the app, when it opens, then POST /Init_RAG is called once and a failure does not show an error.
 I3. [FE] Given a 503 from GetWordContent, when it returns, then the waiting cards say "Content is not available.".
 I4. [FE] Given a returned content JSON, when it is merged, then UpdateWordContent stores the same JSON string.
 I5. [FE] Given content with a text method, when the back side is shown, then its title and content are shown as plain text.
 I6. [FE] Given content with method photo, when the back side is shown, then the image is shown with the Word's name as its alt text.
-I7. [FE] Given content with method music, when the back side is shown, then the song title, artist, the lyric excerpt in quotes and a link to the song are shown.
+I7. [FE] Given content with method music, when the back side is shown, then the song title, artist, the lyric excerpt in quotes (when present) and a link to the song are shown.
 I8. [FE] Given a music link, when it is rendered, then it opens in a new tab with rel "noopener noreferrer".
 I9. [FE] Given an image_url or song_url that is not https, when it is rendered, then no image or link is created and "Content is not available." is shown.
 I10. [FE] Given an old plain-text Content, when the back side is shown, then it is shown as a story text.
 I11. [FE] Given content JSON with an unknown method or missing fields, when it is shown, then "Content is not available." is shown.
 I12. [FE] Given a picture that fails to load, when the error comes, then "Content is not available." is shown instead of a broken image.
 I13. [RV] Given the built page, when its Content-Security-Policy is read, then img-src allows https: and nothing else is loosened.
+I15. [FE] Given 12 cards without content, when content is asked, then 3 requests of 5, 5 and 2 words are sent one after another.
+I16. [FE] Given a failed second group, when it returns, then only its cards say "Content is not available." and the third group is still asked.
+I17. [FE] Given the first group's answer, when it arrives, then its cards show content before the next group returns.
+I18. [FE] Given text content with a source_reference, when the back side is shown, then the source is shown as a caption; without one, no caption.
+I19. [FE] Given music content without a lyric excerpt, when the back side is shown, then title, artist and link are shown without a quote.
 I14. [RV] Given the new components, when they are read, then each has its own .tsx and .less file, a snake_case name and no logic.
 
 ==================================================
