@@ -5,15 +5,45 @@ import FlashcardFront from '../components/flashcard_front/flashcard_front';
 import PageCard from '../components/page_card/page_card';
 import Skeleton from '../components/skeleton/skeleton';
 import StatusMessage from '../components/status_message/status_message';
+import WordContentMusic from '../components/word_content_music/word_content_music';
+import WordContentPicture from '../components/word_content_picture/word_content_picture';
+import WordContentText from '../components/word_content_text/word_content_text';
 import { WORD_IDS_QUERY } from '../constants/routes';
 import { APP_TEXTS, FLASHCARD_TEXTS, HISTORY_TEXTS } from '../constants/texts';
 import { useFlashcardDeck, type Flashcard } from '../hooks/use_flashcard_deck';
+import { parseWordContent } from '../utils/word_content';
 import { renderWordHistory } from './word_history_content';
 
 const FRONT_SIDE = 'front';
 const BACK_SIDE = 'back';
 
-const renderContent = (card: Flashcard) => {
+const renderUnavailable = () => <StatusMessage text={FLASHCARD_TEXTS.contentUnavailable} />;
+
+/** The layout of a ready Word Content. A picture that fails to load calls onPictureError. */
+const renderReadyContent = (card: Flashcard, onPictureError: () => void) => {
+  const parsed = parseWordContent(card.content ?? '');
+
+  switch (parsed.kind) {
+    case 'text':
+      return <WordContentText title={parsed.title} content={parsed.content} />;
+    case 'photo':
+      return <WordContentPicture imageUrl={parsed.imageUrl} alt={card.word.name} onError={onPictureError} />;
+    case 'music':
+      return (
+        <WordContentMusic
+          songTitle={parsed.songTitle}
+          artist={parsed.artist}
+          lyricsExcerpt={parsed.lyricsExcerpt}
+          songUrl={parsed.songUrl}
+          linkLabel={FLASHCARD_TEXTS.listen}
+        />
+      );
+    default:
+      return renderUnavailable();
+  }
+};
+
+const renderContent = (card: Flashcard, onPictureError: () => void) => {
   if (card.contentStatus === 'loading') {
     return (
       <>
@@ -23,11 +53,7 @@ const renderContent = (card: Flashcard) => {
     );
   }
 
-  return card.contentStatus === 'ready' ? (
-    <p>{card.content}</p>
-  ) : (
-    <StatusMessage text={FLASHCARD_TEXTS.contentUnavailable} />
-  );
+  return card.contentStatus === 'ready' ? renderReadyContent(card, onPictureError) : renderUnavailable();
 };
 
 interface FlashcardDeckProps {
@@ -75,7 +101,7 @@ const FlashcardDeck = ({ wordIds }: FlashcardDeckProps) => {
         {card.isAnswered ? (
           <FlashcardBack
             translation={card.word.translation}
-            content={renderContent(card)}
+            content={renderContent(card, () => deck.markContentUnavailable(card.word.id))}
             cardCount={deck.cardCount}
             cardIndex={deck.index}
             reinforcementLabel={FLASHCARD_TEXTS.reinforcement}

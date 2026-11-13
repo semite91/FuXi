@@ -77,7 +77,9 @@ export const useFlashcardDeck = (wordIds: string | null) => {
       let contentByName = new Map<string, string>();
 
       try {
-        const generated = await getWordContent(waiting.map((card) => card.word.name));
+        const generated = await getWordContent(
+          waiting.map((card) => ({ name: card.word.name, translation: card.word.translation })),
+        );
         contentByName = new Map(generated.map((item) => [item.name, item.content]));
       } catch {
         // Every waiting card shows that its content is not available.
@@ -201,6 +203,12 @@ export const useFlashcardDeck = (wordIds: string | null) => {
     setIsHistoryOpen(!isHistoryOpen);
   };
 
+  /** A picture that cannot be loaded leaves the card without content. */
+  const markContentUnavailable = (wordId: string) =>
+    setCards((current) =>
+      current.map((item) => (item.word.id === wordId ? { ...item, contentStatus: 'unavailable' } : item)),
+    );
+
   return {
     status,
     loadError,
@@ -214,6 +222,7 @@ export const useFlashcardDeck = (wordIds: string | null) => {
     answer,
     reinforce,
     toggleHistory,
+    markContentUnavailable,
     goNext: () => moveTo(index + 1),
     goPrevious: () => moveTo(index - 1),
     finish: () => setStatus('done'),

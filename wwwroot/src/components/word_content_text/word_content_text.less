@@ -1,0 +1,20 @@
+@import (reference) '../../css/tokens.less';
+
+.word-content-text {
+  display: flex;
+  flex-direction: column;
+  gap: @space-small;
+}
+
+.word-content-text__title {
+  margin: 0;
+  font-size: var(--font-size-large);
+  line-height: @line-height-heading;
+  font-weight: @font-weight-bold;
+  letter-spacing: @letter-spacing-title;
+}
+
+.word-content-text__content {
+  margin: 0;
+  white-space: pre-line;
+}

@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import App from './app';
+import { startRag } from './services/rag_service';
 import { listenForNavigation } from './services/service_worker_message_service';
 import '@fontsource/manrope/latin-500.css';
 import '@fontsource/manrope/latin-ext-500.css';
@@ -47,4 +48,6 @@ const renderApp = (): void => {
 
 registerServiceWorker();
 listenForNavigation();
+// Outside React, so StrictMode cannot call it twice.
+startRag();
 renderApp();

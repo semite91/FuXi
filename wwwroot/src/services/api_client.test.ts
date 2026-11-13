@@ -23,9 +23,9 @@ test('C1 a .NET API call starts with the API URL and uses /api/<Name>', async ()
 });
 
 test('C2 a RAG API call starts with the RAG URL', async () => {
-  const api = mockApi({ 'GET /GetWordContent': { body: [] } });
+  const api = mockApi({ 'POST /GetWordContent': { body: [] } });
 
-  await getWordContent(['run']);
+  await getWordContent([{ name: 'run', translation: 'koşmak' }]);
 
   expect(api.calls[0].url.origin).toBe(RAG_URL);
 });

@@ -33,7 +33,7 @@ const contentSecurityPolicy = (connectSources: readonly string[]): Plugin => ({
           "script-src 'self'",
           "style-src 'self'",
           "font-src 'self'",
-          "img-src 'self' data:",
+          "img-src 'self' data: https:",
           `connect-src 'self' ${connectSources.join(' ')}`.trim(),
           "manifest-src 'self'",
           "worker-src 'self'",
