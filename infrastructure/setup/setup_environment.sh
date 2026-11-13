@@ -100,6 +100,16 @@ create_env_files() {
   done
 }
 
+# The script runs as root through sudo. Build output in the repository must belong to the
+# developer who called sudo, or their own later "dotnet build" cannot write bin/ and obj/.
+run_as_invoking_user() {
+  if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    runuser -u "${SUDO_USER}" -- "$@"
+    return
+  fi
+  "$@"
+}
+
 # Generates the VAPID keys once with the backend command and writes them to the env file.
 # Keys that exist are never replaced. The private key is kept out of the terminal.
 ensure_vapid_keys() {
@@ -113,7 +123,7 @@ ensure_vapid_keys() {
     echo "Only one VAPID key is filled in ${env_file}. Fill both or empty both." >&2
     exit 1
   fi
-  keys="$(dotnet run --verbosity quiet --project "${REPOSITORY_ROOT}/${BACKEND_PROJECT}" -- "${GENERATE_VAPID_KEYS_COMMAND}")"
+  keys="$(run_as_invoking_user dotnet run --verbosity quiet --project "${REPOSITORY_ROOT}/${BACKEND_PROJECT}" -- "${GENERATE_VAPID_KEYS_COMMAND}")"
   public_key="$(grep -E "^${VAPID_PUBLIC_KEY_KEY}=" <<< "${keys}" | head -n 1 | cut -d= -f2-)"
   private_key="$(grep -E "^${VAPID_PRIVATE_KEY_KEY}=" <<< "${keys}" | head -n 1 | cut -d= -f2-)"
   if [ -z "${public_key}" ] || [ -z "${private_key}" ]; then

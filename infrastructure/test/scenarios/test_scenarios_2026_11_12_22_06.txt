@@ -2,6 +2,8 @@ FuXi - Phase 4 - Push Notifications
 Test scenarios, shredded to atomic processes.
 Created: 2026-11-12 22:06 UTC
 Status: CONFIRMED BY THE LEARNER ON 2026-11-12, with the defaults proposed by Claude
+Amended on 2026-11-13 at the Learner's request: the 10 code review fixes (R1 to R10) changed F6, I4, I7, I8 and I10
+and added C10, C11, E8, E9, F11, F12, G5, I13, I14 and B11.
 
 Every scenario has one purpose. "Given / When / Then" is used.
 Phase 4 adds the VAPID key generation, the Quartz.NET timed task that sends push notifications,
@@ -42,6 +44,7 @@ B7. [RV] Given an env file with filled VAPID keys, when the setup script runs ag
 B8. [RV] Given an env file without VAPID_SUBJECT, when the setup script runs, then a mailto: or https: default is added.
 B9. [RV] Given the setup script, when it runs, then the private key is never printed to the terminal.
 B10. [RV] Given the tracked files, when they are read, then no VAPID key value is in them.
+B11. [RV] Given the setup script run through sudo, when it generates the keys, then dotnet runs as the user who called sudo, so bin/ and obj/ are not owned by root. (R7)
 
 ==================================================
 C. TIMED TASK (QUARTZ.NET)
@@ -55,6 +58,8 @@ C6. [BE] Given a restart at T, when the new trigger is read, then its first fire
 C7. [NOW] Given the job, when it is read, then it does not run twice at the same time.
 C8. [NOW] Given a run that throws an error, when the error is caught, then it is logged and the next run still fires.
 C9. [NOW] Given the API stops, when shutdown runs, then the scheduler is shut down.
+C10. [BE] Given a NotificationPeriod that cannot be read, when the API starts, then an error is logged, the API answers requests and no trigger exists; a later UpdateNotificationPeriod creates one trigger. (R3)
+C11. [NOW] Given a stopped timer, when RestartAsync is called, then it returns without an error and no trigger is created. (R9)
 
 ==================================================
 D. NOTIFICATION WINDOW CHECK
@@ -77,6 +82,8 @@ E4. [BE] Given the same Words, when the payload is built, then wordIds is their 
 E5. [NOW] Given the payload, when it is serialised, then it is JSON with camelCase fields title and wordIds only.
 E6. [BE] Given a sent notification that the Learner ignores, when the job runs again, then the same Words are sent again.
 E7. [BE] Given a run, when it ends, then no RotatedWords LastShownDate, Counter or Words ShownCount is changed by the job.
+E8. [BE] Given more Due Words than fit in 3993 bytes, when the payload is built, then it holds the first Words that fit, its JSON is at most 3993 bytes, and title and wordIds list the same Words. (R4)
+E9. [BE] Given Words left out of a full payload, when the next run comes, then they are still Due. (R4)
 
 ==================================================
 F. SENDING
@@ -84,13 +91,15 @@ F. SENDING
 F1. [BE] Given no PushSubscription, when the job has words to send, then no push is sent and nothing fails.
 F2. [BE] Given two PushSubscriptions, when the job runs, then the push client is called once for each endpoint.
 F3. [BE] Given a send, when it is made, then the subscription's Endpoint, P256dh and Auth and the VAPID public key, private key and subject from the configuration are used.
-F4. [BE] Given an endpoint that answers 410 Gone, when the job runs, then that PushSubscription is deleted.
+F4. [BE] Given an endpoint that answers 410 Gone or 404 Not Found, when the job runs, then that PushSubscription is deleted. (R2)
 F5. [BE] Given one endpoint that answers 410 and one that answers 201, when the job runs, then only the 410 entry is deleted and the other one still receives the push.
-F6. [BE] Given an endpoint that answers another error, when the job runs, then the error is logged, the entry is kept and the other endpoints still receive the push.
+F6. [BE] Given an endpoint that answers another error (not 410 or 404), when the job runs, then the error is logged, the entry is kept and the other endpoints still receive the push.
 F7. [NOW] Given empty VAPID keys, when the job runs, then no push is sent and a warning is logged.
 F8. [NOW] Given the push client, when it is read, then it is behind an interface, so tests use a fake client and no real push service is called.
 F9. [NOW] Given a subscription endpoint whose host is not in PushHosts, when the job runs, then it is not called (SSRF protection).
 F10. [NOW] Given the push client, when it is read, then its HttpClient comes from IHttpClientFactory with a timeout.
+F11. [BE] Given two subscriptions, when a run sends, then the VAPID authentication is built once. (R10)
+F12. [BE] Given a slow endpoint, when a run sends, then the other endpoint is not waited for. (R10)
 
 ==================================================
 G. SERVICE WORKER - PUSH
@@ -99,6 +108,7 @@ G1. [FE] Given a push event with the payload, when the service worker handles it
 G2. [FE] Given the same push event, when the notification is shown, then its data holds the wordIds and its icon is the FuXi icon.
 G3. [FE] Given a push event, when it is handled, then the work is kept inside event.waitUntil.
 G4. [FE] Given a push event without data or with invalid JSON, when it is handled, then no notification is shown and no error is thrown.
+G5. [FE] Given a push, when the notification is shown, then it has the FuXi tag and renotify true, so a newer one replaces the older one. (R5)
 
 ==================================================
 H. SERVICE WORKER - NOTIFICATION CLICK
@@ -115,15 +125,17 @@ I. SETTINGS PAGE - SUBSCRIBE
 I1. [FE] Given the Settings page, when it opens, then the browser is not asked for permission and no push API is called.
 I2. [FE] Given "Enable notifications", when it is clicked, then the browser asks for notification permission.
 I3. [FE] Given permission "denied", when the answer comes, then GetVapidPublicKey is not called and "Notifications: blocked" is shown.
-I4. [FE] Given permission "granted", when the answer comes, then GetVapidPublicKey is called once.
+I4. [FE] Given permission "granted", when the answer comes, then GetVapidPublicKey is called once (also when a subscription exists, for R1).
 I5. [FE] Given the public key, when subscribe is called, then userVisibleOnly is true and applicationServerKey is the key decoded from URL-safe Base64.
 I6. [FE] Given a subscription, when it is sent, then SavePushSubscription is called with endpoint, p256dh and auth taken from the subscription.
-I7. [FE] Given a saved subscription, when the answer comes, then "Notifications: allowed" is shown.
-I8. [FE] Given a failing GetVapidPublicKey, subscribe or SavePushSubscription call, when it fails, then "Notifications could not be enabled." is shown with role alert.
+I7. [FE] Given a saved subscription, when the answer comes, then "Notifications: allowed" is shown, and not before the subscription is saved. (R8)
+I8. [FE] Given a failing GetVapidPublicKey, subscribe or SavePushSubscription call, when it fails, then "Notifications could not be enabled." is shown with role alert, and the state does not read "Notifications: allowed". (R8)
 I9. [FE] Given a pending subscription, when the button is clicked again, then no second request is sent.
-I10. [FE] Given permission already "granted" and an existing browser subscription, when the button is clicked, then the existing subscription is sent again and no new one is created.
+I10. [FE] Given permission already "granted" and an existing browser subscription made with the current key, when the button is clicked, then the existing subscription is sent again and no new one is created.
 I11. [FE] Given a browser without PushManager, when the page opens, then "Notifications: not supported" is shown and the button is disabled.
 I12. [RV] Given the subscribe logic, when it is read, then it is in a service, not in a component.
+I13. [FE] Given an existing subscription made with another key, when the button is clicked, then it is unsubscribed, a new one is made with the current key and the new one is saved. (R1)
+I14. [FE] Given a service worker that is never ready, when 10 seconds pass, then "Notifications could not be enabled." is shown and the button is enabled again. (R6)
 
 ==================================================
 J. STRUCTURE AND QUALITY

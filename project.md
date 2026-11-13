@@ -242,8 +242,10 @@ This file is initializer instructor of my project.
   - If GetNotificationWords returns no word, push notification won't sent.
   - If Learner ignores a notification, same words will be sent again at next run.
   - Notification payload: JSON with title and wordIds. Title is word names joined with ", ", wordIds is word ids joined with comma.
+  - Payload is at most 3993 bytes, the aes128gcm limit of push services. Words that do not fit are sent at a later run.
+  - Notifications use one tag, so a newer notification replaces the older one.
   - Notification click opens /flashcard with wordIds. If FuXi is already open in a tab, that tab is focused and moved to /flashcard; otherwise a new window opens.
-  - Quartz.NET uses RAM store. Trigger is created from Config at startup. The first run comes one Notification Period after startup or after UpdateNotificationPeriod.
+  - Quartz.NET uses RAM store. Trigger is created from Config at startup. The first run comes one Notification Period after startup or after UpdateNotificationPeriod. If the Notification Period cannot be read at startup, the error is logged and the API starts without the timed task.
   - A Notification Window contains now when StartDate <= now < EndDate.
   - The timed task does not change Words or RotatedWords.
   - Workflow and order listed below
@@ -254,7 +256,7 @@ This file is initializer instructor of my project.
     Page will send the subscription to backend with SavePushSubscription api, which stores it in a database.
     Quartz.NET will triggers task
     Backend will sign the message with VAPID key using the Lib.Net.Http.WebPush library. Payload is encrypted with aes128gcm, so every browser, Safari included, accepts it.
-    Post signed message using PushServiceClient.RequestPushMessageDeliveryAsync function to every subscription's endpoint. If endpoint returns 410 Gone, subscription is deleted. Other failures are logged and the subscription is kept.
+    Post signed message using PushServiceClient.RequestPushMessageDeliveryAsync function to every subscription's endpoint. If endpoint returns 410 Gone or 404 Not Found, subscription is deleted. Other failures are logged and the subscription is kept. VAPID authentication is built once per run and subscriptions are sent in parallel.
     The service worker will wake up and show the notification.
   
 
