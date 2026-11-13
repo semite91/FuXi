@@ -41,6 +41,8 @@ TEXT_SEPARATOR = "\n"
 PATH_SEPARATOR = " / "
 
 NotionClientFactory = Callable[[], Any]
+# None marks a parent page the integration cannot read.
+PageCache = dict[str, dict[str, Any] | None]
 
 
 class NotionResource(Resource):
@@ -61,7 +63,7 @@ class NotionResource(Resource):
     def read_documents(self) -> list[Document]:
         client = self._client_factory()
         pages = list(self._search_pages(client))
-        page_cache = {page["id"]: page for page in pages}
+        page_cache: PageCache = {page["id"]: page for page in pages}
         documents: list[Document] = []
         for page in pages:
             text = TEXT_SEPARATOR.join(self._read_block_texts(client, page["id"]))
@@ -109,7 +111,7 @@ class NotionResource(Resource):
         return call()
 
     def _build_metadata(
-        self, client: Any, page: dict[str, Any], page_cache: dict[str, dict[str, Any]]
+        self, client: Any, page: dict[str, Any], page_cache: PageCache
     ) -> dict[str, str]:
         return {
             METADATA_NAME: _page_title(page),
@@ -118,22 +120,26 @@ class NotionResource(Resource):
             METADATA_TIMESTAMP: page.get("last_edited_time", ""),
         }
 
-    def _parent_titles(
-        self, client: Any, page: dict[str, Any], page_cache: dict[str, dict[str, Any]]
-    ) -> list[str]:
-        """Titles of the parent pages, from the top page down."""
+    def _parent_titles(self, client: Any, page: dict[str, Any], page_cache: PageCache) -> list[str]:
+        """Titles of the parent pages, from the top page down; the path stops at the first unreadable parent."""
         titles: list[str] = []
         parent = page.get("parent", {})
         while parent.get("type") == PAGE_PARENT_TYPE:
-            parent_id = parent[PAGE_PARENT_TYPE]
-            if parent_id not in page_cache:
-                page_cache[parent_id] = self._call_with_retry(
-                    lambda: client.pages.retrieve(page_id=parent_id)
-                )
-            parent_page = page_cache[parent_id]
+            parent_page = self._parent_page(client, parent[PAGE_PARENT_TYPE], page_cache)
+            if parent_page is None:
+                break
             titles.insert(0, _page_title(parent_page))
             parent = parent_page.get("parent", {})
         return titles
+
+    def _parent_page(self, client: Any, parent_id: str, page_cache: PageCache) -> dict[str, Any] | None:
+        """The parent page, or None when it is not shared with the integration (403, 404 or another API error)."""
+        if parent_id not in page_cache:
+            try:
+                page_cache[parent_id] = self._call_with_retry(lambda: client.pages.retrieve(page_id=parent_id))
+            except APIResponseError:
+                page_cache[parent_id] = None
+        return page_cache[parent_id]
 
     def _chunk(self, text: str) -> list[str]:
         if len(text) <= CHUNK_SIZE:

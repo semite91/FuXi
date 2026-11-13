@@ -104,12 +104,12 @@ E1. [PY] Given mode create and 40 documents, when the pipeline runs with batch s
 E2. [PY] Given a document, when it is added, then its id is a new GUID that is unique in the collection.
 E3. [PY] Given a text document, when it is added, then ids, documents (the text), embeddings and metadatas go to fuxi_text together.
 E4. [PY] Given the collections, when they are created, then their HNSW space is cosine.
-E5. [PY] Given mode update, when the pipeline runs, then every collection is deleted first and mode create runs.
+E5. [PY] Given mode update, when the pipeline runs, then every resource is read and embedded into staging collections first, and the old collections are replaced only after every resource succeeded.
 E6. [PY] Given a run, when it starts, ends or fails, then each step is written to logs/embedding/yyyy_MM_dd_HH_mm.txt.
 E7. [PY] Given a resource that fails, when the pipeline runs, then the error is logged and the other resources are still embedded.
 E8. [PY] Given the Chroma client, when it is created, then it is a PersistentClient at rag/chroma_data with anonymized_telemetry off.
 E9. [RV] Given the engine code, when it is read, then no ChromaDB embedding function and no Chroma server is used.
-E10. [PY] Given a resource that fails during an update, when Update_Collections runs, then the old collections stay and the answer is an error.
+E10. [PY] Given a resource that fails during an update, when Update_Collections runs, then the old collections stay and the answer is 502 with a generic message.
 E11. [PY] Given an update that reads 0 documents, when it runs, then the old collections stay.
 
 ==================================================
@@ -154,7 +154,7 @@ H2. [PY] Given ready collections, when POST /GetWordContent is called with 2 wor
 H3. [PY] Given a body without words, with an empty name, or with more than 50 words, when it is called, then the answer is 422.
 H4. [PY] Given empty collections, when POST /Init_RAG is called, then 202 {"status":"building"} is returned and one background build starts.
 H5. [PY] Given a running build, when POST /Init_RAG is called again, then 202 is returned and no second build starts.
-H6. [PY] Given collections with data, when POST /Init_RAG is called, then 200 {"status":"ready"} is returned and nothing is built.
+H6. [PY] Given a completed build, when POST /Init_RAG is called, then 200 {"status":"ready"} is returned and nothing is built.
 H7. [PY] Given a running build, when POST /GetWordContent is called, then the answer is 503.
 H8. [PY] Given ready collections, when POST /Update_Collections is called, then it rebuilds and answers 200 when the rebuild ends.
 H9. [PY] Given a running build, when POST /Update_Collections is called, then the answer is 503.
@@ -162,7 +162,7 @@ H10. [PY] Given a request from an origin in FUXI_CORS_ORIGINS, when it is sent, 
 H11. [PY] Given an error inside the engine, when it answers, then the body has no stack trace and no secret.
 H12. [PY] Given a GetWordContent request in flight, when Update_Collections starts, then the update waits for it to finish, and new GetWordContent requests answer 503.
 H13. [PY] Given a build that stopped partway, when Init_RAG is called, then a new build starts.
-H14. [PY] Given a build that found 0 documents, when Init_RAG is called again in the same engine run, then no new build starts.
+H14. [PY] Given a build that found 0 documents or had a failed resource, when Init_RAG is called again in the same engine run, then 200 {"status":"empty"} is returned and no new build starts.
 H15. [PY] Given a name with a trailing space, when content is generated, then the answer uses the same name with the space.
 
 ==================================================

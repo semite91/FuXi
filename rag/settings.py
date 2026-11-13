@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dotenv import dotenv_values
+
 RAG_DIR = Path(__file__).resolve().parent
 REPO_ROOT = RAG_DIR.parent
 ROOT_ENV_PATH = REPO_ROOT / ".env"
@@ -28,10 +30,7 @@ MAX_THRESHOLD = 1.0
 MIN_BATCH_SIZE = 1
 
 TRUE_VALUE = "true"
-COMMENT_PREFIX = "#"
-KEY_VALUE_SEPARATOR = "="
 LIST_SEPARATOR = ","
-QUOTE_CHARACTERS = "\"'"
 ENV_FILE_ENCODING = "utf-8"
 
 
@@ -79,17 +78,11 @@ def load_settings(
 
 
 def read_env_file(env_path: Path) -> dict[str, str]:
-    """A tiny dotenv reader: KEY=VALUE lines, comments and optional quotes."""
+    """The .env values (python-dotenv: comments, quotes, export lines); a key without a value is left out."""
     if not env_path.is_file():
         return {}
-    values: dict[str, str] = {}
-    for line in env_path.read_text(encoding=ENV_FILE_ENCODING).splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith(COMMENT_PREFIX) or KEY_VALUE_SEPARATOR not in stripped:
-            continue
-        key, value = stripped.split(KEY_VALUE_SEPARATOR, 1)
-        values[key.strip()] = value.strip().strip(QUOTE_CHARACTERS)
-    return values
+    values = dotenv_values(env_path, interpolate=False, encoding=ENV_FILE_ENCODING)
+    return {key: value for key, value in values.items() if value is not None}
 
 
 def _require(value: str | None, key: str) -> str:

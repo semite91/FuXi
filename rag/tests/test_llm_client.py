@@ -1,5 +1,6 @@
 import json
 import random
+from pathlib import Path
 
 import pytest
 from google.genai import errors
@@ -245,3 +246,33 @@ def test_missing_key_error_is_raised_only_when_the_client_is_used():
 
     with pytest.raises(MissingSettingError, match="RAG_GEMINI_API_KEY"):
         client.gemini_client()
+
+
+def test_each_prompt_file_is_read_once_over_several_calls(monkeypatch, tmp_path):
+    # G18
+    for name in ("retrieval.txt", "llm.txt", "llm_web.txt"):
+        (tmp_path / name).write_text(f"prompt {name}", encoding="utf-8")
+    reads: list[str] = []
+    read_text = Path.read_text
+
+    def counting_read_text(path, *args, **kwargs):
+        reads.append(path.name)
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counting_read_text)
+    answers = [RECORDED["retrieval_query"], RECORDED["story_success"]] * 2 + [RECORDED["photo_success"]]
+    gemini = FakeGeminiClient(answers)
+    client = LlmClient(
+        SETTINGS,
+        gemini_client_factory=lambda: gemini,
+        random_source=ScriptedRandom(["story", "story", "photo"]),
+        prompts_dir=tmp_path,
+    )
+
+    for _ in range(2):
+        client.build_search_query(WORD, MEANING)
+        generate(client)
+    generate(client)
+
+    assert sorted(reads) == ["llm.txt", "llm_web.txt", "retrieval.txt"]
+    assert gemini.calls[-1]["config"].system_instruction == "prompt llm_web.txt"

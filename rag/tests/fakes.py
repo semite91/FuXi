@@ -16,9 +16,15 @@ def load_fixture(name: str) -> Any:
 class FakeNotionClient:
     """Answers search, block children and page calls from recorded JSON."""
 
-    def __init__(self, recorded: dict[str, Any], errors: list[Exception] | None = None):
+    def __init__(
+        self,
+        recorded: dict[str, Any],
+        errors: list[Exception] | None = None,
+        page_errors: dict[str, Exception] | None = None,
+    ):
         self.recorded = recorded
         self.errors = list(errors or [])
+        self.page_errors = dict(page_errors or {})
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.blocks = _FakeBlocks(self)
         self.pages = _FakePages(self)
@@ -53,6 +59,8 @@ class _FakePages:
 
     def retrieve(self, page_id: str, **kwargs: Any) -> dict[str, Any]:
         self.owner._record("pages.retrieve", {"page_id": page_id})
+        if page_id in self.owner.page_errors:
+            raise self.owner.page_errors[page_id]
         return self.owner.recorded["pages"][page_id]
 
 

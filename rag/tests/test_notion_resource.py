@@ -191,3 +191,34 @@ def test_resource_without_read_documents_cannot_be_created():
 
     with pytest.raises(TypeError):
         BrokenResource()
+
+
+UNSHARED_PARENT = "1a2b3c4d-0009-4000-8000-000000000009"
+
+
+def api_error(status: int, code: str) -> APIResponseError:
+    return APIResponseError(
+        code=code, status=status, message="Could not find page.", headers=httpx.Headers(), raw_body_text=""
+    )
+
+
+@pytest.mark.parametrize(("status", "code"), [(404, "object_not_found"), (403, "restricted_resource")])
+def test_unreadable_parent_ends_the_path_and_the_page_is_still_embedded(status, code):
+    # C11
+    client = FakeNotionClient(recorded(), page_errors={PAGE_D: api_error(status, code)})
+
+    documents = by_name(make_resource(client).read_documents())
+
+    assert documents["Poems"].metadata["path"] == ""
+    assert sorted(documents) == ["Lisbon", "Poems", "Travel Notes"]
+
+
+def test_path_stops_at_the_first_unreadable_parent():
+    # C11
+    data = recorded()
+    data["pages"][PAGE_D]["parent"] = {"type": "page_id", "page_id": UNSHARED_PARENT}
+    client = FakeNotionClient(data, page_errors={UNSHARED_PARENT: api_error(404, "object_not_found")})
+
+    documents = by_name(make_resource(client).read_documents())
+
+    assert documents["Poems"].metadata["path"] == "Archive"

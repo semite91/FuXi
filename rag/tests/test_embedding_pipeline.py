@@ -11,6 +11,7 @@ from chroma_store import (
     IMAGE_COLLECTION_NAME,
     TEXT_COLLECTION_NAME,
     create_chroma_client,
+    is_build_complete,
     open_collection,
 )
 from embedding_pipeline import Embedders, Mode, run
@@ -118,17 +119,93 @@ def test_collections_use_cosine_space(chroma_client, embedders, tmp_path):
         assert chroma_client.get_collection(name, embedding_function=None).configuration["hnsw"]["space"] == "cosine"
 
 
-def test_update_deletes_every_collection_then_creates(chroma_client, embedders, tmp_path):
+def collection_names(chroma_client) -> list[str]:
+    return sorted(collection.name for collection in chroma_client.list_collections())
+
+
+def stored_documents(chroma_client) -> list[str]:
+    return sorted(open_collection(chroma_client, TEXT_COLLECTION_NAME).get()["documents"])
+
+
+def test_update_replaces_every_collection_after_reading_everything(chroma_client, embedders, tmp_path):
     # E5
     run_pipeline(Mode.CREATE, [ListResource("stale", 5)], chroma_client, embedders, tmp_path)
     chroma_client.create_collection("leftover", embedding_function=None)
 
-    run_pipeline(Mode.UPDATE, [ListResource("fresh", 3)], chroma_client, embedders, tmp_path)
+    result = run_pipeline(Mode.UPDATE, [ListResource("fresh", 3)], chroma_client, embedders, tmp_path)
 
-    names = sorted(collection.name for collection in chroma_client.list_collections())
-    assert names == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
-    documents = open_collection(chroma_client, TEXT_COLLECTION_NAME).get()["documents"]
-    assert sorted(documents) == ["fresh note 0", "fresh note 1", "fresh note 2"]
+    assert result.complete is True
+    assert collection_names(chroma_client) == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
+    assert stored_documents(chroma_client) == ["fresh note 0", "fresh note 1", "fresh note 2"]
+    assert is_build_complete(chroma_client)
+    for name in (TEXT_COLLECTION_NAME, IMAGE_COLLECTION_NAME):
+        assert chroma_client.get_collection(name, embedding_function=None).configuration["hnsw"]["space"] == "cosine"
+
+
+class StoreCheckingResource(ListResource):
+    """Records the stored documents at the moment it is read."""
+
+    def __init__(self, chroma_client):
+        super().__init__("fresh", 2)
+        self.chroma_client = chroma_client
+        self.seen: list[str] = []
+
+    def read_documents(self) -> list[Document]:
+        self.seen = stored_documents(self.chroma_client)
+        return super().read_documents()
+
+
+def test_update_reads_before_touching_the_stored_collections(chroma_client, embedders, tmp_path):
+    # E5
+    run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
+    resource = StoreCheckingResource(chroma_client)
+
+    run_pipeline(Mode.UPDATE, [resource], chroma_client, embedders, tmp_path)
+
+    assert resource.seen == ["stale note 0", "stale note 1"]
+    assert stored_documents(chroma_client) == ["fresh note 0", "fresh note 1"]
+
+
+def test_failing_resource_in_update_keeps_the_old_collections(chroma_client, embedders, tmp_path):
+    # E10
+    run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
+
+    result = run_pipeline(
+        Mode.UPDATE, [ListResource("fresh", 3), FailingResource()], chroma_client, embedders, tmp_path
+    )
+
+    assert result.complete is False
+    assert result.failed_resources == ["broken"]
+    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert is_build_complete(chroma_client)
+    assert collection_names(chroma_client) == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert "update failed, the old collections are kept" in log
+
+
+def test_update_with_zero_documents_keeps_the_old_collections(chroma_client, embedders, tmp_path):
+    # E11
+    run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
+
+    result = run_pipeline(Mode.UPDATE, [ListResource("fresh", 0)], chroma_client, embedders, tmp_path)
+
+    assert result.complete is False
+    assert result.added_documents == 0
+    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert collection_names(chroma_client) == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
+
+
+def test_build_is_marked_complete_only_when_it_ends_with_documents_and_no_failure(chroma_client, embedders, tmp_path):
+    # H13 H14
+    empty = run_pipeline(Mode.CREATE, [], chroma_client, embedders, tmp_path)
+    assert (empty.complete, is_build_complete(chroma_client)) == (False, False)
+
+    resources = [FailingResource(), ListResource("notion", 1)]
+    failed = run_pipeline(Mode.CREATE, resources, chroma_client, embedders, tmp_path)
+    assert (failed.complete, is_build_complete(chroma_client)) == (False, False)
+
+    built = run_pipeline(Mode.CREATE, [ListResource("notion", 1)], chroma_client, embedders, tmp_path)
+    assert (built.complete, is_build_complete(chroma_client)) == (True, True)
 
 
 def test_every_step_is_logged_to_a_dated_file(chroma_client, embedders, tmp_path):
@@ -155,6 +232,7 @@ def test_failing_resource_is_logged_and_others_continue(chroma_client, embedders
 
     assert result.failed_resources == ["broken"]
     assert result.added_documents == 4
+    assert result.complete is False
     assert open_collection(chroma_client, TEXT_COLLECTION_NAME).count() == 4
     log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
     assert "broken failed: RuntimeError: source is down" in log

@@ -2,7 +2,8 @@
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
@@ -11,7 +12,7 @@ from chromadb.api import ClientAPI
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 
 import chroma_store
 from base import Resource
@@ -29,12 +30,16 @@ UPDATE_COLLECTIONS_PATH = "/Update_Collections"
 STATUS_OK = 200
 STATUS_ACCEPTED = 202
 STATUS_SERVER_ERROR = 500
+STATUS_BAD_GATEWAY = 502
 STATUS_UNAVAILABLE = 503
 READY_STATUS = "ready"
 BUILDING_STATUS = "building"
+EMPTY_STATUS = "empty"
 UPDATED_STATUS = "updated"
 BUILDING_DETAIL = "The RAG collections are being built. Try again later."
 ERROR_DETAIL = "The RAG engine could not complete the request."
+UPDATE_FAILED_DETAIL = "The RAG collections could not be updated. The old collections are kept."
+BLANK_NAME_MESSAGE = "name must not be blank"
 
 MIN_WORDS = 1
 MAX_WORDS = 50
@@ -51,8 +56,19 @@ logger = logging.getLogger(__name__)
 ResourceFactory = Callable[[Settings], list[Resource]]
 
 
+def _require_text(value: str) -> str:
+    """Rejects a blank name but keeps the name exactly as sent."""
+    if not value.strip():
+        raise ValueError(BLANK_NAME_MESSAGE)
+    return value
+
+
 class WordRequest(BaseModel):
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=MIN_NAME_LENGTH, max_length=MAX_NAME_LENGTH)]
+    name: Annotated[
+        str,
+        StringConstraints(min_length=MIN_NAME_LENGTH, max_length=MAX_NAME_LENGTH),
+        AfterValidator(_require_text),
+    ]
     translation: Annotated[str, StringConstraints(strip_whitespace=True, max_length=MAX_TRANSLATION_LENGTH)]
 
 
@@ -92,17 +108,67 @@ def default_dependencies(settings: Settings | None = None) -> EngineDependencies
     )
 
 
+class ReadWriteGuard:
+    """GetWordContent requests read together; a build or update writes alone.
+
+    A writer turns new readers away at once and then waits until the running readers finish.
+    """
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._readers = 0
+        self._writing = False
+        self._idle = threading.Event()
+        self._idle.set()
+
+    def try_start_reading(self) -> bool:
+        with self._condition:
+            if self._writing:
+                return False
+            self._readers += 1
+            return True
+
+    def stop_reading(self) -> None:
+        with self._condition:
+            self._readers -= 1
+            self._condition.notify_all()
+
+    def try_start_writing(self) -> bool:
+        with self._condition:
+            if self._writing:
+                return False
+            self._writing = True
+            self._idle.clear()
+            return True
+
+    def wait_for_readers(self) -> None:
+        with self._condition:
+            self._condition.wait_for(lambda: self._readers == 0)
+
+    def stop_writing(self) -> None:
+        with self._condition:
+            self._writing = False
+            self._idle.set()
+            self._condition.notify_all()
+
+    def is_writing(self) -> bool:
+        with self._condition:
+            return self._writing
+
+    def wait_until_idle(self, timeout: float) -> bool:
+        return self._idle.wait(timeout)
+
+
 class RagEngine:
-    """Owns the Chroma client, the RAG client and the single running build."""
+    """Owns the Chroma client, the RAG client, the single running build and the last build's outcome."""
 
     def __init__(self, dependencies: EngineDependencies) -> None:
         self._dependencies = dependencies
         self._chroma_client: ClientAPI | None = None
         self._chroma_lock = threading.Lock()
-        self._build_lock = threading.Lock()
-        self._building = False
-        self._build_done = threading.Event()
-        self._build_done.set()
+        self._guard = ReadWriteGuard()
+        # True after a build or update of this process ended with 0 documents or a failed resource.
+        self._last_build_failed = False
         self.rag_client = RagClient(
             self.chroma_client, dependencies.embedders, dependencies.settings, dependencies.llm_client
         )
@@ -114,33 +180,42 @@ class RagEngine:
             return self._chroma_client
 
     def is_building(self) -> bool:
-        with self._build_lock:
-            return self._building
+        return self._guard.is_writing()
 
     def wait_for_build(self, timeout: float) -> bool:
-        return self._build_done.wait(timeout)
+        return self._guard.wait_until_idle(timeout)
+
+    @contextmanager
+    def reading(self) -> Iterator[bool]:
+        """Yields False when a build or update runs or waits; the request then answers 503."""
+        allowed = self._guard.try_start_reading()
+        try:
+            yield allowed
+        finally:
+            if allowed:
+                self._guard.stop_reading()
 
     def init_rag(self) -> str:
-        """Ready when the collections have data; otherwise start one background build."""
+        """Ready when the last build completed; empty when this run's build failed; otherwise start one build."""
         if self.is_building():
             return BUILDING_STATUS
-        if chroma_store.has_data(self.chroma_client()):
+        if chroma_store.is_build_complete(self.chroma_client()):
             self.rag_client.init()
             return READY_STATUS
-        if self._try_start_build():
+        if self._last_build_failed:
+            return EMPTY_STATUS
+        if self._guard.try_start_writing():
             threading.Thread(target=self._background_build, name=BUILD_THREAD_NAME, daemon=True).start()
         return BUILDING_STATUS
 
     def update(self) -> PipelineResult | None:
         """Rebuild every collection; None when another build is running."""
-        if not self._try_start_build():
+        if not self._guard.try_start_writing():
             return None
         try:
-            result = self.run_pipeline(Mode.UPDATE)
-            self.rag_client.refresh()
-            return result
+            return self._build(Mode.UPDATE)
         finally:
-            self._finish_build()
+            self._guard.stop_writing()
 
     def run_pipeline(self, mode: Mode) -> PipelineResult:
         dependencies = self._dependencies
@@ -155,25 +230,24 @@ class RagEngine:
 
     def _background_build(self) -> None:
         try:
-            self.run_pipeline(Mode.CREATE)
-            self.rag_client.refresh()
+            self._build(Mode.CREATE)
         except Exception as error:
             logger.error("Background build failed: %s", type(error).__name__)
         finally:
-            self._finish_build()
+            self._guard.stop_writing()
 
-    def _try_start_build(self) -> bool:
-        with self._build_lock:
-            if self._building:
-                return False
-            self._building = True
-            self._build_done.clear()
-            return True
-
-    def _finish_build(self) -> None:
-        with self._build_lock:
-            self._building = False
-            self._build_done.set()
+    def _build(self, mode: Mode) -> PipelineResult:
+        """Runs once no GetWordContent request is in flight; a create starts from empty collections."""
+        self._guard.wait_for_readers()
+        self._last_build_failed = True
+        try:
+            if mode is Mode.CREATE:
+                chroma_store.delete_all_collections(self.chroma_client())
+            result = self.run_pipeline(mode)
+            self._last_build_failed = not result.complete
+            return result
+        finally:
+            self.rag_client.refresh()
 
 
 def create_app(dependencies: EngineDependencies | None = None) -> FastAPI:
@@ -196,16 +270,15 @@ def create_app(dependencies: EngineDependencies | None = None) -> FastAPI:
     # Sync handlers run in FastAPI's worker threads, so builds never block the event loop.
     @app.post(GET_WORD_CONTENT_PATH, response_model=list[WordContentResponse])
     def get_word_content(body: GetWordContentRequest) -> Any:
-        if rag_engine.is_building():
-            return _unavailable()
-        words = [Word(word.name, word.translation) for word in body.words]
-        results = rag_engine.rag_client.generate(words)
-        return [{"name": result.name, "content": result.content} for result in results if result.content]
+        with rag_engine.reading() as allowed:
+            if not allowed:
+                return _unavailable()
+            return _generate_contents(rag_engine.rag_client, body.words)
 
     @app.post(INIT_RAG_PATH)
     def init_rag() -> JSONResponse:
         status = rag_engine.init_rag()
-        status_code = STATUS_OK if status == READY_STATUS else STATUS_ACCEPTED
+        status_code = STATUS_ACCEPTED if status == BUILDING_STATUS else STATUS_OK
         return JSONResponse(status_code=status_code, content={"status": status})
 
     @app.post(UPDATE_COLLECTIONS_PATH)
@@ -213,6 +286,8 @@ def create_app(dependencies: EngineDependencies | None = None) -> FastAPI:
         result = rag_engine.update()
         if result is None:
             return _unavailable()
+        if not result.complete:
+            return JSONResponse(status_code=STATUS_BAD_GATEWAY, content={"detail": UPDATE_FAILED_DETAIL})
         return JSONResponse(
             status_code=STATUS_OK,
             content={
@@ -223,6 +298,19 @@ def create_app(dependencies: EngineDependencies | None = None) -> FastAPI:
         )
 
     return app
+
+
+def _generate_contents(rag_client: RagClient, words: list[WordRequest]) -> list[dict[str, str]]:
+    """Each name once, generated from its trimmed form and answered exactly as sent."""
+    unique_words: dict[str, WordRequest] = {}
+    for word in words:
+        unique_words.setdefault(word.name, word)
+    results = rag_client.generate([Word(word.name.strip(), word.translation) for word in unique_words.values()])
+    return [
+        {"name": name, "content": result.content}
+        for name, result in zip(unique_words, results)
+        if result.content
+    ]
 
 
 def _unavailable() -> JSONResponse:

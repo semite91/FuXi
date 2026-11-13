@@ -13,9 +13,12 @@ from chromadb.api import ClientAPI
 from base import Document, Resource, ResourceKind
 from chroma_store import (
     COLLECTION_BY_KIND,
-    COLLECTION_NAMES,
-    delete_all_collections,
+    STAGING_COLLECTION_BY_KIND,
+    delete_collections,
+    delete_collections_except,
+    mark_build_complete,
     open_collection,
+    rename_collection,
 )
 from settings import REPO_ROOT
 
@@ -26,6 +29,7 @@ LOG_LINE_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 LOG_ENCODING = "utf-8"
 
 Clock = Callable[[], datetime]
+CollectionNames = dict[ResourceKind, str]
 
 
 class Mode(StrEnum):
@@ -43,6 +47,11 @@ class Embedders:
 class PipelineResult:
     added_documents: int = 0
     failed_resources: list[str] = field(default_factory=list)
+
+    @property
+    def complete(self) -> bool:
+        """A build counts only when every resource was read and at least one document was stored."""
+        return not self.failed_resources and self.added_documents > 0
 
 
 class EmbeddingLog:
@@ -71,14 +80,16 @@ def run(
     run_mode = Mode(mode)
     log = EmbeddingLog(logs_dir, clock)
     log.write(f"start mode={run_mode}")
+    build = _update if run_mode is Mode.UPDATE else _create
     try:
-        if run_mode is Mode.UPDATE:
-            log.write(f"deleted collections: {sorted(delete_all_collections(chroma_client))}")
-        result = _create(resources, embedders, chroma_client, batch_size, log)
+        result = build(resources, embedders, chroma_client, batch_size, log)
     except Exception as error:
         log.write(f"run failed: {type(error).__name__}: {error}")
         raise
-    log.write(f"end: {result.added_documents} documents, failed resources: {result.failed_resources}")
+    log.write(
+        f"end: {result.added_documents} documents, failed resources: {result.failed_resources}, "
+        f"complete: {result.complete}"
+    )
     return result
 
 
@@ -89,13 +100,62 @@ def _create(
     batch_size: int,
     log: EmbeddingLog,
 ) -> PipelineResult:
-    for name in COLLECTION_NAMES:
+    """Adds to the stored collections; marks the build complete only at its successful end."""
+    result = _embed_all(resources, embedders, chroma_client, batch_size, log, COLLECTION_BY_KIND)
+    if result.complete:
+        _mark_complete(chroma_client, log)
+    return result
+
+
+def _update(
+    resources: Sequence[Resource],
+    embedders: Embedders,
+    chroma_client: ClientAPI,
+    batch_size: int,
+    log: EmbeddingLog,
+) -> PipelineResult:
+    """Builds into staging collections; the stored collections change only when every resource succeeded."""
+    staging_names = list(STAGING_COLLECTION_BY_KIND.values())
+    delete_collections(chroma_client, staging_names)
+    try:
+        result = _embed_all(resources, embedders, chroma_client, batch_size, log, STAGING_COLLECTION_BY_KIND)
+    except Exception:
+        delete_collections(chroma_client, staging_names)
+        raise
+    if not result.complete:
+        delete_collections(chroma_client, staging_names)
+        log.write("update failed, the old collections are kept")
+        return result
+    log.write(f"deleted collections: {sorted(delete_collections_except(chroma_client, staging_names))}")
+    for kind, name in COLLECTION_BY_KIND.items():
+        rename_collection(chroma_client, STAGING_COLLECTION_BY_KIND[kind], name)
+    log.write(f"collections replaced: {', '.join(COLLECTION_BY_KIND.values())}")
+    _mark_complete(chroma_client, log)
+    return result
+
+
+def _mark_complete(chroma_client: ClientAPI, log: EmbeddingLog) -> None:
+    mark_build_complete(chroma_client)
+    log.write("build marked complete")
+
+
+def _embed_all(
+    resources: Sequence[Resource],
+    embedders: Embedders,
+    chroma_client: ClientAPI,
+    batch_size: int,
+    log: EmbeddingLog,
+    collection_names: CollectionNames,
+) -> PipelineResult:
+    for name in collection_names.values():
         open_collection(chroma_client, name)
-    log.write(f"collections ready: {', '.join(COLLECTION_NAMES)}")
+    log.write(f"collections ready: {', '.join(collection_names.values())}")
     result = PipelineResult()
     for resource in resources:
         try:
-            result.added_documents += _embed_resource(resource, embedders, chroma_client, batch_size, log)
+            result.added_documents += _embed_resource(
+                resource, embedders, chroma_client, batch_size, log, collection_names[resource.kind]
+            )
         except Exception as error:
             result.failed_resources.append(resource.name)
             log.write(f"resource {resource.name} failed: {type(error).__name__}: {error}")
@@ -108,11 +168,11 @@ def _embed_resource(
     chroma_client: ClientAPI,
     batch_size: int,
     log: EmbeddingLog,
+    collection_name: str,
 ) -> int:
     log.write(f"resource {resource.name}: reading")
     documents = resource.read_documents()
     log.write(f"resource {resource.name}: {len(documents)} documents read")
-    collection_name = COLLECTION_BY_KIND[resource.kind]
     collection = open_collection(chroma_client, collection_name)
     embed = _embed_function(resource.kind, embedders)
     for batch_number, start in enumerate(range(0, len(documents), batch_size), start=1):
