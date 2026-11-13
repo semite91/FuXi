@@ -25,7 +25,9 @@ const renderReadyContent = (card: Flashcard, onPictureError: () => void) => {
 
   switch (parsed.kind) {
     case 'text':
-      return <WordContentText title={parsed.title} content={parsed.content} />;
+      return (
+        <WordContentText title={parsed.title} content={parsed.content} sourceReference={parsed.sourceReference} />
+      );
     case 'photo':
       return <WordContentPicture imageUrl={parsed.imageUrl} alt={card.word.name} onError={onPictureError} />;
     case 'music':

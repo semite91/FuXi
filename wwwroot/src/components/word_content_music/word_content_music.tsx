@@ -3,7 +3,8 @@ import './word_content_music.less';
 interface WordContentMusicProps {
   songTitle: string;
   artist: string;
-  lyricsExcerpt: string;
+  /** A song without an excerpt is shown without a quote. */
+  lyricsExcerpt: string | null;
   songUrl: string;
   linkLabel: string;
 }
@@ -13,9 +14,11 @@ const WordContentMusic = ({ songTitle, artist, lyricsExcerpt, songUrl, linkLabel
   <div className="word-content-music">
     <h3 className="word-content-music__title">{songTitle}</h3>
     <p className="word-content-music__artist">{artist}</p>
-    <p className="word-content-music__excerpt">
-      <q>{lyricsExcerpt}</q>
-    </p>
+    {lyricsExcerpt !== null && (
+      <p className="word-content-music__excerpt">
+        <q>{lyricsExcerpt}</q>
+      </p>
+    )}
     <a className="word-content-music__link" href={songUrl} target="_blank" rel="noopener noreferrer">
       {linkLabel}
     </a>

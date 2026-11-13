@@ -2,7 +2,7 @@
 // the answers, the Reinforced Word flag, the Word History and the moves.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessageOf } from '../services/api_client';
-import { getWordContent } from '../services/rag_service';
+import { getWordContent, type WordMeaning } from '../services/rag_service';
 import {
   getCardWords,
   getWordHistory,
@@ -39,10 +39,45 @@ const toFlashcard = (word: CardWord): Flashcard => ({
   contentStatus: isEmptyContent(word.content) ? 'loading' : 'ready',
 });
 
-/** Sets each generated content on the Word with the same Name. A Word without one gets none. */
-const mergeContent = (cards: Flashcard[], contentByName: ReadonlyMap<string, string>): Flashcard[] =>
+/** GetWordContent is asked for this many Words at a time, one group after another. */
+const CONTENT_GROUP_SIZE = 5;
+
+const isWaiting = (card: Flashcard): boolean => card.contentStatus === 'loading';
+
+/** The waiting Words in card order, one per Name: cards with the same Name share one result. */
+const uniqueMeanings = (waiting: readonly Flashcard[]): WordMeaning[] => {
+  const byName = new Map<string, WordMeaning>();
+  waiting.forEach(({ word }) => {
+    if (!byName.has(word.name)) {
+      byName.set(word.name, { name: word.name, translation: word.translation });
+    }
+  });
+
+  return [...byName.values()];
+};
+
+const toGroups = <T>(items: readonly T[], size: number): T[][] =>
+  Array.from({ length: Math.ceil(items.length / size) }, (_, group) => items.slice(group * size, (group + 1) * size));
+
+/** The generated contents by Name. A failed request gives none, so its Words show that content is not available. */
+const askContent = async (group: readonly WordMeaning[]): Promise<Map<string, string>> => {
+  try {
+    const generated = await getWordContent(group);
+
+    return new Map(generated.map((item) => [item.name, item.content]));
+  } catch {
+    return new Map();
+  }
+};
+
+/** Sets each generated content on the waiting cards of the group with the same Name. A Word without one gets none. */
+const mergeContent = (
+  cards: Flashcard[],
+  groupNames: ReadonlySet<string>,
+  contentByName: ReadonlyMap<string, string>,
+): Flashcard[] =>
   cards.map((card) => {
-    if (card.contentStatus !== 'loading') {
+    if (!isWaiting(card) || !groupNames.has(card.word.name)) {
       return card;
     }
 
@@ -52,6 +87,22 @@ const mergeContent = (cards: Flashcard[], contentByName: ReadonlyMap<string, str
       ? { ...card, contentStatus: 'unavailable' }
       : { ...card, content, contentStatus: 'ready' };
   });
+
+/** The content stays on the card even when it cannot be stored. */
+const storeContent = (
+  waiting: readonly Flashcard[],
+  groupNames: ReadonlySet<string>,
+  contentByName: ReadonlyMap<string, string>,
+) =>
+  waiting
+    .filter((card) => groupNames.has(card.word.name))
+    .forEach((card) => {
+      const content = contentByName.get(card.word.name);
+
+      if (content !== undefined && !isEmptyContent(content)) {
+        updateWordContent(card.word.id, content).catch(() => undefined);
+      }
+    });
 
 /** wordIds comes from a notification. Without it the Due Words are loaded. */
 export const useFlashcardDeck = (wordIds: string | null) => {
@@ -67,37 +118,21 @@ export const useFlashcardDeck = (wordIds: string | null) => {
   useEffect(() => {
     let isCurrent = true;
 
+    /** Groups are asked one after another, so the first cards fill first. A closed deck sends no more groups. */
     const loadContent = async (loaded: Flashcard[]) => {
-      const waiting = loaded.filter((card) => card.contentStatus === 'loading');
+      const waiting = loaded.filter(isWaiting);
 
-      if (waiting.length === 0) {
-        return;
-      }
+      for (const group of toGroups(uniqueMeanings(waiting), CONTENT_GROUP_SIZE)) {
+        const contentByName = await askContent(group);
 
-      let contentByName = new Map<string, string>();
-
-      try {
-        const generated = await getWordContent(
-          waiting.map((card) => ({ name: card.word.name, translation: card.word.translation })),
-        );
-        contentByName = new Map(generated.map((item) => [item.name, item.content]));
-      } catch {
-        // Every waiting card shows that its content is not available.
-      }
-
-      if (!isCurrent) {
-        return;
-      }
-
-      setCards((current) => mergeContent(current, contentByName));
-      waiting.forEach((card) => {
-        const content = contentByName.get(card.word.name);
-
-        if (content !== undefined && !isEmptyContent(content)) {
-          // The content stays on the card even when it cannot be stored.
-          updateWordContent(card.word.id, content).catch(() => undefined);
+        if (!isCurrent) {
+          return;
         }
-      });
+
+        const groupNames = new Set(group.map((meaning) => meaning.name));
+        setCards((current) => mergeContent(current, groupNames, contentByName));
+        storeContent(waiting, groupNames, contentByName);
+      }
     };
 
     const load = async () => {

@@ -2,9 +2,9 @@
 // The engine stores JSON; an older Content is plain text and is shown as a story.
 
 export type ParsedWordContent =
-  | { kind: 'text'; title: string | null; content: string }
+  | { kind: 'text'; title: string | null; content: string; sourceReference: string | null }
   | { kind: 'photo'; imageUrl: string }
-  | { kind: 'music'; songTitle: string; artist: string; songUrl: string; lyricsExcerpt: string }
+  | { kind: 'music'; songTitle: string; artist: string; songUrl: string; lyricsExcerpt: string | null }
   | { kind: 'unavailable' };
 
 type ContentFields = Record<string, unknown>;
@@ -16,6 +16,7 @@ const FIELDS = {
   method: 'method',
   title: 'title',
   content: 'content',
+  sourceReference: 'source_reference',
   imageUrl: 'image_url',
   songTitle: 'song_title',
   artist: 'artist',
@@ -69,7 +70,9 @@ const toText = (fields: ContentFields): ParsedWordContent => {
   const title = readText(fields, FIELDS.title);
   const content = readText(fields, FIELDS.content);
 
-  return title === null || content === null ? UNAVAILABLE : { kind: 'text', title, content };
+  return title === null || content === null
+    ? UNAVAILABLE
+    : { kind: 'text', title, content, sourceReference: readText(fields, FIELDS.sourceReference) };
 };
 
 const toPhoto = (fields: ContentFields): ParsedWordContent => {
@@ -78,13 +81,14 @@ const toPhoto = (fields: ContentFields): ParsedWordContent => {
   return imageUrl === null ? UNAVAILABLE : { kind: 'photo', imageUrl };
 };
 
+/** The lyric excerpt is optional; a song without one is shown without a quote. */
 const toMusic = (fields: ContentFields): ParsedWordContent => {
   const songTitle = readText(fields, FIELDS.songTitle);
   const artist = readText(fields, FIELDS.artist);
   const songUrl = readSecureUrl(fields, FIELDS.songUrl);
   const lyricsExcerpt = readText(fields, FIELDS.lyricsExcerpt);
 
-  return songTitle === null || artist === null || songUrl === null || lyricsExcerpt === null
+  return songTitle === null || artist === null || songUrl === null
     ? UNAVAILABLE
     : { kind: 'music', songTitle, artist, songUrl, lyricsExcerpt };
 };
@@ -97,7 +101,7 @@ export const parseWordContent = (stored: string): ParsedWordContent => {
   const fields = readFields(stored);
 
   if (fields === null) {
-    return { kind: 'text', title: null, content: stored };
+    return { kind: 'text', title: null, content: stored, sourceReference: null };
   }
 
   const method = fields[FIELDS.method];
