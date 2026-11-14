@@ -1,0 +1,71 @@
+FuXi - Phase 5d - Spotify liked songs
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_14_16_59.txt (confirmed, amended three times for the reviews)
+Run: 2026-11-14 22:21 UTC, branch claude/phase-5d-spotify, base commit 376acf1 (work not yet committed)
+
+Totals
+- RAG engine (rag/): "RAG_LIVE_TESTS=false python -m pytest -q": 753 passed, 10 skipped (the LIVE tests), 0 failed
+  (444 passed, 9 skipped before Phase 5d). RAG_LIVE_TESTS=false is set in the process, because .env.test has RAG_LIVE_TESTS=true.
+- Frontend and backend: not changed (git diff main is empty for wwwroot/ and backend/), so they were not run again; their
+  last results are 279 and 381 passed (Phase 5c).
+- Scenarios: 75. PASS 73. NOT RUN 2 (E13, H6: LIVE, they need the Spotify app, the approval and the Learner's go-ahead).
+
+Status words: PASS, NOT RUN. PY scenarios are proven by tests that carry the scenario id ("# Phase 5d <id>" in
+rag/tests/test_*.py).
+
+A. LIBRARIES AND SETUP
+A1  PASS     rag/requirements.in and rag/requirements.txt do not differ from main; httpx and Python's standard library are used.
+A2  PASS     .env.example and .env.test.example hold RAG_SPOTIFY_CLIENT_ID, RAG_SPOTIFY_CLIENT_SECRET and RAG_SPOTIFY_TOKEN_FILE
+             without a value.
+A3  PASS     The setup script adds the three keys empty (bash -n passes); rag/secrets is created as before.
+A4  PASS     rag/secrets/ is still ignored; no file in rag/secrets or rag/data is tracked.
+
+B. SETTINGS                 B1-B4 PASS   rag/tests/test_settings.py, test_engine.py, test_spotify_resource.py (B3).
+                            B4: the client id, the client secret and the token file path are hidden.
+C. APPROVAL HELPER          C1-C17 PASS   rag/tests/test_spotify_authorize.py.
+                            C15: the port is opened for the helper only (no address reuse; SO_EXCLUSIVEADDRUSE on Windows).
+                            C16: a review claim that this blocks an immediate second run was not reproduced on the
+                            Learner's Windows laptop; the test stays as a guard.
+D. SPOTIFY SIGN-IN          D1-D12 PASS   rag/tests/test_spotify_resource.py, test_http_retry.py.
+                            Token calls are tried again only after a 429 (the code is single-use; Spotify may have used the
+                            refresh token). Refusals: invalid_grant asks for a new approval, invalid_client asks to check the
+                            client id and secret, other refusals name the status and the error.
+E. LIKED SONGS READ         E1-E12, E14, E15 PASS   rag/tests/test_spotify_resource.py.
+                            Paging follows Spotify's next link only while it stays on https://api.spotify.com/v1/me/tracks and
+                            its offset moves forward; a page without an item list, or an empty page with a next link, fails
+                            the source. Summary line: "N items, N songs, N skipped items (N no track, N not a song, N no
+                            name), N repeated items, N calls, N rate limit waits (S s), N network retries, S s".
+                            E13 NOT RUN (LIVE).
+F. SONG DOCUMENT            F1-F5 PASS   rag/tests/test_spotify_resource.py.
+G. PIPELINE, ENGINE, CLIENTS G1-G7 PASS  test_embedding_pipeline.py, test_engine.py, test_rag_client.py, test_llm_client.py.
+                            G8 PASS   prompts unchanged (git diff main).
+
+H. STRUCTURE AND QUALITY
+H1  PASS     753 passed, 10 LIVE skipped with RAG_LIVE_TESTS=false.
+H2  PASS     wwwroot/ and backend/ do not differ from main.
+H3  PASS     Shared in rag/resources/http_retry.py: retry rules, Bearer and Basic headers, HTTP client and timeout, timed read,
+             call_json, json_object, ApiCallError. Shared in rag/resources/document_fields.py: field and line helpers,
+             separators. Metadata keys are in rag/base.py. The movie resource uses the same helpers; its tests pass.
+H4  PASS     project.md holds the Spotify decisions, the three keys and the "python spotify_authorize.py" step.
+H5  PASS     No token, client secret or token file is tracked.
+H6  NOT RUN  LIVE end-to-end run.
+
+I. OUT OF SCOPE CHECKS      I1-I4 PASS   no lyrics and no other service for songs; only the liked songs with the scope
+                            user-library-read; no evaluation file; no migration.
+
+Code review
+- Round 1 (10 findings, all fixed): a broken page fails the source (E14); a sturdier approval helper: non-ASCII state,
+  stray answers keep it waiting, a connection read timeout, every Spotify error named, a busy port reported (C12-C15);
+  no retry of the single-use code, invalid_client named (D7, D10); one shared call-and-check helper, separators and the
+  album key (H3).
+- Round 2 (8 findings): an exclusive port (C15); the refresh call tried again only after a 429 (D11); the next link is
+  followed on the liked songs address (E1, E2, E15); one refusal rule, the error code in the constructor, the client id
+  hidden, a stronger live test. Left on purpose: a new refresh token that cannot be written is lost (rare with the
+  client-secret flow; the error names the setting).
+- Round 3 (10 findings): the immediate second run (C16, not reproduced, guarded); only invalid_grant asks for a new
+  approval and any settings error in the helper is a clear message (D7, C17); a private token folder and a closed
+  temporary file (D12); the offset must move forward (E15); shared JSON check and no redundant song counter. Dismissed as
+  already decided: no retry of the refresh call after a 5xx; a missing Spotify setup blocks the build; the lost refresh
+  token above.
+- The review loop was stopped after round 3 by the Learner's choice.
+- Known limits, accepted: a 403 or 404 on the code exchange still says to run the helper again; an unreadable .env (not a
+  settings value) still ends the helper with a stack trace.
