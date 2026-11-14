@@ -1,0 +1,48 @@
+FuXi - Phase 5a - RAG engine core and Notion
+Live run on the Learner's laptop (Windows 11, Python 3.13.17) for the 6 scenarios left open in
+test_results_phase_5a_2026_11_13_13_05.txt: A4, C10, D4, D5, G17, J6.
+Scenarios: infrastructure/test/scenarios/test_scenarios_2026_11_13_11_03.txt (amended for this run)
+Run: 2026-11-13 18:41 UTC, branch claude/phase-5a-live-fixes
+
+Totals
+- RAG engine (rag/): "python -m pytest -q" with RAG_LIVE_TESTS=false: 147 passed, 4 skipped (140 before; 7 new tests).
+- LIVE tests (tests/test_live.py, RAG_LIVE_TESTS=true): 4 passed in 44 min 32 s, run before the C13, C14 and E14 changes.
+- The 6 scenarios: PASS 5 (A4, C10, D4, D5, G17). FAIL 1 (J6), its cause is fixed but J6 was not run again.
+
+A4   PASS   "pip install -r requirements.txt" in a clean venv succeeded and "pip check" reported no broken requirement,
+            after fix 1 below. Before the fix it stopped at uvloop ("uvloop does not support Windows at the moment").
+D4   PASS   The real Qwen3-Embedding-0.6B gave a vector of 1024 numbers.
+D5   PASS   The real CLIP gave a vector of 512 numbers, after fix 2 below. Before the fix the model did not load
+            ("Could not load any image processor class ... Missing optional dependencies: torchvision, Pillow").
+C10  PASS   The real Notion token returned documents, after the Learner shared the pages with the integration.
+            Before that the token was valid but the integration saw 0 pages.
+G17  PASS   The real Gemini key gave a search query and valid content or none.
+J6   FAIL   The engine started and Init_RAG answered "building". After about 4 minutes the Notion read ended with
+            "ReadError: [WinError 10054] An existing connection was forcibly closed by the remote host"; the build ended
+            with 0 documents, Init_RAG answered "empty" and GetWordContent answered []. The cause is fixed (fix 3).
+            The engine was then stopped by Claude Code because the laptop was low on memory, so J6 was not run again
+            and no card with generated content was seen on /active.
+
+FIXES FROM THIS RUN
+1  requirements.txt: uvloop is marked sys_platform != "win32" (A3). It does not build on Windows; uvicorn runs without it.
+2  pillow==12.3.0, approved by the Learner, is the 12th direct library in requirements.in and requirements.txt (A3).
+   CLIP needs it to load. The unit tests use a fake CLIP, so only the live test could show it.
+3  Notion: a dropped connection or a timeout is tried again after 1, 2, 4 and 8 seconds, at most 5 attempts (C13).
+   Before, only 429 was tried again and one dropped connection failed the whole source.
+4  Each Notion read writes its summary to the embedding log: pages, calls, rate limit waits, network retries and
+   seconds, also when the read fails (C14, E14). It will show where the long Notion read time goes.
+
+NEW TESTS
+C13  PASS   rag/tests/test_notion_resource.py (ReadError, ConnectError, RequestTimeoutError; growing and bounded waits).
+C14  PASS   rag/tests/test_notion_resource.py (summary after a read and after a failed read).
+E14  PASS   rag/tests/test_embedding_pipeline.py (summary in the log after a read and after a failed read).
+
+NOT MEASURED
+- Why the Notion read took about 43 minutes in the LIVE run. The read summary (fix 4) will show it in the next build.
+- How much memory the engine needs with both models loaded.
+
+LAPTOP SETUP DONE IN THIS RUN (not in the repository)
+- Python 3.13.17 was installed with winget; the venv is rag/.venv.
+- The Hugging Face model cache is in .cache/huggingface in the project folder (HF_HOME, a user setting); .cache/ is in .gitignore.
+- RAG_NOTION_TOKEN and RAG_GEMINI_API_KEY are in the root .env and .env.test; RAG_LIVE_TESTS=true is in .env.test,
+  so "python -m pytest" also runs the LIVE tests there unless RAG_LIVE_TESTS=false is set for the run.

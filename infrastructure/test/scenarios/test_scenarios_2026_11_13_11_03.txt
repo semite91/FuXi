@@ -6,6 +6,8 @@ Amended on 2026-11-13 for the code review fixes approved by the Learner: A8, I1,
 B6, C11, E10, E11, G18, H12 to H15 and I15 to I19 were added. Review item 6 (image embedding input) moves to Phase 5b.
 Amended on 2026-11-13 for the second code review round, all 10 fixes approved by the Learner: H2 and A7 changed;
 C12, E12, E13, G19, H16 to H19, I20 and I21 were added.
+Amended on 2026-11-13 after the live run on the Learner's laptop: A3 changed (uvloop is skipped on Windows; pillow, approved
+by the Learner, is the 12th direct library, needed by CLIP); C13, C14 and E14 were added.
 
 Every scenario has one purpose. "Given / When / Then" is used.
 Phase 5a builds the Python RAG engine in /rag (FastAPI, ChromaDB, Qwen3-Embedding-0.6B, CLIP, Gemini) with one real
@@ -56,7 +58,7 @@ A. LIBRARIES AND SETUP
 ==================================================
 A1. [RV] Given the 10 libraries, when they were vetted, then the checklist result was reported to the Learner before installation.
 A2. [RV] Given rag/requirements.in, when it is read, then each direct library is pinned to the approved version.
-A3. [RV] Given rag/requirements.txt, when it is read, then it locks every package, and CUDA-only packages are marked sys_platform == "linux".
+A3. [RV] Given rag/requirements.txt, when it is read, then it locks every package, and CUDA-only packages are marked sys_platform == "linux" and uvloop is marked sys_platform != "win32".
 A4. [RV] Given a clean virtual environment, when "pip install -r rag/requirements.txt" runs, then it succeeds and pip check reports no conflict.
 A5. [RV] Given pip-audit, when it runs on the environment, then only the 4 known ChromaDB server CVEs are reported.
 A6. [RV] Given .gitignore, when it is read, then rag/chroma_data/, logs/ and rag/.venv/ are ignored.
@@ -89,6 +91,8 @@ C8. [PY] Given a Notion answer 429 with Retry-After, when the resource reads, th
 C9. [PY] Given a new resource class, when it is added, then it implements the Resource base and no existing class is changed (open-closed).
 C11. [PY] Given a shared page whose parent is not shared, when it is read, then the page is embedded and its path stops at the first unreadable parent.
 C12. [PY] Given a parent page that answers 500 or 401, when it is read, then the Notion resource fails.
+C13. [PY] Given a dropped connection or a timeout from Notion, when the resource reads, then it waits 1, 2, 4 and 8 seconds and tries again, at most 5 attempts.
+C14. [PY] Given a Notion read, when it ends or fails, then its summary holds the pages, calls, rate limit waits, network retries and seconds.
 C10. [LIVE] Given the real Notion token, when the resource reads, then at least one document is returned.
 
 ==================================================
@@ -116,6 +120,7 @@ E10. [PY] Given a resource that fails during an update, when Update_Collections 
 E11. [PY] Given an update that reads 0 documents, when it runs, then the old collections stay.
 E12. [PY] Given existing collections, when a create build fails, then the existing collections stay.
 E13. [PY] Given a rename that fails during the swap, when an update runs, then the old collections are restored under their names and the answer is an error.
+E14. [PY] Given a resource with a read summary, when it is read or its read fails, then the summary is written to the embedding log.
 
 ==================================================
 F. RAG CLIENT

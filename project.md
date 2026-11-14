@@ -279,6 +279,8 @@ This file is initializer instructor of my project.
       - Notion API will be used
       - All data will be taken
       - A parent page that is not shared with the integration (403 or 404) ends the page's path; the page is still read. Other Notion errors make the source fail.
+      - A dropped connection or a timeout is tried again after 1, 2, 4 and 8 seconds (at most 5 attempts), like the 429 answer.
+      - Each read writes its summary to the embedding log: pages, calls, rate limit waits, network retries and seconds.
 
       # Google Drive
       - Google Drive API will be used

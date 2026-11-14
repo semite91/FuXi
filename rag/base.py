@@ -37,6 +37,10 @@ class Resource(ABC):
     def read_documents(self) -> list[Document]:
         """Read every document of this source."""
 
+    def read_summary(self) -> str:
+        """What the last read cost, for the embedding log; empty when the source does not measure it."""
+        return ""
+
 
 @dataclass(frozen=True)
 class RetrievedItem:

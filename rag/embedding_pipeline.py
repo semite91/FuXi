@@ -188,6 +188,7 @@ def _embed_all(
         except Exception as error:
             result.failed_resources.append(resource.name)
             log.write(f"resource {resource.name} failed: {type(error).__name__}: {error}")
+            _log_read_summary(resource, log)
     return result
 
 
@@ -202,6 +203,7 @@ def _embed_resource(
     log.write(f"resource {resource.name}: reading")
     documents = resource.read_documents()
     log.write(f"resource {resource.name}: {len(documents)} documents read")
+    _log_read_summary(resource, log)
     collection = open_collection(chroma_client, collection_name)
     embed = _embed_function(resource.kind, embedders)
     for batch_number, start in enumerate(range(0, len(documents), batch_size), start=1):
@@ -209,6 +211,12 @@ def _embed_resource(
         _add_batch(collection, batch, embed)
         log.write(f"resource {resource.name}: batch {batch_number} added {len(batch)} documents to {collection_name}")
     return len(documents)
+
+
+def _log_read_summary(resource: Resource, log: EmbeddingLog) -> None:
+    summary = resource.read_summary()
+    if summary:
+        log.write(f"resource {resource.name}: read summary: {summary}")
 
 
 def _embed_function(kind: ResourceKind, embedders: Embedders) -> Callable[[list[str]], list[list[float]]]:
