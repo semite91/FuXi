@@ -8,11 +8,10 @@ from notion_client.errors import RequestTimeoutError
 
 from base import Document, Resource, ResourceKind
 from fakes import FakeNotionClient, load_fixture
+from resources.http_retry import MAX_ATTEMPTS, NETWORK_RETRY_SECONDS
 from resources.notion_resource import (
     CHUNK_OVERLAP,
     CHUNK_SIZE,
-    MAX_ATTEMPTS,
-    NETWORK_RETRY_SECONDS,
     NotionResource,
 )
 

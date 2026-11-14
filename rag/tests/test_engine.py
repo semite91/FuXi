@@ -9,9 +9,10 @@ import engine
 from base import Document, Resource, ResourceKind
 from embedding_pipeline import Embedders
 from engine import BUILD_WAIT_SECONDS, MAX_NAME_LENGTH, EngineDependencies, create_app
-from fakes import FakeEmbedder, RenameFailingClient
+from fakes import FakeEmbedder, RenameFailingClient, picture_text
 from chroma_store import TEXT_COLLECTION_NAME, create_chroma_client, is_build_complete, open_collection
-from resources.notion_resource import create_notion_resource
+from resources.google_drive_resource import GoogleDriveResource, create_google_drive_resource
+from resources.notion_resource import NotionResource, create_notion_resource
 from settings import Settings
 
 ALLOWED_ORIGIN = "http://localhost:5173"
@@ -586,3 +587,52 @@ def test_name_length_is_checked_after_trimming(tmp_path):
 
     assert answer.status_code == 200
     assert answer.json() == [{"name": f"  {name}  ", "translation": "x", "content": "content"}]
+
+
+def test_default_resources_are_notion_and_google_drive():
+    # Phase 5b E1
+    resources = engine.default_resources(Settings())
+
+    assert [type(resource) for resource in resources] == [NotionResource, GoogleDriveResource]
+    assert [(resource.name, resource.kind) for resource in resources] == [
+        ("notion", ResourceKind.TEXT), ("google_drive", ResourceKind.IMAGE)
+    ]
+
+
+def test_engine_starts_without_the_key_file_setting_and_names_it_when_drive_is_read(tmp_path):
+    # Phase 5b B3
+    harness = Harness(tmp_path, settings=Settings(), resource_factory=engine.default_resources)
+
+    assert harness.client.post("/Init_RAG").status_code == 202
+    harness.wait_for_build()
+
+    log = "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "logs").iterdir())
+    assert "resource google_drive failed: MissingSettingError: RAG_GOOGLE_SERVICE_ACCOUNT_FILE is not set" in log
+
+
+def test_drive_photo_data_url_is_answered_unchanged(tmp_path):
+    # Phase 5b H1
+    content = f'{{"method":"photo","image_url":"data:image/jpeg;base64,{picture_text()}"}}'
+    harness = Harness(tmp_path, llm=FakeLlm({"serendipity": content}))
+    harness.build_ready()
+
+    answer = harness.client.post("/GetWordContent", json=WORDS_BODY)
+
+    assert answer.status_code == 200
+    assert answer.json() == [{"name": "serendipity", "translation": "şans", "content": content}]
+
+
+def test_missing_key_file_setting_fails_update_with_a_generic_message_and_keeps_old_collections(tmp_path):
+    # Phase 5b H2
+    resources: list[Resource] = [NotesResource()]
+    harness = Harness(tmp_path, resource_factory=lambda settings: list(resources))
+    harness.build_ready()
+    resources.append(create_google_drive_resource(harness.dependencies.settings))
+
+    answer = harness.client.post("/Update_Collections")
+
+    assert answer.status_code == 502
+    assert answer.json() == {"detail": "The RAG collections could not be updated. The old collections are kept."}
+    assert "RAG_GOOGLE_SERVICE_ACCOUNT_FILE" not in answer.text
+    assert harness.stored_documents() == ["note 1"]
+    assert harness.client.post("/Init_RAG").json() == {"status": "ready"}

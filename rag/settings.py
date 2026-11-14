@@ -14,6 +14,7 @@ TEST_ENV_PATH = REPO_ROOT / ".env.test"
 
 NOTION_TOKEN_KEY = "RAG_NOTION_TOKEN"
 GEMINI_API_KEY_KEY = "RAG_GEMINI_API_KEY"
+GOOGLE_SERVICE_ACCOUNT_FILE_KEY = "RAG_GOOGLE_SERVICE_ACCOUNT_FILE"
 GEMINI_MODEL_KEY = "RAG_GEMINI_MODEL"
 TEXT_THRESHOLD_KEY = "RAG_TEXT_THRESHOLD"
 IMAGE_THRESHOLD_KEY = "RAG_IMAGE_THRESHOLD"
@@ -57,12 +58,18 @@ class Settings:
     rebuild_cooldown_minutes: float = DEFAULT_REBUILD_COOLDOWN_MINUTES
     notion_token: str | None = field(default=None, repr=False)
     gemini_api_key: str | None = field(default=None, repr=False)
+    google_service_account_file: str | None = field(default=None, repr=False)
 
     def require_notion_token(self) -> str:
         return _require(self.notion_token, NOTION_TOKEN_KEY)
 
     def require_gemini_api_key(self) -> str:
         return _require(self.gemini_api_key, GEMINI_API_KEY_KEY)
+
+    def require_google_service_account_file(self) -> Path:
+        """The key file path; a relative path is resolved from the repository root."""
+        path = Path(_require(self.google_service_account_file, GOOGLE_SERVICE_ACCOUNT_FILE_KEY))
+        return path if path.is_absolute() else REPO_ROOT / path
 
 
 def load_settings(
@@ -73,6 +80,7 @@ def load_settings(
     return Settings(
         notion_token=_text(values, NOTION_TOKEN_KEY),
         gemini_api_key=_text(values, GEMINI_API_KEY_KEY),
+        google_service_account_file=_text(values, GOOGLE_SERVICE_ACCOUNT_FILE_KEY),
         gemini_model=_text(values, GEMINI_MODEL_KEY) or DEFAULT_GEMINI_MODEL,
         text_threshold=_threshold(values, TEXT_THRESHOLD_KEY, DEFAULT_TEXT_THRESHOLD),
         image_threshold=_threshold(values, IMAGE_THRESHOLD_KEY, DEFAULT_IMAGE_THRESHOLD),

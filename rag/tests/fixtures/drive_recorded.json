@@ -1,0 +1,135 @@
+{
+  "_comment": "Recorded examples of Google Drive API v3 answers, trimmed and anonymised for tests. Image bytes are made by the tests with Pillow.",
+  "files_list": {
+    "start": {
+      "nextPageToken": "page-token-2",
+      "files": [
+        {
+          "id": "1dRvImgParisRain0000000000000001",
+          "name": "paris_rain.jpg",
+          "mimeType": "image/jpeg",
+          "parents": ["1dRvFolderPhotos00000000000000a"],
+          "createdTime": "2026-09-20T07:12:31.000Z",
+          "thumbnailLink": "https://lh3.googleusercontent.com/drive-storage/AJQWtBN1parisrainthumb0001=s220",
+          "imageMediaMetadata": {
+            "time": "2026:09:14 18:42:10"
+          }
+        },
+        {
+          "id": "1dRvImgUmbrella00000000000000002",
+          "name": "umbrella.png",
+          "mimeType": "image/png",
+          "parents": ["1dRvFolderParis000000000000000b"],
+          "createdTime": "2026-09-21T10:05:00.000Z",
+          "thumbnailLink": "https://lh3.googleusercontent.com/drive-storage/AJQWtBN1umbrellathumb00002=s220",
+          "imageMediaMetadata": {}
+        }
+      ]
+    },
+    "page-token-2": {
+      "files": [
+        {
+          "id": "1dRvImgCafe000000000000000000003",
+          "name": "cafe.heic",
+          "mimeType": "image/heic",
+          "parents": ["1dRvFolderParis000000000000000b"],
+          "createdTime": "2026-09-22T16:40:12.000Z",
+          "thumbnailLink": "https://lh3.googleusercontent.com/drive-storage/AJQWtBN1cafethumb000000003=s220",
+          "imageMediaMetadata": {
+            "time": "2026:09:15 09:01:55"
+          }
+        },
+        {
+          "id": "1dRvImgSketch00000000000000000004",
+          "name": "sketch.gif",
+          "mimeType": "image/gif",
+          "parents": ["1dRvFolderPhotos00000000000000a"],
+          "createdTime": "2026-10-02T12:00:00.000Z"
+        }
+      ]
+    }
+  },
+  "empty_list": {
+    "files": []
+  },
+  "folders": {
+    "1dRvFolderPhotos00000000000000a": {
+      "id": "1dRvFolderPhotos00000000000000a",
+      "name": "Photos",
+      "parents": ["0AOwnerMyDriveRoot00000000000000"]
+    },
+    "1dRvFolderParis000000000000000b": {
+      "id": "1dRvFolderParis000000000000000b",
+      "name": "Paris",
+      "parents": ["1dRvFolderPhotos00000000000000a"]
+    }
+  },
+  "rate_limited_403": {
+    "error": {
+      "code": 403,
+      "message": "Rate Limit Exceeded",
+      "errors": [
+        {
+          "message": "Rate Limit Exceeded",
+          "domain": "usageLimits",
+          "reason": "rateLimitExceeded"
+        }
+      ]
+    }
+  },
+  "user_rate_limited_403": {
+    "error": {
+      "code": 403,
+      "message": "User Rate Limit Exceeded",
+      "errors": [
+        {
+          "message": "User Rate Limit Exceeded",
+          "domain": "usageLimits",
+          "reason": "userRateLimitExceeded"
+        }
+      ]
+    }
+  },
+  "rate_limited_403_details": {
+    "error": {
+      "code": 403,
+      "message": "Quota exceeded for quota metric 'Queries' of service 'drive.googleapis.com'.",
+      "status": "PERMISSION_DENIED",
+      "details": [
+        {
+          "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+          "reason": "RATE_LIMIT_EXCEEDED",
+          "domain": "googleapis.com"
+        }
+      ]
+    }
+  },
+  "forbidden_403": {
+    "error": {
+      "code": 403,
+      "message": "The user does not have sufficient permissions for this file.",
+      "errors": [
+        {
+          "message": "The user does not have sufficient permissions for this file.",
+          "domain": "global",
+          "reason": "insufficientFilePermissions"
+        }
+      ]
+    }
+  },
+  "not_found": {
+    "error": {
+      "code": 404,
+      "message": "File not found: 0AOwnerMyDriveRoot00000000000000.",
+      "errors": [
+        {
+          "message": "File not found: 0AOwnerMyDriveRoot00000000000000.",
+          "domain": "global",
+          "reason": "notFound",
+          "location": "fileId",
+          "locationType": "parameter"
+        }
+      ]
+    }
+  }
+}

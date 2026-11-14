@@ -41,3 +41,11 @@ test.each([
 
   await expect.poll(() => api.callsTo('Init_RAG')).toHaveLength(1);
 });
+
+test('5b I4 GetWordContent passes a Drive photo content string through unchanged', async () => {
+  const DRIVE_PHOTO = '{"method":"photo","image_url":"data:image/jpeg;base64,/9j/4AAQSkZJRg=="}';
+  const content = [{ name: 'Ephemeral', translation: 'geçici', content: DRIVE_PHOTO }];
+  mockApi({ 'POST /GetWordContent': { body: content } });
+
+  await expect(getWordContent(WORDS)).resolves.toEqual(content);
+});

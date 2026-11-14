@@ -17,6 +17,12 @@ public sealed class UpdateWordContentTests : IDisposable
     private const int KNOWN_COUNT = 2;
     private const int TWO_WORDS = 2;
 
+    // Phase 5b: a Drive photo is a JPEG data: URL; 120 KB is the upper end of its stored size.
+    private const int DRIVE_PHOTO_BYTES = 120 * 1024;
+    private const string DRIVE_PHOTO_START = "{\"method\":\"photo\",\"image_url\":\"data:image/jpeg;base64,";
+    private const string DRIVE_PHOTO_END = "\"}";
+    private const char BASE64_CHARACTER = 'A';
+
     private readonly DatabaseApi databaseApi = new();
     private readonly NowApi nowApi = new();
 
@@ -59,6 +65,21 @@ public sealed class UpdateWordContentTests : IDisposable
         ReadWord(other).Should().BeEquivalentTo(other);
         databaseApi.Read(context => context.Words.Count()).Should().Be(TWO_WORDS);
         databaseApi.Read(context => context.Configs.Count()).Should().Be(TestData.SEEDED_CONFIG_COUNT);
+    }
+
+    [Fact]
+    public async Task DrivePhotoContentOfAbout120KilobytesIsStoredUnchanged()
+    {
+        // 5b J3
+        var payloadLength = DRIVE_PHOTO_BYTES - DRIVE_PHOTO_START.Length - DRIVE_PHOTO_END.Length;
+        var drivePhoto = DRIVE_PHOTO_START + new string(BASE64_CHARACTER, payloadLength) + DRIVE_PHOTO_END;
+        var word = databaseApi.Arrange(context => TestData.AddWord(context));
+
+        await UpdateAsync(word.Id, drivePhoto).ShouldHaveStatusAsync(HttpStatusCode.NoContent);
+
+        var stored = ReadWord(word).Content;
+        stored.Should().HaveLength(DRIVE_PHOTO_BYTES);
+        stored.Should().Be(drivePhoto);
     }
 
     [Fact]

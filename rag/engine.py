@@ -21,6 +21,7 @@ from embedders import ImageEmbedder, TextEmbedder
 from embedding_pipeline import DEFAULT_LOGS_DIR, Embedders, Mode, PipelineResult, run
 from llm_client import LlmClient
 from rag_client import RagClient, Word
+from resources.google_drive_resource import create_google_drive_resource
 from resources.notion_resource import create_notion_resource
 from settings import Settings, load_settings
 
@@ -112,7 +113,7 @@ class EngineDependencies:
 
 
 def default_resources(settings: Settings) -> list[Resource]:
-    return [create_notion_resource(settings)]
+    return [create_notion_resource(settings), create_google_drive_resource(settings)]
 
 
 def default_dependencies(settings: Settings | None = None) -> EngineDependencies:

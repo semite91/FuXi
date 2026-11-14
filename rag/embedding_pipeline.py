@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from chromadb.api import ClientAPI
 
-from base import Document, Resource, ResourceKind
+from base import METADATA_NAME, Document, Resource, ResourceKind
 from chroma_store import (
     COLLECTION_BY_KIND,
     OLD_COLLECTION_BY_KIND,
@@ -21,6 +21,7 @@ from chroma_store import (
     open_collection,
     rename_collection,
 )
+from embedders import PictureDataError, Vector, decode_picture
 from settings import REPO_ROOT
 
 DEFAULT_LOGS_DIR = REPO_ROOT / "logs" / "embedding"
@@ -35,6 +36,7 @@ OLD_NAMES = list(OLD_COLLECTION_BY_KIND.values())
 
 Clock = Callable[[], datetime]
 CollectionNames = dict[ResourceKind, str]
+EmbedFunction = Callable[[list[Document]], list[Vector]]
 
 
 class Mode(StrEnum):
@@ -219,17 +221,25 @@ def _log_read_summary(resource: Resource, log: EmbeddingLog) -> None:
         log.write(f"resource {resource.name}: read summary: {summary}")
 
 
-def _embed_function(kind: ResourceKind, embedders: Embedders) -> Callable[[list[str]], list[list[float]]]:
+def _embed_function(kind: ResourceKind, embedders: Embedders) -> EmbedFunction:
     if kind is ResourceKind.IMAGE:
-        return embedders.image.embed_images
-    return embedders.text.embed_documents
+        return lambda batch: embedders.image.embed_images([_picture(document) for document in batch])
+    return lambda batch: embedders.text.embed_documents([document.text for document in batch])
 
 
-def _add_batch(collection: Any, batch: list[Document], embed: Callable[[list[str]], list[list[float]]]) -> None:
-    texts = [document.text for document in batch]
+def _picture(document: Document) -> Any:
+    """The decoded picture; invalid data fails the batch with an error naming the document."""
+    try:
+        return decode_picture(document.text)
+    except PictureDataError as error:
+        name = document.metadata.get(METADATA_NAME, "")
+        raise PictureDataError(f"document {name!r} is not Base64 picture data") from error
+
+
+def _add_batch(collection: Any, batch: list[Document], embed: EmbedFunction) -> None:
     collection.add(
         ids=[str(uuid4()) for _ in batch],
-        documents=texts,
-        embeddings=embed(texts),
+        documents=[document.text for document in batch],
+        embeddings=embed(batch),
         metadatas=[document.metadata for document in batch],
     )

@@ -8,6 +8,7 @@ from settings import (
     DEFAULT_IMAGE_THRESHOLD,
     DEFAULT_REBUILD_COOLDOWN_MINUTES,
     DEFAULT_TEXT_THRESHOLD,
+    REPO_ROOT,
     MissingSettingError,
     SettingsError,
     load_settings,
@@ -132,3 +133,33 @@ def test_zero_cooldown_is_accepted(tmp_path):
     settings = load_settings(write_env(tmp_path, "RAG_REBUILD_COOLDOWN_MINUTES=0\n"), environ={})
 
     assert settings.rebuild_cooldown_minutes == 0
+
+
+def test_google_service_account_file_is_read(tmp_path):
+    # Phase 5b B1
+    settings = load_settings(write_env(tmp_path, f"RAG_GOOGLE_SERVICE_ACCOUNT_FILE={tmp_path / 'key.json'}\n"), environ={})
+
+    assert settings.require_google_service_account_file() == tmp_path / "key.json"
+
+
+def test_relative_google_service_account_file_is_resolved_from_the_repository_root(tmp_path):
+    # Phase 5b B2
+    settings = load_settings(write_env(tmp_path, "RAG_GOOGLE_SERVICE_ACCOUNT_FILE=rag/secrets/drive.json\n"), environ={})
+
+    assert settings.require_google_service_account_file() == REPO_ROOT / "rag" / "secrets" / "drive.json"
+
+
+def test_missing_google_service_account_file_fails_only_when_used(tmp_path):
+    # Phase 5b B3
+    settings = load_settings(write_env(tmp_path, ""), environ={})
+
+    with pytest.raises(MissingSettingError, match="RAG_GOOGLE_SERVICE_ACCOUNT_FILE"):
+        settings.require_google_service_account_file()
+
+
+def test_printed_settings_hide_the_key_file_path(tmp_path):
+    # Phase 5b B4
+    settings = load_settings(write_env(tmp_path, "RAG_GOOGLE_SERVICE_ACCOUNT_FILE=rag/secrets/drive.json\n"), environ={})
+
+    assert "drive.json" not in repr(settings)
+    assert "drive.json" not in str(settings)

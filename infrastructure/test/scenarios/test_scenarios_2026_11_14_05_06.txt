@@ -1,0 +1,173 @@
+FuXi - Phase 5b - Google Drive images
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-14 05:06 UTC
+Status: CONFIRMED BY THE LEARNER ON 2026-11-14, with the proposals by Claude
+Amended on 2026-11-14 for the code review fixes approved by the Learner: C16, C20 and G1 changed (R2 rate-limit 403,
+shared retry helper, image_url field); C22 to C25 were added (rate limit, parallel downloads).
+The full-file fallback after a failed thumbnail (R3) was rejected. Keeping the prepared picture in memory (D5) was
+added and then dropped by the Learner: it saved about 1.4 ms per image but held about 0.75 MB per image.
+Amended on 2026-11-14 for the second code review round, approved by the Learner: C26 to C28 and J8 were added.
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 5b adds the second source, Google Drive, to the RAG engine built in 5a. The Learner's images are embedded with
+CLIP into fuxi_image, and the photo method may show one of the Learner's own images on the card.
+Letterboxd + TMDB (5c) and Spotify (5d) come later. Evaluation (ragas) is version 2.
+
+Decisions taken by the Learner on 2026-11-14 (grilling rounds 1 to 3):
+- The engine signs in to Drive with a Google Cloud service account. RAG_GOOGLE_SERVICE_ACCOUNT_FILE in the root .env
+  holds the path of its JSON key; the key is kept in the git-ignored rag/secrets/ folder.
+- Every image the service account can see is read, subfolders included. The Learner shares a folder with the
+  service account's email to add images; there is no folder setting.
+- Each image is downloaded as Drive's 512 px thumbnail; the full file is used only when Drive has no thumbnail.
+  Pillow opens it. HEIC photos are included through their Drive thumbnail. A file Pillow cannot open is skipped and
+  counted in the embedding log.
+- google-auth signs in with the service account; the installed httpx calls the Drive REST API. google-auth is the
+  only new direct library and is vetted before installation.
+- For the photo method, the Drive images above RAG_IMAGE_THRESHOLD are sent to Gemini by name and path. Gemini picks
+  one of them or falls back to a web image found by Google Search.
+- A chosen Drive image is stored in the photo content as a JPEG data: URL of at most 512 px. The card shows a
+  data:image/jpeg image as well as an https image.
+
+Proposed by Claude, to confirm with these scenarios:
+- An image document's text is the Base64 of its 512 px JPEG. Metadata: name (file name), path (parent folder names
+  joined with " / "), type "picture" and timestamp (the photo's taken time when Drive has it, otherwise its created time).
+- The pipeline decodes the Base64 into a picture before CLIP embeds it (review item 6 of Phase 5a).
+- Each Drive image goes to Gemini as {"image_url": "drive:<n>", "name", "path"}, <n> being its place in the image
+  results. Gemini answers image_url "drive:<n>"; the code puts that image's data: URL in the content. The prompt
+  files are not changed.
+- Drive calls follow Notion's retry rules: a 429 or a 5xx answer, a dropped connection or a timeout is tried again
+  after 1, 2, 4 and 8 seconds, at most 5 attempts. Each read writes its summary to the embedding log.
+- A parent folder the service account cannot see (403 or 404) ends the image's path; the image is still read.
+- A missing RAG_GOOGLE_SERVICE_ACCOUNT_FILE, a missing key file or a refused sign-in makes the Drive source fail, so
+  the build is not complete and the old collections are kept, as with Notion.
+- Live tests use the real service account only when RAG_LIVE_TESTS=true in .env.test.
+
+Marks:
+[PY]  Python scenario, verified by a pytest test with a fake embedder and recorded Drive and Gemini answers.
+[LIVE] Python scenario, verified by a pytest test that loads the real models or calls a real API; runs only when enabled.
+[FE]  frontend scenario, verified by a Vitest test.
+[RV]  verified by reading the code, running a command or a real run.
+
+==================================================
+A. LIBRARIES AND SETUP
+==================================================
+A1. [RV] Given google-auth, when it was vetted, then the checklist result was reported to the Learner before installation.
+A2. [RV] Given rag/requirements.in, when it is read, then google-auth is pinned to the approved version and no other direct library is added.
+A3. [RV] Given rag/requirements.txt, when it is read, then it locks google-auth and its dependencies, and the 5a markers are kept.
+A4. [RV] Given a clean virtual environment, when "pip install -r rag/requirements.txt" runs, then it succeeds and pip check reports no conflict.
+A5. [RV] Given pip-audit, when it runs on the environment, then no new vulnerability is reported beyond the 4 known ChromaDB server CVEs.
+A6. [RV] Given .gitignore, when it is read, then rag/secrets/ is ignored.
+A7. [RV] Given .env.example and .env.test.example, when they are read, then RAG_GOOGLE_SERVICE_ACCOUNT_FILE exists without a value.
+A8. [RV] Given the setup script, when it runs, then it creates rag/secrets/ and adds RAG_GOOGLE_SERVICE_ACCOUNT_FILE to .env without a value.
+
+==================================================
+B. SETTINGS
+==================================================
+B1. [PY] Given a .env with RAG_GOOGLE_SERVICE_ACCOUNT_FILE, when the settings are read, then the path is read.
+B2. [PY] Given a relative RAG_GOOGLE_SERVICE_ACCOUNT_FILE, when it is used, then it is resolved from the repository root.
+B3. [PY] Given a missing RAG_GOOGLE_SERVICE_ACCOUNT_FILE, when the engine starts, then it starts, and the error names the key only when Drive is read.
+B4. [PY] Given the settings, when they are printed, then the key file path is not shown.
+
+==================================================
+C. GOOGLE DRIVE RESOURCE
+==================================================
+C1. [PY] Given a service account key file, when the resource signs in, then google-auth makes a token with the drive.readonly scope only.
+C2. [PY] Given a key file that does not exist, when the resource reads, then it fails and the error names RAG_GOOGLE_SERVICE_ACCOUNT_FILE without the key's content.
+C3. [PY] Given recorded files.list answers over 2 result pages, when the resource reads, then every image file is read once.
+C4. [PY] Given files.list, when it is called, then it asks only for image files that are not in the trash.
+C5. [PY] Given an image with a thumbnailLink, when it is downloaded, then the 512 px thumbnail is fetched with the access token.
+C6. [PY] Given an image without a thumbnailLink, when it is downloaded, then the full file is fetched (alt=media).
+C7. [PY] Given a downloaded image larger than 512 px, when it is prepared, then it is scaled so its longest side is 512 px, keeping its shape.
+C8. [PY] Given a downloaded PNG with transparency, when it is prepared, then it becomes an RGB JPEG.
+C9. [PY] Given a downloaded file Pillow cannot open, when it is prepared, then it is skipped, the others are still read and the skip is counted in the read summary.
+C10. [PY] Given an image, when its document is built, then the text is the Base64 of its JPEG and metadata has name, path, type "picture" and timestamp.
+C11. [PY] Given an image with a taken time in its photo data, when its timestamp is set, then the taken time is used; without it, the created time is used.
+C12. [PY] Given an image in nested folders, when its path is built, then the folder names are joined with " / ", from the top folder down.
+C13. [PY] Given 2 images in the same folder, when their paths are built, then the folder is asked from Drive once.
+C14. [PY] Given a parent folder that answers 403 or 404, when the path is built, then the path stops there and the image is still read.
+C15. [PY] Given a parent folder that answers 500 after every attempt, or 401, when the path is built, then the Drive resource fails.
+C16. [PY] Given a Drive answer 429, or a 403 with reason rateLimitExceeded or userRateLimitExceeded, when the resource reads, then it waits and tries again.
+C17. [PY] Given a dropped connection or a timeout, when the resource reads, then it waits 1, 2, 4 and 8 seconds and tries again, at most 5 attempts.
+C18. [PY] Given a Drive read, when it ends or fails, then its summary holds the images, skipped files, calls, rate limit waits, network retries and seconds.
+C19. [PY] Given no image shared with the service account, when the resource reads, then it gives no document and no error.
+C20. [PY] Given the new resource class, when it is added, then it implements the Resource base with kind IMAGE, and the Notion resource's behavior is not changed:
+     its retry code moves to a shared module used by both resources and every Notion test still passes (open-closed, DRY).
+C22. [PY] Given a 403 with any other reason on a download, when the resource reads, then the file is skipped as before, without a retry.
+C23. [PY] Given 10 images, when they are downloaded in parallel (a bounded number of workers), then the documents keep the order of the file list.
+C24. [PY] Given images in the same folder downloaded in parallel, when their paths are built, then the folder is asked from Drive once.
+C25. [PY] Given parallel downloads, when the read ends, then the read summary counts every image, skip and retry exactly once.
+C26. [PY] Given a rate-limit 403 that still fails after the last retry, on a download or a folder lookup, when the resource reads, then the Drive resource fails
+     (no image is skipped and no path is cut because of throttling).
+C27. [PY] Given an unexpected error while a file is downloaded, when the resource reads, then the resource fails; only a picture Pillow cannot open is skipped.
+C28. [PY] Given a very large original without a thumbnail, when it is prepared, then a JPEG is decoded at reduced size and a decompression bomb warning makes it a counted skip.
+C21. [LIVE] Given the real service account, when the resource reads, then at least one image document is returned.
+
+==================================================
+D. EMBEDDERS
+==================================================
+D1. [PY] Given image documents, when they are embedded, then their Base64 text is decoded into pictures before CLIP is called.
+D2. [PY] Given a document whose text is not valid Base64 picture data, when it is embedded, then the batch fails with an error naming the document's name.
+D3. [LIVE] Given the real CLIP model, when a picture is embedded, then the vector has 512 numbers.
+D4. [LIVE] Given the real CLIP model, when a picture of a dog and the texts "a dog" and "a car" are embedded, then the picture is closer to "a dog".
+
+==================================================
+E. EMBEDDING PIPELINE
+==================================================
+E1. [PY] Given the Notion and Drive resources, when the engine builds, then both are read and Drive's documents go to fuxi_image.
+E2. [PY] Given an image document, when it is added, then ids, documents (the Base64 text), embeddings and metadatas go to fuxi_image together.
+E3. [PY] Given 20 images and batch size 16, when the pipeline runs, then CLIP is called 2 times (16, 4).
+E4. [PY] Given a Drive resource that fails, when the pipeline runs, then the Notion documents are still embedded, the build is not complete and the old collections stay.
+E5. [PY] Given a Drive read, when it ends, then its read summary is written to the embedding log.
+
+==================================================
+F. RAG CLIENT
+==================================================
+F1. [PY] Given images in fuxi_image, when retrieve runs, then image results above RAG_IMAGE_THRESHOLD are returned with their Base64 document and metadata.
+
+==================================================
+G. LLM CLIENT
+==================================================
+G1. [PY] Given image results, when the Gemini input is built, then each image is {"image_url": "drive:<n>", "name", "path"} and no Base64 data is sent.
+G2. [PY] Given the photo method and Gemini's answer image_url "drive:2", when it is read, then the content is {"method": "photo", "image_url": "data:image/jpeg;base64,..."} with the second image's data.
+G3. [PY] Given the photo method and an https image_url, when it is read, then the content keeps that web link, as in 5a.
+G4. [PY] Given image_url "drive:9" when only 3 images were sent, when it is read, then the answer counts as insufficient_context and the fallback rule applies.
+G5. [PY] Given a data: URL or any other non-https image_url written by Gemini, when it is read, then the answer counts as insufficient_context.
+G6. [PY] Given no image results, when the photo method runs, then the images list is empty and the web image flow works as in 5a.
+G7. [PY] Given a stored content JSON with a Drive image, when it is read back, then the data: URL holds a JPEG of at most 512 px.
+G8. [LIVE] Given the real Gemini key and one Drive image result, when the photo method runs, then the answer is a valid content JSON or no content, without an error.
+
+==================================================
+H. ENGINE API
+==================================================
+H1. [PY] Given a Drive photo content, when POST /GetWordContent answers, then the content string holds the data: URL unchanged.
+H2. [PY] Given a missing RAG_GOOGLE_SERVICE_ACCOUNT_FILE, when POST /Update_Collections is called, then the answer is 502 with a generic message and the old collections stay.
+
+==================================================
+I. FRONTEND
+==================================================
+I1. [FE] Given photo content with a data:image/jpeg;base64 image_url, when the back side is shown, then the image is shown with the Word's name as its alt text.
+I2. [FE] Given photo content with a data: URL of another type (for example data:image/svg+xml or data:text/html), when it is shown, then no image is created and "Content is not available." is shown.
+I3. [FE] Given music content with a data: song_url, when it is shown, then no link is created and "Content is not available." is shown.
+I4. [FE] Given a Drive photo content, when it is merged, then UpdateWordContent stores the same JSON string.
+I5. [FE] Given a broken data: image, when it fails to load, then "Content is not available." is shown instead of a broken image.
+I6. [RV] Given the built page, when its Content-Security-Policy is read, then img-src is still 'self' data: https: and nothing else is loosened.
+
+==================================================
+J. STRUCTURE AND QUALITY
+==================================================
+J1. [RV] Given /rag, when "pytest" runs, then no test fails and the LIVE tests are skipped unless RAG_LIVE_TESTS=true.
+J2. [RV] Given the frontend, when "npm run build" and "npm test" run, then there is no TypeScript error, no warning and no failed test.
+J3. [RV] Given the backend, when "dotnet test" runs, then no test fails, and a Content of about 120 KB is stored by UpdateWordContent.
+J4. [RV] Given the Python code, when it is read, then names follow the coding standards and no secret or magic value is hardcoded.
+J5. [RV] Given project.md, when it is read, then the Google Drive section holds the agreed decisions and RAG_GOOGLE_SERVICE_ACCOUNT_FILE is listed with the RAG_ keys.
+J6. [LIVE] Given the real service account, models and Gemini, when Update embeddings runs, then fuxi_image has the Learner's images and a card can show one of them.
+J8. [RV] Given the resources, when they are read, then the retry code, the read summary and the Clock type are shared in rag/resources/http_retry.py.
+J7. [RV] Given the tracked files, when they are read, then no secret value and no key file is in them.
+
+==================================================
+K. OUT OF SCOPE CHECKS
+==================================================
+K1. [RV] Given /rag, when it is read, then no Letterboxd, TMDB or Spotify resource exists (5c, 5d).
+K2. [RV] Given /rag, when it is read, then no evaluation file exists (version 2).
+K3. [RV] Given the database, when the migrations are listed, then no new migration exists.
+K4. [RV] Given the prompts folder, when it is compared with main, then nothing is changed.

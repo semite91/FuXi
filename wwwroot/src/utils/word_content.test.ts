@@ -117,3 +117,42 @@ test.each([
 test('an empty content is not available', () => {
   expect(parseWordContent('  ')).toEqual({ kind: 'unavailable' });
 });
+
+// Phase 5b section I: a Learner's own Drive image is stored as a JPEG data: URL.
+const DRIVE_JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2Q==';
+
+test('5b I1 the photo method gives a JPEG data: address with valid Base64 unchanged', () => {
+  expect(parseWordContent(json({ method: 'photo', image_url: DRIVE_JPEG }))).toEqual({ kind: 'photo', imageUrl: DRIVE_JPEG });
+});
+
+test.each([
+  ['an SVG', 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='],
+  ['an SVG without Base64', 'data:image/svg+xml,<svg onload="alert(1)"></svg>'],
+  ['an HTML page', 'data:text/html;base64,PGgxPkk8L2gxPg=='],
+  ['a PNG', 'data:image/png;base64,iVBORw0KGgo='],
+  ['a JPEG without Base64', 'data:image/jpeg,abcd'],
+  ['a JPEG with a parameter', 'data:image/jpeg;charset=utf-8;base64,/9j/4AAQ'],
+  ['a JPEG with an upper-case type', 'DATA:IMAGE/JPEG;BASE64,/9j/4AAQ'],
+  ['a JPEG with no data', 'data:image/jpeg;base64,'],
+  ['a JPEG with a character outside Base64', 'data:image/jpeg;base64,/9j/4A*Q'],
+  ['a JPEG with a space', 'data:image/jpeg;base64,/9j/ 4AAQ'],
+  ['a JPEG with a broken length', 'data:image/jpeg;base64,/9j/4AA'],
+  ['a JPEG with padding in the middle', 'data:image/jpeg;base64,/9==4AAQ'],
+  ['a JPEG with three padding signs', 'data:image/jpeg;base64,/9j/4==='],
+  ['a JPEG with URL-safe Base64', 'data:image/jpeg;base64,_9j-4AAQ'],
+])('5b I2 %s data: image address is not available', (_, imageUrl) => {
+  expect(parseWordContent(json({ method: 'photo', image_url: imageUrl }))).toEqual({ kind: 'unavailable' });
+});
+
+test('5b I3 a data: song address is not available, even a JPEG one', () => {
+  const stored = json({ method: 'music', song_title: 'S', artist: 'A', song_url: DRIVE_JPEG, lyrics_excerpt: 'L' });
+
+  expect(parseWordContent(stored)).toEqual({ kind: 'unavailable' });
+});
+
+test('5b I1 a Drive JPEG of about 120 KB is read unchanged', () => {
+  const LARGE_BASE64_LENGTH = 160_000;
+  const imageUrl = `data:image/jpeg;base64,${'A'.repeat(LARGE_BASE64_LENGTH)}`;
+
+  expect(parseWordContent(json({ method: 'photo', image_url: imageUrl }))).toEqual({ kind: 'photo', imageUrl });
+});

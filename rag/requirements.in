@@ -1,4 +1,5 @@
-# Direct dependencies, pinned to the versions approved by the Learner on 2026-11-13 (pillow on 2026-11-13, for CLIP).
+# Direct dependencies, pinned to the versions approved by the Learner on 2026-11-13 (pillow on 2026-11-13, for CLIP;
+# google-auth on 2026-11-14, for the Google Drive service account).
 # After a change, reinstall and regenerate requirements.txt with: pip freeze > requirements.txt
 # then mark the CUDA-only packages (cuda-*, nvidia-*, triton) with ; sys_platform == "linux"
 # and uvloop, which does not build on Windows, with ; sys_platform != "win32".
@@ -14,4 +15,5 @@ google-genai==3.3.0
 httpx==0.28.1
 python-dotenv==1.2.4
 pillow==12.3.0
+google-auth[requests]==2.62.2
 pytest==9.2.0

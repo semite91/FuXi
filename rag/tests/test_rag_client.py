@@ -6,7 +6,7 @@ import pytest
 from base import Document, Resource, ResourceKind, RetrievedItem
 from chroma_store import IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME, create_chroma_client, open_collection
 from embedding_pipeline import Embedders, Mode, run
-from fakes import FakeEmbedder
+from fakes import FakeEmbedder, picture_text
 from rag_client import TOP_K, RagClient, Word
 from settings import Settings
 
@@ -186,3 +186,20 @@ def test_one_failing_word_does_not_stop_the_others(chroma_path, embedders):
     ]
     assert [entry[:2] for entry in llm.generated] == [("alpha", "a"), ("gamma", "g")]
     assert embedders.text.queries == ["query for alpha", "query for beta", "query for gamma"]
+
+
+def test_image_results_above_the_threshold_hold_their_base64_document_and_metadata(chroma_path, embedders):
+    # Phase 5b F1
+    client = make_client(chroma_path, embedders, settings=Settings(image_threshold=0.25))
+    picture = picture_text()
+    metadata = {"name": "umbrella.png", "path": "Photos / Paris", "type": "picture", "timestamp": "2026-09-21T10:05:00.000Z"}
+    client.init().image.add(
+        ids=["kept", "dropped"],
+        documents=[picture, picture_text(color=(1, 2, 3))],
+        embeddings=[vector_with_similarity(0.4), vector_with_similarity(0.1)],
+        metadatas=[metadata, {**metadata, "name": "dark.png"}],
+    )
+
+    _, images = client.retrieve("q")
+
+    assert images == [RetrievedItem(document=picture, metadata=metadata, similarity=pytest.approx(0.4))]

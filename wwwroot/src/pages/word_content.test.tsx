@@ -387,3 +387,51 @@ test('5a I15 when the deck is closed, the remaining groups are not sent', async 
   expect(api.callsTo('GetWordContent')).toHaveLength(1);
   expect(api.callsTo('UpdateWordContent')).toHaveLength(0);
 });
+
+// Phase 5b section I: a Learner's own Drive image is stored as a JPEG data: URL.
+const DRIVE_JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2Q==';
+const DRIVE_PHOTO = JSON.stringify({ method: 'photo', image_url: DRIVE_JPEG });
+
+test('5b I1 a Drive photo shows the JPEG data: image with the Word name as its alt text', async () => {
+  await backWith(DRIVE_PHOTO);
+
+  expect(screen.getByRole('img', { name: 'Ephemeral' })).toHaveAttribute('src', DRIVE_JPEG);
+  expect(screen.queryByText(UNAVAILABLE)).not.toBeInTheDocument();
+});
+
+test.each([
+  ['an SVG', 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='],
+  ['an HTML page', 'data:text/html;base64,PGgxPkk8L2gxPg=='],
+  ['a PNG', 'data:image/png;base64,iVBORw0KGgo='],
+  ['a JPEG with broken Base64', 'data:image/jpeg;base64,/9j/4A*Q'],
+])('5b I2 %s data: image address creates no image and shows "Content is not available."', async (_, imageUrl) => {
+  await backWith(JSON.stringify({ method: 'photo', image_url: imageUrl }));
+
+  expect(screen.getByText(UNAVAILABLE)).toBeInTheDocument();
+  expect(document.querySelector('.flashcard-back__content img')).toBeNull();
+});
+
+test('5b I3 a data: song address creates no link and shows "Content is not available."', async () => {
+  await backWith(JSON.stringify({ ...JSON.parse(MUSIC), song_url: DRIVE_JPEG }));
+
+  expect(screen.getByText(UNAVAILABLE)).toBeInTheDocument();
+  expect(screen.queryByRole('link')).not.toBeInTheDocument();
+});
+
+test('5b I4 a Drive photo content is stored by UpdateWordContent as the same string', async () => {
+  const api = openActive([WITHOUT_CONTENT[0]], {
+    'POST /GetWordContent': { body: [{ name: 'Ephemeral', translation: 'Ephemeral translation', content: DRIVE_PHOTO }] },
+  });
+  await waitFor(() => expect(api.callsTo('UpdateWordContent')).toHaveLength(1));
+
+  expect(api.callsTo('UpdateWordContent')[0].body).toEqual({ id: WORD_ONE_ID, content: DRIVE_PHOTO });
+});
+
+test('5b I5 a Drive photo that fails to load is replaced by "Content is not available."', async () => {
+  await backWith(DRIVE_PHOTO);
+
+  fireEvent.error(screen.getByRole('img', { name: 'Ephemeral' }));
+
+  expect(await screen.findByText(UNAVAILABLE)).toBeInTheDocument();
+  expect(screen.queryByRole('img', { name: 'Ephemeral' })).not.toBeInTheDocument();
+});

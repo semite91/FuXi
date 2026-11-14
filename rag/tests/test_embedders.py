@@ -1,6 +1,8 @@
+import base64
 import threading
 
 import numpy as np
+import pytest
 
 from embedders import (
     CPU_DEVICE,
@@ -9,8 +11,11 @@ from embedders import (
     TEXT_MODEL_ID,
     ImageEmbedder,
     ModelCache,
+    PictureDataError,
     TextEmbedder,
+    decode_picture,
 )
+from fakes import TEST_PICTURE_SIZE, picture_text
 
 VECTOR_SIZE = 4
 
@@ -89,3 +94,29 @@ def test_parallel_first_use_loads_once():
         thread.join()
 
     assert len(loader.loads) == 1
+
+
+def test_picture_text_is_decoded_into_an_rgb_picture():
+    # Phase 5b D1
+    picture = decode_picture(picture_text())
+
+    assert picture.size == TEST_PICTURE_SIZE
+    assert picture.mode == "RGB"
+
+
+@pytest.mark.parametrize("text", ["", "not base64 ***", base64.b64encode(b"not a picture").decode("ascii")])
+def test_text_that_is_not_base64_picture_data_raises_a_picture_data_error(text):
+    # Phase 5b D2
+    with pytest.raises(PictureDataError):
+        decode_picture(text)
+
+
+def test_image_embedder_embeds_pictures_with_clip():
+    # Phase 5b D1
+    loader = RecordingLoader()
+    picture = decode_picture(picture_text())
+
+    vectors = ImageEmbedder(ModelCache(loader)).embed_images([picture])
+
+    assert loader.models[IMAGE_MODEL_ID].calls == [([picture], {})]
+    assert vectors == [[1.0] * VECTOR_SIZE]

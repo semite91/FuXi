@@ -1,0 +1,65 @@
+FuXi - Phase 5b - Google Drive images
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_14_05_06.txt (confirmed, amended twice for the reviews)
+Run: 2026-11-14 06:43 UTC, branch claude/phase-5b-google-drive, base commit 03a58fd (work not yet committed)
+
+Totals
+- RAG engine (rag/): "RAG_LIVE_TESTS=false python -m pytest -q": 248 passed, 8 skipped (the LIVE tests), 0 failed.
+  RAG_LIVE_TESTS=false is set in the process, because .env.test has RAG_LIVE_TESTS=true.
+- Frontend: "npm run build": exit 0, no TypeScript error. "npm test": 16 files, 277 passed (251 before Phase 5b).
+- Backend: "dotnet test fuxi_api_tests": 381 passed, 0 failed, 0 skipped (380 before Phase 5b; one new test, no production change).
+  Two full runs passed. One earlier run by the agent reported 1 error that did not come back.
+- Scenarios: 78. PASS 72. PARTIAL 1 (A5). NOT RUN 5 (C21, D3, D4, G8, J6: LIVE, they need the service account key and the
+  Learner's go-ahead before downloading and embedding).
+
+Status words: PASS, PARTIAL, NOT RUN. PY and FE scenarios are proven by tests that carry the scenario id
+(rag/tests/test_*.py with "# Phase 5b <id>", wwwroot tests named "5b <id>").
+
+Incident: before RAG_LIVE_TESTS=false was set in the process, the agent ran pytest twice with .env.test's
+RAG_LIVE_TESTS=true. The 5a LIVE tests (real Notion, Qwen, CLIP, Gemini) started and were stopped; nothing was written to
+rag/chroma_data. The Learner was told on 2026-11-14.
+
+A. LIBRARIES AND SETUP
+A1  PASS     google-auth was vetted and reported to the Learner before use: upstream googleapis/google-cloud-python
+             packages/google-auth documents "pip install google-auth"; 2.62.2 is the latest stable; the wheel has a PEP 740
+             attestation from Google's publisher account.
+A2  PASS     rag/requirements.in pins google-auth[requests]==2.62.2; no other direct library was added.
+A3  PASS     rag/requirements.txt already locks google-auth 2.62.2, cryptography, pyasn1, pyasn1-modules and requests; the
+             5a markers are unchanged.
+A4  PASS     "pip install --dry-run -r requirements.in" has nothing to install; "pip check" reports no broken requirement.
+A5  PARTIAL  pip-audit is not installed in rag/.venv. OSV reports no vulnerability for google-auth 2.62.2, cryptography 50.0.2,
+             requests 2.34.2, pyasn1 0.6.5 and pyasn1-modules 0.4.2. No new package was installed.
+A6  PASS     .gitignore ignores rag/secrets/ (git check-ignore confirmed).
+A7  PASS     .env.example and .env.test.example hold RAG_GOOGLE_SERVICE_ACCOUNT_FILE without a value.
+A8  PASS     The setup script adds RAG_GOOGLE_SERVICE_ACCOUNT_FILE empty and creates rag/secrets/ with mode 700 (function run in
+             a scratch folder). The first version missed two constants and the call; found by review round 1 and fixed.
+
+B. SETTINGS                 B1-B4 PASS   rag/tests/test_settings.py, test_engine.py (B3).
+C. GOOGLE DRIVE RESOURCE    C1-C20, C22-C28 PASS   rag/tests/test_google_drive_resource.py, test_http_retry.py.
+                            C20: Notion's tests differ from main only by one moved import; its retry code is shared in
+                            rag/resources/http_retry.py.   C21 NOT RUN (LIVE).
+D. EMBEDDERS                D1, D2 PASS   test_embedders.py, test_embedding_pipeline.py.   D3, D4 NOT RUN (LIVE).
+E. EMBEDDING PIPELINE       E1-E5 PASS   test_embedding_pipeline.py, test_engine.py (E1).
+F. RAG CLIENT               F1 PASS   test_rag_client.py.
+G. LLM CLIENT               G1-G7 PASS   test_llm_client.py (images sent as {"image_url": "drive:<n>", "name", "path"}).
+                            G8 NOT RUN (LIVE).
+H. ENGINE API               H1, H2 PASS   test_engine.py.
+I. FRONTEND                 I1-I5 PASS   word_content.test.ts, word_content.test.tsx, rag_service.test.ts.
+                            I6 PASS   built dist/index.html: img-src 'self' data: https:, nothing else loosened.
+J. STRUCTURE AND QUALITY
+J1  PASS     248 passed, 8 LIVE skipped with RAG_LIVE_TESTS=false.
+J2  PASS     npm run build and npm test as above. The bundler prints one [PLUGIN_TIMINGS] notice about vite:css time.
+J3  PASS     381 passed; a Content of 120 KB is stored unchanged.
+J4  PASS     Names follow the coding standards; values are named constants; no secret is hardcoded.
+J5  PASS     project.md holds the Google Drive decisions, RAG_GOOGLE_SERVICE_ACCOUNT_FILE and the drive:<n> flow.
+J6  NOT RUN  LIVE end-to-end run; needs the service account and the Learner's go-ahead.
+J7  PASS     No key file or secret value is tracked; rag/secrets/ is ignored.
+J8  PASS     Retry loop, Retry-After parser, read summary and Clock type are shared in rag/resources/http_retry.py.
+K. OUT OF SCOPE CHECKS      K1-K4 PASS   no Letterboxd, TMDB or Spotify resource; no evaluation file; no migration;
+                            prompts/ unchanged.
+
+Code review
+- Round 1 (10 findings): fixed setup script (R1), Drive rate-limit 403 retried (R2), image_url field for Gemini (R4), one
+  picture error list (R5), shared retry helper (DRY), parallel downloads. Rejected by the Learner: full-file fallback after a
+  failed thumbnail (R3). Added then dropped: keeping the prepared picture in memory.
+- Round 2 (10 findings): rate-limit 403 after the retries fails the source (R6), skip only picture errors (R7), bounded memory
+  for big originals (R8), cleanup and shared Clock (R9). The other findings repeated decisions already taken.

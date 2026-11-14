@@ -24,6 +24,9 @@ const FIELDS = {
   lyricsExcerpt: 'lyrics_excerpt',
 } as const;
 const SECURE_PROTOCOL = 'https:';
+// A Learner's own Drive image is stored by the engine as a JPEG data: URL; no other data: type is shown.
+const DRIVE_IMAGE_PREFIX = 'data:image/jpeg;base64,';
+const BASE64_PAYLOAD = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const UNAVAILABLE: ParsedWordContent = { kind: 'unavailable' };
 
 /** The JSON object with a method, or null when the Content is an older plain text. */
@@ -66,6 +69,24 @@ const readSecureUrl = (fields: ContentFields, name: string): string | null => {
   }
 };
 
+/** A JPEG data: URL with non-empty, valid standard Base64. O(n). */
+const isDriveImageUrl = (value: string): boolean => {
+  if (!value.startsWith(DRIVE_IMAGE_PREFIX)) {
+    return false;
+  }
+
+  const payload = value.slice(DRIVE_IMAGE_PREFIX.length);
+
+  return payload !== '' && BASE64_PAYLOAD.test(payload);
+};
+
+/** An image may also be a Drive JPEG; a song stays https only. */
+const readImageUrl = (fields: ContentFields): string | null => {
+  const value = readText(fields, FIELDS.imageUrl);
+
+  return value !== null && isDriveImageUrl(value) ? value : readSecureUrl(fields, FIELDS.imageUrl);
+};
+
 const toText = (fields: ContentFields): ParsedWordContent => {
   const title = readText(fields, FIELDS.title);
   const content = readText(fields, FIELDS.content);
@@ -76,7 +97,7 @@ const toText = (fields: ContentFields): ParsedWordContent => {
 };
 
 const toPhoto = (fields: ContentFields): ParsedWordContent => {
-  const imageUrl = readSecureUrl(fields, FIELDS.imageUrl);
+  const imageUrl = readImageUrl(fields);
 
   return imageUrl === null ? UNAVAILABLE : { kind: 'photo', imageUrl };
 };

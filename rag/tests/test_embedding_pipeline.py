@@ -1,7 +1,9 @@
+import base64
 import uuid
 from datetime import datetime
 from pathlib import Path
 
+import httpx
 import pytest
 
 import chroma_store
@@ -15,7 +17,18 @@ from chroma_store import (
     open_collection,
 )
 from embedding_pipeline import Embedders, Mode, run
-from fakes import FakeEmbedder, RenameFailingClient
+from fakes import (
+    TEST_PICTURE_SIZE,
+    FakeDriveApi,
+    FakeEmbedder,
+    FakeNotionClient,
+    FakeTokens,
+    RenameFailingClient,
+    load_fixture,
+    picture_text,
+)
+from resources.google_drive_resource import GoogleDriveResource
+from resources.notion_resource import NotionResource
 
 FIXED_TIME = datetime(2026, 11, 13, 9, 5, 42)
 LOG_FILE_NAME = "2026_11_13_09_05.txt"
@@ -34,6 +47,23 @@ class ListResource(Resource):
             Document(f"{self.name} note {index}", {"name": f"{self.name}-{index}", "type": "text"})
             for index in range(self.count)
         ]
+
+
+class PictureResource(Resource):
+    name = "google_drive"
+    kind = ResourceKind.IMAGE
+
+    def __init__(self, count: int, broken_name: str | None = None):
+        self.count = count
+        self.broken_name = broken_name
+
+    def read_documents(self) -> list[Document]:
+        documents = [
+            Document(picture_text(), {"name": f"photo-{index}.jpg", "type": "picture"}) for index in range(self.count)
+        ]
+        if self.broken_name:
+            documents.append(Document("not a picture", {"name": self.broken_name, "type": "picture"}))
+        return documents
 
 
 class FailingResource(Resource):
@@ -104,7 +134,7 @@ def test_text_document_goes_to_the_text_collection_together(chroma_client, embed
 
 def test_image_documents_go_to_the_image_collection(chroma_client, embedders, tmp_path):
     # E3
-    resource = ListResource("drive", 3, kind=ResourceKind.IMAGE)
+    resource = PictureResource(3)
 
     run_pipeline(Mode.CREATE, [resource], chroma_client, embedders, tmp_path)
 
@@ -365,3 +395,110 @@ def test_read_summary_is_logged_after_a_read_and_after_a_failed_read(chroma_clie
     assert "resource notion: read summary: 3 pages, 9 calls" in log
     assert "resource broken: read summary: 1 pages, 5 calls" in log
     assert "resource plain: read summary" not in log
+
+
+def test_image_documents_are_decoded_into_pictures_before_clip(chroma_client, embedders, tmp_path):
+    # Phase 5b D1
+    run_pipeline(Mode.CREATE, [PictureResource(2)], chroma_client, embedders, tmp_path)
+
+    pictures = embedders.image.document_batches[0]
+    assert [(picture.mode, picture.size) for picture in pictures] == [("RGB", TEST_PICTURE_SIZE)] * 2
+
+
+def test_invalid_picture_data_fails_the_batch_and_names_the_document(chroma_client, embedders, tmp_path):
+    # Phase 5b D2
+    result = run_pipeline(
+        Mode.CREATE, [PictureResource(2, broken_name="broken.png")], chroma_client, embedders, tmp_path
+    )
+
+    assert result.failed_resources == ["google_drive"]
+    assert embedders.image.document_batches == []
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert "resource google_drive failed: PictureDataError" in log
+    assert "broken.png" in log
+
+
+DRIVE_PICTURE_IDS = [
+    "1dRvImgParisRain0000000000000001",
+    "1dRvImgUmbrella00000000000000002",
+    "1dRvImgCafe000000000000000000003",
+    "1dRvImgSketch00000000000000000004",
+]
+
+
+def drive_resource(failures=None) -> GoogleDriveResource:
+    api = FakeDriveApi(
+        load_fixture("drive_recorded.json"),
+        {file_id: base64.b64decode(picture_text()) for file_id in DRIVE_PICTURE_IDS},
+        failures,
+    )
+    return GoogleDriveResource(token_source_factory=FakeTokens, http_client_factory=api.client, sleep=lambda _: None)
+
+
+def notion_resource() -> NotionResource:
+    client = FakeNotionClient(load_fixture("notion_recorded.json"))
+    return NotionResource(client_factory=lambda: client, sleep=lambda _: None)
+
+
+def test_notion_and_drive_are_both_read_and_drive_documents_go_to_fuxi_image(chroma_client, embedders, tmp_path):
+    # Phase 5b E1
+    result = run_pipeline(Mode.CREATE, [notion_resource(), drive_resource()], chroma_client, embedders, tmp_path)
+
+    assert result.complete is True
+    images = open_collection(chroma_client, IMAGE_COLLECTION_NAME).get()
+    texts = open_collection(chroma_client, TEXT_COLLECTION_NAME).get()
+    assert sorted(metadata["name"] for metadata in images["metadatas"]) == [
+        "cafe.heic", "paris_rain.jpg", "sketch.gif", "umbrella.png"
+    ]
+    assert {metadata["type"] for metadata in texts["metadatas"]} == {"text"}
+
+
+def test_image_document_is_stored_with_id_base64_text_embedding_and_metadata_together(
+    chroma_client, embedders, tmp_path
+):
+    # Phase 5b E2
+    run_pipeline(Mode.CREATE, [drive_resource()], chroma_client, embedders, tmp_path)
+
+    stored = open_collection(chroma_client, IMAGE_COLLECTION_NAME).get(
+        include=["documents", "metadatas", "embeddings"]
+    )
+    by_name = {metadata["name"]: (text, metadata) for text, metadata in zip(stored["documents"], stored["metadatas"])}
+    text, metadata = by_name["umbrella.png"]
+    assert base64.b64decode(text, validate=True)[:2] == b"\xff\xd8"  # a JPEG
+    assert metadata == {
+        "name": "umbrella.png", "path": "Photos / Paris", "type": "picture", "timestamp": "2026-09-21T10:05:00.000Z"
+    }
+    assert len(stored["ids"]) == len(stored["embeddings"]) == 4
+    assert [list(vector) for vector in stored["embeddings"]] == [pytest.approx([0.5] * 8)] * 4
+
+
+def test_twenty_images_are_embedded_with_clip_in_batches_of_16_and_4(chroma_client, embedders, tmp_path):
+    # Phase 5b E3
+    run_pipeline(Mode.CREATE, [PictureResource(20)], chroma_client, embedders, tmp_path, batch_size=16)
+
+    assert [len(batch) for batch in embedders.image.document_batches] == [16, 4]
+    assert open_collection(chroma_client, IMAGE_COLLECTION_NAME).count() == 20
+
+
+def test_failing_drive_keeps_notion_embedding_but_the_build_is_incomplete_and_old_collections_stay(
+    chroma_client, embedders, tmp_path
+):
+    # Phase 5b E4
+    run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
+    failing_drive = drive_resource(failures={"files.list": [httpx.Response(401)]})
+
+    result = run_pipeline(Mode.UPDATE, [notion_resource(), failing_drive], chroma_client, embedders, tmp_path)
+
+    assert result.failed_resources == ["google_drive"]
+    assert result.added_documents > 0  # Notion was still embedded
+    assert result.complete is False
+    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert is_build_complete(chroma_client)
+
+
+def test_drive_read_summary_is_written_to_the_embedding_log(chroma_client, embedders, tmp_path):
+    # Phase 5b E5
+    run_pipeline(Mode.CREATE, [drive_resource()], chroma_client, embedders, tmp_path)
+
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert "resource google_drive: read summary: 4 images, 0 skipped files," in log
