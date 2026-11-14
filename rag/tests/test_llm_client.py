@@ -1,13 +1,17 @@
+import base64
+import io
 import json
 import random
 from pathlib import Path
 
 import pytest
 from google.genai import errors
+from PIL import Image
 
 from base import RetrievedItem
-from fakes import FakeGeminiClient, ScriptedRandom, load_fixture
+from fakes import FakeDriveApi, FakeGeminiClient, FakeTokens, ScriptedRandom, load_fixture, picture_text
 from llm_client import METHODS, PROMPTS_DIR, LlmClient
+from resources.google_drive_resource import MAX_PICTURE_SIDE, GoogleDriveResource
 from settings import MissingSettingError, Settings
 
 RECORDED = load_fixture("gemini_recorded.json")
@@ -21,6 +25,16 @@ TEXT_RESULTS = [
     )
 ]
 SETTINGS = Settings(gemini_model="gemini-test-model", gemini_api_key="test-key")
+DRIVE_IMAGES = [
+    RetrievedItem(
+        document=picture_text(color=(10 * index, 20, 30)),
+        metadata={"name": name, "path": path, "type": "picture", "timestamp": "2026-09-14T18:42:10"},
+        similarity=0.3,
+    )
+    for index, (name, path) in enumerate(
+        [("paris_rain.jpg", "Photos"), ("umbrella.png", "Photos / Paris"), ("cafe.heic", "Photos / Paris")]
+    )
+]
 
 
 def prompt(name: str) -> str:
@@ -293,3 +307,95 @@ def test_missing_web_prompt_does_not_break_text_methods_or_the_search_query(tmp_
     assert query.startswith("unexpected discoveries")
     assert json.loads(content)["method"] == "story"
     assert [call["config"].system_instruction for call in gemini.calls] == ["prompt retrieval.txt", "prompt llm.txt"]
+
+
+def generate_with_images(client, images=DRIVE_IMAGES):
+    return client.generate(WORD, MEANING, TEXT_RESULTS, images)
+
+
+def test_images_are_sent_by_reference_name_and_path_without_base64():
+    # Phase 5b G1 R4
+    client, gemini, _ = make_client([RECORDED["photo_success"]], ["photo"])
+
+    generate_with_images(client)
+
+    sent = gemini.calls[0]["contents"]
+    assert json.loads(sent)["retrieved_context"]["images"] == [
+        {"image_url": "drive:1", "name": "paris_rain.jpg", "path": "Photos"},
+        {"image_url": "drive:2", "name": "umbrella.png", "path": "Photos / Paris"},
+        {"image_url": "drive:3", "name": "cafe.heic", "path": "Photos / Paris"},
+    ]
+    assert all(image.document not in sent for image in DRIVE_IMAGES)
+
+
+def test_drive_reference_gives_the_chosen_images_data_url():
+    # Phase 5b G2
+    client, _, _ = make_client([RECORDED["photo_drive_success"]], ["photo"])
+
+    content = json.loads(generate_with_images(client))
+
+    assert content == {"method": "photo", "image_url": f"data:image/jpeg;base64,{DRIVE_IMAGES[1].document}"}
+
+
+def test_https_image_url_is_kept_with_drive_images_present():
+    # Phase 5b G3
+    client, _, _ = make_client([RECORDED["photo_success"]], ["photo"])
+
+    content = json.loads(generate_with_images(client))
+
+    assert content["image_url"] == "https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg"
+
+
+def test_unknown_drive_reference_counts_as_insufficient_context():
+    # Phase 5b G4
+    client, gemini, _ = make_client([RECORDED["photo_drive_unknown"], RECORDED["story_success"]], ["photo", "story"])
+
+    assert json.loads(generate_with_images(client))["method"] == "story"
+    assert len(gemini.calls) == 2
+
+
+@pytest.mark.parametrize("answer", ["photo_data_url", "photo_javascript_url", "photo_http_url"])
+def test_data_or_other_non_https_url_written_by_gemini_counts_as_insufficient_context(answer):
+    # Phase 5b G5
+    client, gemini, _ = make_client([RECORDED[answer], RECORDED["story_success"]], ["photo", "story"])
+
+    assert json.loads(generate_with_images(client))["method"] == "story"
+    assert len(gemini.calls) == 2
+
+
+def test_drive_reference_without_image_results_counts_as_insufficient_context():
+    # Phase 5b G4 G6
+    client, gemini, _ = make_client([RECORDED["photo_drive_success"], RECORDED["story_success"]], ["photo", "story"])
+
+    assert json.loads(generate_with_images(client, images=[]))["method"] == "story"
+    assert json.loads(gemini.calls[0]["contents"])["retrieved_context"]["images"] == []
+
+
+def test_photo_without_image_results_works_as_before():
+    # Phase 5b G6
+    client, gemini, _ = make_client([RECORDED["photo_success"]], ["photo"])
+
+    content = json.loads(generate_with_images(client, images=[]))
+
+    assert content == {"method": "photo", "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg"}
+    assert json.loads(gemini.calls[0]["contents"])["retrieved_context"]["images"] == []
+
+
+def test_stored_drive_photo_holds_a_jpeg_of_at_most_512_px():
+    # Phase 5b G7
+    large = io.BytesIO()
+    Image.new("RGB", (1600, 900), (90, 140, 200)).save(large, format="PNG")
+    data = load_fixture("drive_recorded.json")
+    data["files_list"] = {"start": {"files": [data["files_list"]["start"]["files"][1]]}}
+    api = FakeDriveApi(data, {"1dRvImgUmbrella00000000000000002": large.getvalue()})
+    document = GoogleDriveResource(token_source_factory=FakeTokens, http_client_factory=api.client).read_documents()[0]
+    images = [DRIVE_IMAGES[0], RetrievedItem(document.text, document.metadata, 0.4)]
+    client, _, _ = make_client([RECORDED["photo_drive_success"]], ["photo"])
+
+    stored = json.loads(generate_with_images(client, images))
+
+    prefix = "data:image/jpeg;base64,"
+    assert stored["image_url"].startswith(prefix)
+    picture = Image.open(io.BytesIO(base64.b64decode(stored["image_url"][len(prefix):], validate=True)))
+    assert picture.format == "JPEG"
+    assert max(picture.size) == MAX_PICTURE_SIDE == 512

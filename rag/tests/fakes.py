@@ -1,12 +1,31 @@
 """Test doubles shared by the test modules: no network, no real models."""
 
+import base64
+import io
 import json
+import threading
 from pathlib import Path
 from typing import Any
+
+import httpx
+from PIL import Image
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 START_CURSOR = "start"
 FAKE_VECTOR_SIZE = 8
+DRIVE_FILES_PATH = "/drive/v3/files"
+DRIVE_THUMBNAIL_HOST = "lh3.googleusercontent.com"
+THUMBNAIL_SIZE_MARK = "=s"
+FAKE_ACCESS_TOKEN = "test-access-token"
+TEST_PICTURE_SIZE = (32, 24)
+TEST_PICTURE_COLOR = (40, 120, 200)
+
+
+def picture_text(size: tuple[int, int] = TEST_PICTURE_SIZE, color: tuple[int, int, int] = TEST_PICTURE_COLOR) -> str:
+    """A picture document's text: the Base64 of a small JPEG."""
+    output = io.BytesIO()
+    Image.new("RGB", size, color).save(output, format="JPEG")
+    return base64.b64encode(output.getvalue()).decode("ascii")
 
 
 def load_fixture(name: str) -> Any:
@@ -65,6 +84,76 @@ class _FakePages:
         if error is not None:
             raise error
         return self.owner.recorded["pages"][page_id]
+
+
+class FakeDriveApi:
+    """Answers Drive REST calls from recorded JSON through httpx.MockTransport; pictures are bytes by file id.
+
+    Routes: "files.list", "files.get:<id>" (folders), "media:<id>" (alt=media) and "thumbnail:<id>".
+    failures[route] answers (responses or errors) are used one per call before the recorded answer.
+    """
+
+    def __init__(
+        self,
+        recorded: dict[str, Any],
+        pictures: dict[str, bytes],
+        failures: dict[str, list[httpx.Response | Exception]] | None = None,
+    ):
+        self.recorded = recorded
+        self.pictures = pictures
+        self.failures = {route: list(answers) for route, answers in (failures or {}).items()}
+        self.requests: list[httpx.Request] = []
+        self.routes: list[str] = []
+        # The resource downloads in parallel threads.
+        self._lock = threading.Lock()
+        self._thumbnail_ids = {
+            file["thumbnailLink"].rsplit(THUMBNAIL_SIZE_MARK, 1)[0]: file["id"]
+            for page in recorded["files_list"].values()
+            for file in page["files"]
+            if file.get("thumbnailLink")
+        }
+
+    def client(self) -> httpx.Client:
+        return httpx.Client(transport=httpx.MockTransport(self))
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        route = self._route(request)
+        with self._lock:
+            self.requests.append(request)
+            self.routes.append(route)
+            answer = self.failures[route].pop(0) if self.failures.get(route) else None
+        if isinstance(answer, Exception):
+            raise answer
+        return answer if answer is not None else self._answer(request, route)
+
+    def _route(self, request: httpx.Request) -> str:
+        if request.url.host == DRIVE_THUMBNAIL_HOST:
+            return f"thumbnail:{self._thumbnail_ids[str(request.url).rsplit(THUMBNAIL_SIZE_MARK, 1)[0]]}"
+        if request.url.path == DRIVE_FILES_PATH:
+            return "files.list"
+        file_id = request.url.path.rsplit("/", 1)[-1]
+        return f"media:{file_id}" if request.url.params.get("alt") == "media" else f"files.get:{file_id}"
+
+    def _answer(self, request: httpx.Request, route: str) -> httpx.Response:
+        kind, _, file_id = route.partition(":")
+        if kind == "files.list":
+            return httpx.Response(200, json=self.recorded["files_list"][request.url.params.get("pageToken", START_CURSOR)])
+        if kind == "files.get":
+            folder = self.recorded["folders"].get(file_id)
+            return httpx.Response(200, json=folder) if folder else httpx.Response(404, json=self.recorded["not_found"])
+        return httpx.Response(200, content=self.pictures[file_id], headers={"Content-Type": "image/jpeg"})
+
+
+class FakeTokens:
+    """An access token source that counts its uses."""
+
+    def __init__(self, token: str = FAKE_ACCESS_TOKEN):
+        self.token = token
+        self.uses = 0
+
+    def access_token(self) -> str:
+        self.uses += 1
+        return self.token
 
 
 class FakeEmbedder:

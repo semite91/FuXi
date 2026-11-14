@@ -36,6 +36,11 @@ JSON_MIME_TYPE = "application/json"
 COMPACT_JSON_SEPARATORS = (",", ":")
 SUCCESS_STATUS = "success"
 HTTPS_SCHEME = "https"
+# Drive images are sent to Gemini with the image_url "drive:<n>", n being the image's 1-based place in the results.
+DRIVE_IMAGE_URL_FORMAT = "drive:{position}"
+DRIVE_IMAGE_URL_PATTERN = re.compile(r"drive:(\d+)")
+FIRST_IMAGE_POSITION = 1
+JPEG_DATA_URL_FORMAT = "data:image/jpeg;base64,{data}"
 QUERY_FALLBACK_FORMAT = "{word}: {meaning}"
 CODE_FENCE_PATTERN = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 METHOD_SEPARATOR_PATTERN = re.compile(r"[\s_\-]+")
@@ -110,19 +115,24 @@ class LlmClient:
             method = self._random.choice(remaining)
             remaining.remove(method)
             try:
-                content = self._generate_with_method(word, meaning, method, context)
+                content = self._generate_with_method(word, meaning, method, context, image_results)
                 return json.dumps(content, ensure_ascii=False, separators=COMPACT_JSON_SEPARATORS)
             except Exception as error:
                 logger.warning("Method %s for %s failed: %s", method, word, _describe(error))
         return None
 
     def _generate_with_method(
-        self, word: str, meaning: str, method: str, context: dict[str, Any]
+        self,
+        word: str,
+        meaning: str,
+        method: str,
+        context: dict[str, Any],
+        image_results: Sequence[RetrievedItem],
     ) -> dict[str, Any]:
         is_web = method in WEB_METHODS
         payload = {"word": word, "meaning": meaning, "available_methods": [method], "retrieved_context": context}
         answer = self._ask(WEB_PROMPT_FILE if is_web else TEXT_PROMPT_FILE, payload, use_search=is_web)
-        return _build_content(method, answer)
+        return _build_content(method, answer, image_results)
 
     def _ask(self, prompt_file: str, payload: dict[str, Any], use_search: bool) -> dict[str, Any]:
         response = self.gemini_client().models.generate_content(
@@ -153,10 +163,14 @@ def _build_context(
             {"document": item.document, "name": item.metadata.get(METADATA_NAME), "path": item.metadata.get(METADATA_PATH)}
             for item in text_results
         ],
-        # Image documents are Base64 data, so only their names are sent.
+        # Image documents are Base64 data, so only a drive: URL, the name and the path are sent.
         "images": [
-            {"name": item.metadata.get(METADATA_NAME), "path": item.metadata.get(METADATA_PATH)}
-            for item in image_results
+            {
+                IMAGE_URL_FIELD: DRIVE_IMAGE_URL_FORMAT.format(position=position),
+                "name": item.metadata.get(METADATA_NAME),
+                "path": item.metadata.get(METADATA_PATH),
+            }
+            for position, item in enumerate(image_results, start=FIRST_IMAGE_POSITION)
         ],
     }
 
@@ -174,7 +188,7 @@ def _parse_json_object(text: str | None) -> dict[str, Any]:
     return answer
 
 
-def _build_content(method: str, answer: dict[str, Any]) -> dict[str, Any]:
+def _build_content(method: str, answer: dict[str, Any], image_results: Sequence[RetrievedItem]) -> dict[str, Any]:
     if answer.get("status") != SUCCESS_STATUS:
         raise MethodFailedError(f"status {answer.get('status')}")
     if _normalize_method(answer.get("method")) != _normalize_method(method):
@@ -183,7 +197,7 @@ def _build_content(method: str, answer: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(memory_aid, dict):
         raise MethodFailedError("memory_aid is missing")
     if method == PHOTO:
-        return {"method": method, IMAGE_URL_FIELD: _https_url(memory_aid, IMAGE_URL_FIELD)}
+        return {"method": method, IMAGE_URL_FIELD: _photo_url(memory_aid, image_results)}
     if method == MUSIC:
         fields = {name: _text(memory_aid, name) for name in MUSIC_TEXT_FIELDS}
         return {
@@ -213,6 +227,17 @@ def _text(memory_aid: dict[str, Any], name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise MethodFailedError(f"{name} is missing")
     return value.strip()
+
+
+def _photo_url(memory_aid: dict[str, Any], image_results: Sequence[RetrievedItem]) -> str:
+    """A "drive:<n>" reference becomes that sent image's JPEG data URL; anything else must be an https URL."""
+    reference = DRIVE_IMAGE_URL_PATTERN.fullmatch(_text(memory_aid, IMAGE_URL_FIELD))
+    if reference is None:
+        return _https_url(memory_aid, IMAGE_URL_FIELD)
+    position = int(reference.group(1))
+    if not FIRST_IMAGE_POSITION <= position <= len(image_results):
+        raise MethodFailedError(f"{IMAGE_URL_FIELD} refers to an image that was not sent")
+    return JPEG_DATA_URL_FORMAT.format(data=image_results[position - FIRST_IMAGE_POSITION].document)
 
 
 def _https_url(memory_aid: dict[str, Any], name: str) -> str:

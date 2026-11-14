@@ -11,5 +11,9 @@
   "music_bad_url": "{\n  \"method\": \"music\",\n  \"reason\": \"x\",\n  \"fallback_method\": null,\n  \"memory_aid\": {\n    \"song_title\": \"Serendipity\",\n    \"artist\": \"BTS\",\n    \"song_url\": \"javascript:alert(1)\",\n    \"lyrics_excerpt\": \"All of this\"\n  },\n  \"status\": \"success\"\n}",
   "insufficient_context": "{\n  \"method\": \"story\",\n  \"reason\": \"Nothing relevant was retrieved.\",\n  \"fallback_method\": null,\n  \"memory_aid\": null,\n  \"status\": \"insufficient_context\"\n}",
   "wrong_method": "{\n  \"method\": \"quote\",\n  \"reason\": \"x\",\n  \"fallback_method\": null,\n  \"memory_aid\": {\n    \"title\": \"t\",\n    \"content\": \"c\",\n    \"source_reference\": null\n  },\n  \"status\": \"success\"\n}",
+  "photo_drive_success": "{\n  \"method\": \"photo\",\n  \"reason\": \"The Learner's umbrella photo fits the word.\",\n  \"fallback_method\": \"music\",\n  \"memory_aid\": {\n    \"image_url\": \"drive:2\"\n  },\n  \"status\": \"success\"\n}",
+  "photo_drive_unknown": "{\n  \"method\": \"photo\",\n  \"reason\": \"x\",\n  \"fallback_method\": \"music\",\n  \"memory_aid\": {\n    \"image_url\": \"drive:9\"\n  },\n  \"status\": \"success\"\n}",
+  "photo_data_url": "{\n  \"method\": \"photo\",\n  \"reason\": \"x\",\n  \"fallback_method\": \"music\",\n  \"memory_aid\": {\n    \"image_url\": \"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==\"\n  },\n  \"status\": \"success\"\n}",
+  "photo_javascript_url": "{\n  \"method\": \"photo\",\n  \"reason\": \"x\",\n  \"fallback_method\": \"music\",\n  \"memory_aid\": {\n    \"image_url\": \"javascript:alert(1)\"\n  },\n  \"status\": \"success\"\n}",
   "empty": ""
 }

@@ -12,6 +12,7 @@ METADATA_PATH = "path"
 METADATA_TYPE = "type"
 METADATA_TIMESTAMP = "timestamp"
 TEXT_DOCUMENT_TYPE = "text"
+PICTURE_DOCUMENT_TYPE = "picture"
 
 
 class ResourceKind(StrEnum):

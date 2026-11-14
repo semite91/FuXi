@@ -2,7 +2,6 @@
 
 import time
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -20,25 +19,28 @@ from base import (
     Resource,
     ResourceKind,
 )
+from resources.http_retry import (
+    RATE_LIMITED_STATUS,
+    Clock,
+    RETRY_AFTER_HEADER,
+    ReadStats,
+    Wait,
+    backoff_seconds,
+    call_with_retry,
+    retry_after_seconds,
+)
 from settings import Settings
 
 RESOURCE_NAME = "notion"
 CHUNK_SIZE = 2000
 CHUNK_OVERLAP = 200
 PAGE_SIZE = 100
-MAX_ATTEMPTS = 5
+# A 429 without Retry-After waits this long; a dropped connection or a timeout backs off (http_retry).
 DEFAULT_RETRY_AFTER_SECONDS = 1.0
-MIN_RETRY_AFTER_SECONDS = 0.0
-MAX_RETRY_AFTER_SECONDS = 60.0
-RATE_LIMITED_STATUS = 429
-# A dropped connection or a timeout is tried again after 1, 2, 4 and 8 seconds.
-NETWORK_RETRY_SECONDS = 1.0
-NETWORK_RETRY_GROWTH = 2
 NETWORK_ERRORS = (httpx.TransportError, RequestTimeoutError)
 # A parent page answering with one of these is not shared with the integration; other errors fail the resource.
 UNREADABLE_PAGE_STATUSES = frozenset({403, 404})
 UNREADABLE_PAGE_CODES = frozenset({"object_not_found", "restricted_resource"})
-RETRY_AFTER_HEADER = "retry-after"
 
 PAGE_FILTER = {"property": "object", "value": "page"}
 TITLE_PROPERTY_TYPE = "title"
@@ -53,27 +55,6 @@ PATH_SEPARATOR = " / "
 NotionClientFactory = Callable[[], Any]
 # None marks a parent page the integration cannot read.
 PageCache = dict[str, dict[str, Any] | None]
-# Seconds that only move forward; differences between two readings are measured.
-Clock = Callable[[], float]
-
-
-@dataclass
-class ReadStats:
-    """What one read cost: Notion calls, waits and time."""
-
-    pages: int = 0
-    calls: int = 0
-    rate_limit_waits: int = 0
-    rate_limit_seconds: float = 0.0
-    network_retries: int = 0
-    seconds: float = 0.0
-
-    def summary(self) -> str:
-        return (
-            f"{self.pages} pages, {self.calls} calls, "
-            f"{self.rate_limit_waits} rate limit waits ({self.rate_limit_seconds:.1f} s), "
-            f"{self.network_retries} network retries, {self.seconds:.1f} s"
-        )
 
 
 class NotionResource(Resource):
@@ -90,12 +71,14 @@ class NotionResource(Resource):
         self._sleep = sleep
         self._clock = clock
         self._stats = ReadStats()
+        self._pages = 0
         self._splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
         )
 
     def read_documents(self) -> list[Document]:
         self._stats = ReadStats()
+        self._pages = 0
         started = self._clock()
         try:
             return self._read_documents()
@@ -103,12 +86,12 @@ class NotionResource(Resource):
             self._stats.seconds = self._clock() - started
 
     def read_summary(self) -> str:
-        return self._stats.summary()
+        return self._stats.summary(f"{self._pages} pages")
 
     def _read_documents(self) -> list[Document]:
         client = self._client_factory()
         pages = list(self._search_pages(client))
-        self._stats.pages = len(pages)
+        self._pages = len(pages)
         page_cache: PageCache = {page["id"]: page for page in pages}
         documents: list[Document] = []
         for page in pages:
@@ -146,23 +129,7 @@ class NotionResource(Resource):
             cursor = answer.get("next_cursor")
 
     def _call_with_retry(self, call: Callable[[], dict[str, Any]]) -> dict[str, Any]:
-        """On 429 waits Retry-After, on a network error waits longer each time; the last attempt's error is raised."""
-        for attempt in range(MAX_ATTEMPTS - 1):
-            self._stats.calls += 1
-            try:
-                return call()
-            except APIResponseError as error:
-                if error.status != RATE_LIMITED_STATUS:
-                    raise
-                seconds = _retry_after_seconds(error)
-                self._stats.rate_limit_waits += 1
-                self._stats.rate_limit_seconds += seconds
-            except NETWORK_ERRORS:
-                seconds = NETWORK_RETRY_SECONDS * NETWORK_RETRY_GROWTH**attempt
-                self._stats.network_retries += 1
-            self._sleep(seconds)
-        self._stats.calls += 1
-        return call()
+        return call_with_retry(call, _retry_wait, self._stats, self._sleep)
 
     def _build_metadata(
         self, client: Any, page: dict[str, Any], page_cache: PageCache
@@ -232,9 +199,11 @@ def _is_unreadable_page(error: APIResponseError) -> bool:
     return error.status in UNREADABLE_PAGE_STATUSES or error.code in UNREADABLE_PAGE_CODES
 
 
-def _retry_after_seconds(error: APIResponseError) -> float:
-    try:
-        seconds = float(error.headers.get(RETRY_AFTER_HEADER, DEFAULT_RETRY_AFTER_SECONDS))
-    except (TypeError, ValueError):
-        seconds = DEFAULT_RETRY_AFTER_SECONDS
-    return min(max(seconds, MIN_RETRY_AFTER_SECONDS), MAX_RETRY_AFTER_SECONDS)
+def _retry_wait(error: Exception, attempt: int) -> Wait | None:
+    """A 429 waits Retry-After; a dropped connection or a timeout waits longer each time; other errors raise."""
+    if isinstance(error, APIResponseError) and error.status == RATE_LIMITED_STATUS:
+        raw = error.headers.get(RETRY_AFTER_HEADER)
+        return Wait(retry_after_seconds(raw, DEFAULT_RETRY_AFTER_SECONDS), rate_limited=True)
+    if isinstance(error, NETWORK_ERRORS):
+        return Wait(backoff_seconds(attempt), rate_limited=False)
+    return None
