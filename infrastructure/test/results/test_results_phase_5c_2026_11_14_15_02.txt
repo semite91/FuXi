@@ -1,0 +1,82 @@
+FuXi - Phase 5c - Letterboxd watched movies and TMDB
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_14_09_07.txt (confirmed, amended four times for the reviews)
+Run: 2026-11-14 15:02 UTC, branch claude/phase-5c-letterboxd-tmdb, base commit ede55d4 (work not yet committed)
+
+Totals
+- RAG engine (rag/): "RAG_LIVE_TESTS=false python -m pytest -q": 444 passed, 9 skipped (the LIVE tests), 0 failed
+  (248 passed, 8 skipped before Phase 5c). RAG_LIVE_TESTS=false is set in the process, because .env.test has RAG_LIVE_TESTS=true.
+- Frontend: "npm run build": exit 0, no TypeScript error. "npm test": 16 files, 279 passed (277 before Phase 5c).
+- Backend: "dotnet test fuxi_api_tests": 381 passed, 0 failed, 0 skipped (no backend change).
+- Scenarios: 66. PASS 63. PARTIAL 1 (H3). NOT RUN 2 (D15, I7: LIVE, they need RAG_TMDB_TOKEN, the Learner's watched.csv and
+  the Learner's go-ahead).
+
+Status words: PASS, PARTIAL, NOT RUN. PY and FE scenarios are proven by tests that carry the scenario id
+(rag/tests/test_*.py with "# Phase 5c <id>", wwwroot tests named "5c <id>").
+
+Incident: while the scenario file was amended for review round 2, a script failed on the Turkish letters and emptied the
+file, which was not committed yet. It was rebuilt from the session record with every amendment and is now saved as UTF-8.
+The Learner was told on 2026-11-14.
+
+A. LIBRARIES AND SETUP
+A1  PASS     rag/requirements.in and rag/requirements.txt do not differ from main; the csv module and the installed httpx are used.
+A2  PASS     .gitignore ignores rag/data/ (git check-ignore confirmed for rag/data/letterboxd/watched.csv).
+A3  PASS     .env.example and .env.test.example hold RAG_TMDB_TOKEN and RAG_LETTERBOXD_WATCHED_FILE without a value.
+A4  PASS     The setup script adds both keys empty and creates rag/secrets, rag/data and rag/data/letterboxd with mode 700 in
+             one function (bash -n passes; the function was run in a scratch folder).
+
+B. SETTINGS                 B1-B4 PASS   rag/tests/test_settings.py, test_engine.py, test_letterboxd_tmdb_resource.py (B3).
+C. LETTERBOXD WATCHED LIST  C1-C9 PASS   rag/tests/test_letterboxd_tmdb_resource.py.
+D. TMDB LOOKUP              D1-D14, D16-D20 PASS   test_letterboxd_tmdb_resource.py, test_http_retry.py,
+                            test_google_drive_resource.py and test_notion_resource.py (D20).
+                            D13: the summary line is "N rows, N movies, N skipped rows (N bad rows, N no match, N not found,
+                            N refused), N repeated rows, N calls, N rate limit waits (S s), N network retries, S s".
+                            D14: Notion's and Drive's behavior and tests are unchanged; their code now uses the shared
+                            helpers (timed read, HTTP client, Bearer header, parallel helper, retry rule).
+                            D15 NOT RUN (LIVE).
+E. MOVIE DOCUMENT           E1-E6 PASS   test_letterboxd_tmdb_resource.py.
+F. PIPELINE AND ENGINE      F1-F4 PASS   test_embedding_pipeline.py, test_engine.py.
+G. RAG AND LLM CLIENT       G1, G2 PASS   test_rag_client.py, test_llm_client.py.   G3 PASS   prompts unchanged (git diff main).
+H. FRONTEND CREDITS
+H1  PASS     settings_page.test.tsx "5c H1": the Credits block shows the TMDB notice.
+H2  PASS     settings_page.test.tsx "5c H2": the TMDB logo has the alternative text "TMDB".
+H3  PARTIAL  The logo is bundled in the page's JavaScript as a data: image and the Content-Security-Policy is not changed.
+             Not checked: that TMDB's logos page lists this logo (the page blocked the automated fetch; the file came from
+             www.themoviedb.org and its hash equals the fingerprint in its name), and that the logo's gradient is drawn in a
+             real browser.
+H4  PASS     The 32 earlier Settings tests still pass (34 in the file).
+             Note: the block is the new component src/components/credits/, accepted by the Learner after it was made.
+
+I. STRUCTURE AND QUALITY
+I1  PASS     444 passed, 9 LIVE skipped with RAG_LIVE_TESTS=false.
+I2  PASS     npm run build and npm test as above.
+I3  PASS     381 passed in about 13 minutes.
+I4  PASS     Names follow the coding standards; statuses, workers, limits and texts are named constants; no secret is hardcoded.
+I5  PASS     project.md holds the Letterboxd, TMDB decisions and lists RAG_TMDB_TOKEN and RAG_LETTERBOXD_WATCHED_FILE.
+I6  PASS     No token, watched.csv or secret value is tracked; rag/data/ and rag/secrets/ are ignored. The test fixture
+             rag/tests/fixtures/watched.csv holds 4 invented movies.
+I7  NOT RUN  LIVE end-to-end run.
+I8  PASS     rag/resources/parallel.py (ordered workers) and rag/resources/http_retry.py (retry rule, Bearer header, HTTP
+             client, timeout, timed read) are used by the resources. Left apart on purpose: Notion's retry rule (other
+             error types and rules), the two worker-count constants, the two session classes.
+
+J. OUT OF SCOPE CHECKS      J1-J4 PASS   no Spotify resource; no evaluation file; no migration; no rating, review, diary
+                            data or TMDB cache.
+
+Code review
+- Round 1 (9 findings): fixed the match rule (R1: primary_release_year, exact title first), the file error without the path
+  (R2), the TMDB error without the movie's name (R3), the summary of a failed read (R4). Before it, on the Learner's
+  approval, the parallel helper, the Bearer header and the core retry rule were shared (DRY).
+- Round 2 (10 findings): an answer that is not a JSON object fails as a TMDB error (R5), a 400 or 422 skips the movie (R6),
+  titles are compared in lowercase with Turkish letters as Latin letters (the Learner's rule in place of R7), one text
+  helper (R8).
+- Round 3 (9 findings): every httpx error is wrapped (R9), the HTTP client, timeout and timed read are shared (R10), every
+  row refused fails the source (R11), only passing network errors are tried again, for Drive and TMDB (R12).
+- Dismissed in every round as already decided by the Learner: one movie that fails after its retries fails the source; a
+  missing token or watched.csv blocks the build; the first result of the year is the fallback and only the first result
+  page is read; duplicates are found by name and year; no cache; wwwroot/tsconfig.tsbuildinfo stays untracked (ToDo 14).
+  Left as is: the exact header names of watched.csv; the date-only timestamp.
+- Round 4 (10 findings, no crash-level bug): one document per TMDB movie (R13), an empty path for movies (R14), a refused
+  count and a clean refused error (R15), Notion follows the shared network rule (R16). The other findings repeated
+  decisions already taken. The review loop was stopped after this round.
+- Known limits, accepted: both rows of the same TMDB movie make their calls before one is dropped; a title that differs
+  by an accent other than the Turkish letters falls back to the first result of the year.
