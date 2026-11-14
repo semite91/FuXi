@@ -1,9 +1,12 @@
-"""Retry rules and read statistics shared by the resources that call a web API."""
+"""Retry rules, read statistics, the HTTP client and the Bearer header shared by the resources that call a web API."""
 
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TypeVar
+
+import httpx
 
 MAX_ATTEMPTS = 5
 # A retried call waits 1, 2, 4 and 8 seconds.
@@ -12,7 +15,14 @@ NETWORK_RETRY_GROWTH = 2
 MIN_RETRY_AFTER_SECONDS = 0.0
 MAX_RETRY_AFTER_SECONDS = 60.0
 RATE_LIMITED_STATUS = 429
+MIN_SERVER_ERROR_STATUS = 500
 RETRY_AFTER_HEADER = "retry-after"
+REQUEST_TIMEOUT_SECONDS = 60.0
+# Network errors that can pass by trying again: a timeout, a failed connection, a read, write or close error,
+# and a connection that the server dropped.
+TRANSIENT_NETWORK_ERRORS = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
+AUTHORIZATION_HEADER = "Authorization"
+BEARER_FORMAT = "Bearer {token}"
 
 T = TypeVar("T")
 # Seconds that only move forward; differences between two readings are measured.
@@ -65,6 +75,22 @@ class ReadStats:
         ])
 
 
+@contextmanager
+def timed_read(clock: Clock) -> Iterator[ReadStats]:
+    """New statistics for one read; its seconds are kept also when the read fails."""
+    stats = ReadStats()
+    started = clock()
+    try:
+        yield stats
+    finally:
+        stats.seconds = clock() - started
+
+
+def create_http_client() -> httpx.Client:
+    """The httpx client of one read, with the shared request timeout."""
+    return httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS)
+
+
 def call_with_retry(call: Callable[[], T], retry_rule: RetryRule, stats: ReadStats, sleep: Callable[[float], None]) -> T:
     """At most MAX_ATTEMPTS calls; the last attempt's error is raised."""
     for attempt in range(MAX_ATTEMPTS - 1):
@@ -81,8 +107,33 @@ def call_with_retry(call: Callable[[], T], retry_rule: RetryRule, stats: ReadSta
     return call()
 
 
+def bearer_header(token: str) -> dict[str, str]:
+    """The Authorization header of a call signed with a Bearer token."""
+    return {AUTHORIZATION_HEADER: BEARER_FORMAT.format(token=token)}
+
+
 def backoff_seconds(attempt: int) -> float:
     return NETWORK_RETRY_SECONDS * NETWORK_RETRY_GROWTH**attempt
+
+
+def http_retry_wait(error: Exception, attempt: int) -> Wait | None:
+    """The httpx rule: a 429 waits Retry-After (or backs off); a 5xx or a transient network error backs off."""
+    if isinstance(error, TRANSIENT_NETWORK_ERRORS):
+        return Wait(backoff_seconds(attempt), rate_limited=False)
+    if not isinstance(error, httpx.HTTPStatusError):
+        return None
+    response = error.response
+    if response.status_code == RATE_LIMITED_STATUS:
+        return rate_limit_wait(response, attempt)
+    if response.status_code >= MIN_SERVER_ERROR_STATUS:
+        return Wait(backoff_seconds(attempt), rate_limited=False)
+    return None
+
+
+def rate_limit_wait(response: httpx.Response, attempt: int) -> Wait:
+    """The wait a rate limited answer asks for: its Retry-After, or the backoff when it has none."""
+    raw = response.headers.get(RETRY_AFTER_HEADER)
+    return Wait(retry_after_seconds(raw, backoff_seconds(attempt)), rate_limited=True)
 
 
 def retry_after_seconds(raw: str | None, default: float) -> float:

@@ -17,6 +17,8 @@ DRIVE_FILES_PATH = "/drive/v3/files"
 DRIVE_THUMBNAIL_HOST = "lh3.googleusercontent.com"
 THUMBNAIL_SIZE_MARK = "=s"
 FAKE_ACCESS_TOKEN = "test-access-token"
+TMDB_SEARCH_PATH = "/3/search/movie"
+TMDB_NOT_FOUND_STATUS = 404
 TEST_PICTURE_SIZE = (32, 24)
 TEST_PICTURE_COLOR = (40, 120, 200)
 
@@ -142,6 +144,49 @@ class FakeDriveApi:
             folder = self.recorded["folders"].get(file_id)
             return httpx.Response(200, json=folder) if folder else httpx.Response(404, json=self.recorded["not_found"])
         return httpx.Response(200, content=self.pictures[file_id], headers={"Content-Type": "image/jpeg"})
+
+
+class FakeTmdbApi:
+    """Answers TMDB calls from recorded JSON through httpx.MockTransport.
+
+    Routes: "search:<query>" and "movie:<id>". A query or an id that is not recorded answers TMDB's empty
+    search page or its 404. failures[route] answers (responses or errors) are used one per call first.
+    """
+
+    def __init__(self, recorded: dict[str, Any], failures: dict[str, list[httpx.Response | Exception]] | None = None):
+        self.recorded = recorded
+        self.failures = {route: list(answers) for route, answers in (failures or {}).items()}
+        self.requests: list[httpx.Request] = []
+        self.routes: list[str] = []
+        # The resource looks movies up in parallel threads.
+        self._lock = threading.Lock()
+
+    def client(self) -> httpx.Client:
+        return httpx.Client(transport=httpx.MockTransport(self))
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        route = self._route(request)
+        with self._lock:
+            self.requests.append(request)
+            self.routes.append(route)
+            answer = self.failures[route].pop(0) if self.failures.get(route) else None
+        if isinstance(answer, Exception):
+            raise answer
+        return answer if answer is not None else self._answer(route)
+
+    def _route(self, request: httpx.Request) -> str:
+        if request.url.path == TMDB_SEARCH_PATH:
+            return f"search:{request.url.params.get('query')}"
+        return f"movie:{request.url.path.rsplit('/', 1)[-1]}"
+
+    def _answer(self, route: str) -> httpx.Response:
+        kind, _, key = route.partition(":")
+        if kind == "search":
+            return httpx.Response(200, json=self.recorded["search"].get(key, self.recorded["empty_search"]))
+        movie = self.recorded["movies"].get(key)
+        if movie is None:
+            return httpx.Response(TMDB_NOT_FOUND_STATUS, json=self.recorded["not_found"])
+        return httpx.Response(200, json=movie)
 
 
 class FakeTokens:

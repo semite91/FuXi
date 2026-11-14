@@ -1,4 +1,4 @@
-"""LIVE tests: real models, real Notion, Google Drive and Gemini. They run only when RAG_LIVE_TESTS=true."""
+"""LIVE tests: real models, real Notion, Google Drive, TMDB and Gemini. They run only when RAG_LIVE_TESTS=true."""
 
 import base64
 import json
@@ -12,6 +12,7 @@ from embedders import ImageEmbedder, TextEmbedder, decode_picture
 from fakes import ScriptedRandom, picture_text
 from llm_client import METHODS, LlmClient
 from resources.google_drive_resource import create_google_drive_resource, prepare_picture
+from resources.letterboxd_tmdb_resource import LetterboxdTmdbResource
 from resources.notion_resource import create_notion_resource
 from settings import TEST_ENV_PATH, load_settings
 
@@ -105,3 +106,27 @@ def test_real_gemini_photo_with_a_drive_image_gives_valid_content_or_none():
         assert answer["method"] in METHODS
         if answer["method"] == "photo":
             assert answer["image_url"].startswith((HTTPS_PREFIX, JPEG_DATA_URL_PREFIX))
+
+
+KNOWN_MOVIES_CSV = (
+    "Date,Name,Year,Letterboxd URI\n"
+    "2026-01-05,The Matrix,1999,https://boxd.it/2a1m\n"
+    "2026-02-11,Spirited Away,2001,https://boxd.it/2b3K\n"
+    "2026-03-02,Parasite,2019,https://boxd.it/hTha\n"
+)
+KNOWN_MOVIE_TITLES = ["The Matrix", "Spirited Away", "Parasite"]
+
+
+def test_real_tmdb_returns_three_known_movies_with_a_director_and_actors(tmp_path):
+    # Phase 5c D15 (the real token, a watched.csv written by the test)
+    watched_file = tmp_path / "watched.csv"
+    watched_file.write_text(KNOWN_MOVIES_CSV, encoding="utf-8")
+    resource = LetterboxdTmdbResource(
+        watched_file_factory=lambda: watched_file, token_factory=LIVE_SETTINGS.require_tmdb_token
+    )
+
+    documents = resource.read_documents()
+
+    assert [document.metadata["name"] for document in documents] == KNOWN_MOVIE_TITLES
+    assert all(document.metadata["director"] for document in documents)
+    assert all("\nActors: " in document.text for document in documents)

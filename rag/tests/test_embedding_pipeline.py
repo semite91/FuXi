@@ -18,16 +18,19 @@ from chroma_store import (
 )
 from embedding_pipeline import Embedders, Mode, run
 from fakes import (
+    FIXTURES_DIR,
     TEST_PICTURE_SIZE,
     FakeDriveApi,
     FakeEmbedder,
     FakeNotionClient,
+    FakeTmdbApi,
     FakeTokens,
     RenameFailingClient,
     load_fixture,
     picture_text,
 )
 from resources.google_drive_resource import GoogleDriveResource
+from resources.letterboxd_tmdb_resource import LetterboxdTmdbResource
 from resources.notion_resource import NotionResource
 
 FIXED_TIME = datetime(2026, 11, 13, 9, 5, 42)
@@ -502,3 +505,88 @@ def test_drive_read_summary_is_written_to_the_embedding_log(chroma_client, embed
 
     log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
     assert "resource google_drive: read summary: 4 images, 0 skipped files," in log
+
+
+MOVIE_NAMES = ["Paper Harbor", "The Lantern Keeper", "The Lost Stars", "Winter Sun"]
+MOVIE_TEST_TOKEN = "tmdb-test-token"
+
+
+def movie_resource(failures=None) -> LetterboxdTmdbResource:
+    api = FakeTmdbApi(load_fixture("tmdb_recorded.json"), failures)
+    return LetterboxdTmdbResource(
+        watched_file_factory=lambda: FIXTURES_DIR / "watched.csv",
+        token_factory=lambda: MOVIE_TEST_TOKEN,
+        http_client_factory=api.client,
+        sleep=lambda _: None,
+    )
+
+
+def test_notion_drive_and_movies_are_all_read_and_movie_documents_go_to_fuxi_text(chroma_client, embedders, tmp_path):
+    # Phase 5c F1
+    resources = [notion_resource(), drive_resource(), movie_resource()]
+
+    result = run_pipeline(Mode.CREATE, resources, chroma_client, embedders, tmp_path)
+
+    assert result.complete is True
+    texts = open_collection(chroma_client, TEXT_COLLECTION_NAME).get()
+    images = open_collection(chroma_client, IMAGE_COLLECTION_NAME).get()
+    movies = {
+        metadata["name"]: (text, metadata)
+        for text, metadata in zip(texts["documents"], texts["metadatas"])
+        if "director" in metadata
+    }
+    assert sorted(movies) == MOVIE_NAMES
+    assert len(texts["documents"]) > len(movies)  # the Notion documents are in fuxi_text too
+    assert len(images["documents"]) == len(DRIVE_PICTURE_IDS)
+    assert not any("director" in metadata for metadata in images["metadatas"])
+    text, metadata = movies["The Lost Stars"]
+    assert text.startswith("The Lost Stars (2008)\nDirector: Étienne Roussel\nMusic: Bastien Morel\n")
+    assert metadata == {
+        "name": "The Lost Stars", "path": "", "director": "Étienne Roussel", "musician": "Bastien Morel",
+        "genre": "Science Fiction, Romance", "timestamp": "2026-03-20", "type": "text",
+    }
+    assert any(text in batch for batch in embedders.text.document_batches)  # embedded by the text embedder
+
+
+def test_failing_movies_keep_the_other_sources_embedding_but_the_build_is_incomplete_and_old_collections_stay(
+    chroma_client, embedders, tmp_path
+):
+    # Phase 5c F2
+    run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
+    failing_movies = movie_resource(failures={"search:The Lantern Keeper": [httpx.Response(401)]})
+
+    result = run_pipeline(
+        Mode.UPDATE, [notion_resource(), failing_movies, drive_resource()], chroma_client, embedders, tmp_path
+    )
+
+    assert result.failed_resources == ["letterboxd_tmdb"]
+    assert result.added_documents > len(DRIVE_PICTURE_IDS)  # Notion and Drive were still embedded
+    assert embedders.image.document_batches  # Drive, read after the failed movies
+    assert result.complete is False
+    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert is_build_complete(chroma_client)
+
+
+def test_movie_read_summary_is_written_to_the_embedding_log(chroma_client, embedders, tmp_path):
+    # Phase 5c F3
+    run_pipeline(Mode.CREATE, [movie_resource()], chroma_client, embedders, tmp_path)
+
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert (
+        "resource letterboxd_tmdb: read summary: 4 rows, 4 movies, "
+        "0 skipped rows (0 bad rows, 0 no match, 0 not found, 0 refused), 0 repeated rows, 8 calls,"
+    ) in log
+
+
+def test_failed_movie_read_summary_is_written_to_the_embedding_log(chroma_client, embedders, tmp_path):
+    # Phase 5c F3
+    # The last row fails, so the three movies before it have finished (Phase 5c D16, D17).
+    failing_movies = movie_resource(failures={"search:Les Étoiles Perdues": [httpx.Response(401)]})
+
+    run_pipeline(Mode.CREATE, [failing_movies], chroma_client, embedders, tmp_path)
+
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert "resource letterboxd_tmdb failed: TmdbError: TMDB call failed: 401 on /3/search/movie\n" in log
+    assert "resource letterboxd_tmdb: read summary: 4 rows, 3 movies," in log
+    assert "toiles" not in log
+    assert MOVIE_TEST_TOKEN not in log

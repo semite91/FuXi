@@ -399,3 +399,25 @@ def test_stored_drive_photo_holds_a_jpeg_of_at_most_512_px():
     picture = Image.open(io.BytesIO(base64.b64decode(stored["image_url"][len(prefix):], validate=True)))
     assert picture.format == "JPEG"
     assert max(picture.size) == MAX_PICTURE_SIDE == 512
+
+
+def test_movie_result_is_sent_as_a_text_context_item_with_its_document_and_name():
+    # Phase 5c G2
+    movie = RetrievedItem(
+        document="The Lantern Keeper (2019)\nDirector: Mara Ellison\nGenres: Drama, Mystery",
+        metadata={
+            "name": "The Lantern Keeper", "path": "", "director": "Mara Ellison", "musician": "Tobias Rehn",
+            "genre": "Drama, Mystery", "timestamp": "2026-01-05", "type": "text",
+        },
+        similarity=0.66,
+    )
+    client, gemini, _ = make_client([RECORDED["story_success"]], ["story"])
+
+    client.generate(WORD, MEANING, [*TEXT_RESULTS, movie], [])
+
+    context = json.loads(gemini.calls[0]["contents"])["retrieved_context"]
+    assert context["texts"] == [
+        {"document": "A stranger lent me an umbrella.", "name": "Travel Notes", "path": ""},
+        {"document": movie.document, "name": "The Lantern Keeper", "path": ""},
+    ]
+    assert context["images"] == []

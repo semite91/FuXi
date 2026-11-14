@@ -4,7 +4,6 @@ import time
 from collections.abc import Callable, Iterator
 from typing import Any
 
-import httpx
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from notion_client import APIResponseError, Client
 from notion_client.errors import RequestTimeoutError
@@ -23,11 +22,13 @@ from resources.http_retry import (
     RATE_LIMITED_STATUS,
     Clock,
     RETRY_AFTER_HEADER,
+    TRANSIENT_NETWORK_ERRORS,
     ReadStats,
     Wait,
     backoff_seconds,
     call_with_retry,
     retry_after_seconds,
+    timed_read,
 )
 from settings import Settings
 
@@ -37,7 +38,8 @@ CHUNK_OVERLAP = 200
 PAGE_SIZE = 100
 # A 429 without Retry-After waits this long; a dropped connection or a timeout backs off (http_retry).
 DEFAULT_RETRY_AFTER_SECONDS = 1.0
-NETWORK_ERRORS = (httpx.TransportError, RequestTimeoutError)
+# The shared transient network errors, and the timeout that notion_client raises in place of httpx's.
+NETWORK_ERRORS = (*TRANSIENT_NETWORK_ERRORS, RequestTimeoutError)
 # A parent page answering with one of these is not shared with the integration; other errors fail the resource.
 UNREADABLE_PAGE_STATUSES = frozenset({403, 404})
 UNREADABLE_PAGE_CODES = frozenset({"object_not_found", "restricted_resource"})
@@ -77,13 +79,9 @@ class NotionResource(Resource):
         )
 
     def read_documents(self) -> list[Document]:
-        self._stats = ReadStats()
         self._pages = 0
-        started = self._clock()
-        try:
+        with timed_read(self._clock) as self._stats:
             return self._read_documents()
-        finally:
-            self._stats.seconds = self._clock() - started
 
     def read_summary(self) -> str:
         return self._stats.summary(f"{self._pages} pages")
@@ -200,7 +198,7 @@ def _is_unreadable_page(error: APIResponseError) -> bool:
 
 
 def _retry_wait(error: Exception, attempt: int) -> Wait | None:
-    """A 429 waits Retry-After; a dropped connection or a timeout waits longer each time; other errors raise."""
+    """A 429 waits Retry-After; a transient network error waits longer each time; other errors raise."""
     if isinstance(error, APIResponseError) and error.status == RATE_LIMITED_STATUS:
         raw = error.headers.get(RETRY_AFTER_HEADER)
         return Wait(retry_after_seconds(raw, DEFAULT_RETRY_AFTER_SECONDS), rate_limited=True)

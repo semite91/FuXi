@@ -274,6 +274,31 @@ def test_network_retries_wait_longer_each_time_and_are_bounded():
     assert sleeps == [NETWORK_RETRY_SECONDS * 2**attempt for attempt in range(MAX_ATTEMPTS - 1)]
 
 
+def test_network_error_that_cannot_pass_by_trying_again_is_raised_after_one_attempt():
+    # Phase 5c D20
+    sleeps: list[float] = []
+    client = FakeNotionClient(recorded(), errors=[httpx.LocalProtocolError("a malformed request header")])
+
+    with pytest.raises(httpx.LocalProtocolError):
+        make_resource(client, sleeps).read_documents()
+
+    assert len(client.calls) == 1
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("error_type", [httpx.ReadTimeout, httpx.RemoteProtocolError, RequestTimeoutError])
+def test_timeout_or_dropped_connection_is_still_tried_again_after_1_2_4_and_8_seconds(error_type):
+    # Phase 5c D20
+    sleeps: list[float] = []
+    client = FakeNotionClient(recorded(), errors=[error_type("no answer") for _ in range(MAX_ATTEMPTS)])
+
+    with pytest.raises(error_type):
+        make_resource(client, sleeps).read_documents()
+
+    assert sleeps == [1.0, 2.0, 4.0, 8.0]
+    assert len(client.calls) == MAX_ATTEMPTS
+
+
 def test_read_summary_counts_pages_calls_waits_and_time():
     # C14
     ticks = iter([100.0, 107.5])

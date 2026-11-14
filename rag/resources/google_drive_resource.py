@@ -6,7 +6,7 @@ import re
 import threading
 import time
 from collections.abc import Callable, Iterator
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -27,23 +27,22 @@ from base import (
 )
 from embedders import PICTURE_ERRORS, RGB_MODE
 from resources.http_retry import (
-    RATE_LIMITED_STATUS,
     Clock,
-    RETRY_AFTER_HEADER,
     ReadStats,
     Wait,
-    backoff_seconds,
+    bearer_header,
     call_with_retry,
-    retry_after_seconds,
+    create_http_client,
+    http_retry_wait,
+    rate_limit_wait,
+    timed_read,
 )
+from resources.parallel import in_parallel
 from settings import GOOGLE_SERVICE_ACCOUNT_FILE_KEY, Settings
 
 RESOURCE_NAME = "google_drive"
 DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
-AUTHORIZATION_HEADER = "Authorization"
-BEARER_FORMAT = "Bearer {token}"
-REQUEST_TIMEOUT_SECONDS = 60.0
 # Images are downloaded and prepared this many at a time.
 DOWNLOAD_WORKERS = 4
 
@@ -76,7 +75,6 @@ BASE64_ENCODING = "ascii"
 TAKEN_TIME_FORMAT = "%Y:%m:%d %H:%M:%S"
 PATH_SEPARATOR = " / "
 
-MIN_SERVER_ERROR_STATUS = 500
 FORBIDDEN_STATUS = 403
 # A folder or file answering with one of these is not visible to the service account.
 UNREADABLE_STATUSES = frozenset({FORBIDDEN_STATUS, 404})
@@ -142,7 +140,7 @@ class GoogleDriveResource(Resource):
         clock: Clock = time.monotonic,
     ) -> None:
         self._token_source_factory = token_source_factory
-        self._http_client_factory = http_client_factory or _create_http_client
+        self._http_client_factory = http_client_factory or create_http_client
         self._sleep = sleep
         self._clock = clock
         self._stats = ReadStats()
@@ -150,14 +148,10 @@ class GoogleDriveResource(Resource):
         self._skipped_files = 0
 
     def read_documents(self) -> list[Document]:
-        self._stats = ReadStats()
         self._images = 0
         self._skipped_files = 0
-        started = self._clock()
-        try:
+        with timed_read(self._clock) as self._stats:
             return self._read_documents()
-        finally:
-            self._stats.seconds = self._clock() - started
 
     def read_summary(self) -> str:
         return self._stats.summary(f"{self._images} images", f"{self._skipped_files} skipped files")
@@ -169,7 +163,7 @@ class GoogleDriveResource(Resource):
             files = list(_list_images(drive))
             self._images = len(files)
             folders = _FolderCache(drive)
-            documents = _in_parallel(lambda file: _read_image(drive, file, folders), files)
+            documents = in_parallel(lambda file: _read_image(drive, file, folders), files, DOWNLOAD_WORKERS)
         self._skipped_files = documents.count(None)
         return [document for document in documents if document is not None]
 
@@ -205,7 +199,7 @@ class _DriveSession:
         return self.get(f"{DRIVE_FILES_URL}/{folder_id}", {"fields": FOLDER_FIELDS, "supportsAllDrives": TRUE_PARAM}).json()
 
     def _headers(self) -> dict[str, str]:
-        return {AUTHORIZATION_HEADER: BEARER_FORMAT.format(token=self._tokens.access_token())}
+        return bearer_header(self._tokens.access_token())
 
 
 class _FolderCache:
@@ -288,15 +282,6 @@ def _list_images(drive: _DriveSession) -> Iterator[dict[str, Any]]:
             return
 
 
-def _in_parallel(read: Callable[[dict[str, Any]], Document | None], files: list[dict[str, Any]]) -> list[Document | None]:
-    """Results in the listing's order; on an error the waiting downloads are cancelled and the error is raised."""
-    pool = ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS)
-    try:
-        return list(pool.map(read, files))
-    finally:
-        pool.shutdown(wait=True, cancel_futures=True)
-
-
 def _read_image(drive: _DriveSession, file: dict[str, Any], folders: _FolderCache) -> Document | None:
     """The picture document, or None when the file is not visible (403, 404) or Pillow cannot prepare it."""
     try:
@@ -367,18 +352,10 @@ def _thumbnail_url(link: str | None) -> str | None:
 
 
 def _retry_wait(error: Exception, attempt: int) -> Wait | None:
-    """A 429 or a rate limit 403 waits Retry-After (or backs off); a 5xx or a network error backs off."""
-    if isinstance(error, httpx.TransportError):
-        return Wait(backoff_seconds(attempt), rate_limited=False)
-    if not isinstance(error, httpx.HTTPStatusError):
-        return None
-    response = error.response
-    if response.status_code == RATE_LIMITED_STATUS or _is_rate_limit_refusal(response):
-        raw = response.headers.get(RETRY_AFTER_HEADER)
-        return Wait(retry_after_seconds(raw, backoff_seconds(attempt)), rate_limited=True)
-    if response.status_code >= MIN_SERVER_ERROR_STATUS:
-        return Wait(backoff_seconds(attempt), rate_limited=False)
-    return None
+    """Drive's rate limit 403 waits as a 429 does; every other error follows the shared httpx rule."""
+    if isinstance(error, httpx.HTTPStatusError) and _is_rate_limit_refusal(error.response):
+        return rate_limit_wait(error.response, attempt)
+    return http_retry_wait(error, attempt)
 
 
 def _is_not_visible(response: httpx.Response) -> bool:
@@ -404,10 +381,6 @@ def _is_rate_limit_refusal(response: httpx.Response) -> bool:
 
 def _normal_reason(reason: Any) -> str:
     return reason.replace(REASON_SEPARATOR, "").lower() if isinstance(reason, str) else ""
-
-
-def _create_http_client() -> httpx.Client:
-    return httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS)
 
 
 def _service_account_credentials(path: str, scopes: list[str]) -> Any:
