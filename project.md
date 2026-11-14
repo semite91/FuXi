@@ -46,7 +46,8 @@ This file is initializer instructor of my project.
   - RAG technologies will be defined at next parts.
   - Phase 5 is split: 5a builds the engine core with Notion; Google Drive (5b), letterboxd - TMDB (5c) and Spotify (5d) follow one by one.
   - The engine runs on the Learner's Windows laptop with Python 3.13 and CPU-only PyTorch. It is started from /rag with: uvicorn engine:app --port 8000
-  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GOOGLE_SERVICE_ACCOUNT_FILE, RAG_TMDB_TOKEN, RAG_LETTERBOXD_WATCHED_FILE, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
+  - Before the first build with Spotify, the Learner runs once from /rag: python spotify_authorize.py
+  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GOOGLE_SERVICE_ACCOUNT_FILE, RAG_TMDB_TOKEN, RAG_LETTERBOXD_WATCHED_FILE, RAG_SPOTIFY_CLIENT_ID, RAG_SPOTIFY_CLIENT_SECRET, RAG_SPOTIFY_TOKEN_FILE, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
 
   -- Words --
   - Words will be added to database manually by the Learner. There is no add word page or api.
@@ -303,8 +304,12 @@ This file is initializer instructor of my project.
       - The Settings page shows a Credits block with the TMDB logo and "This product uses the TMDB API but is not endorsed or certified by TMDB."
 
       # Spotify
-      - Liked song playlist will be taken from Spotify's Web API.
-      - Song will include musician and song name.
+      - Liked song playlist will be taken from Spotify's Web API (GET /v1/me/tracks, 50 songs per page, page after page). The Learner's account has Spotify Premium, which development-mode Spotify apps need.
+      - Song will include musician and song name, album and the song's https Spotify link, so the music card can link a liked song. Lyrics are not taken.
+      - Sign-in is Spotify's Authorization Code flow with the client secret and the scope user-library-read only. RAG_SPOTIFY_CLIENT_ID and RAG_SPOTIFY_CLIENT_SECRET hold the Spotify app's keys; its redirect address is http://127.0.0.1:8888/callback.
+      - The Learner approves the app once with "python spotify_authorize.py" in /rag. It writes the refresh token to the git-ignored file named by RAG_SPOTIFY_TOKEN_FILE (rag/secrets/spotify_token.json). It is run again when Spotify ends the refresh token (after 6 months).
+      - For each read the engine gets a new access token with the refresh token, and rewrites the token file when Spotify returns a new refresh token.
+      - Calls follow the shared retry rules. A missing key or token file, a refused refresh token, a 401 or a 403 makes the source fail, so the build is not complete and the old collections are kept.
 
     # embedding_pipeline
     - It will be convert resources' data to embed
@@ -345,7 +350,8 @@ This file is initializer instructor of my project.
         metadata: {
           name,
           musician,
-          album
+          album,
+          path (empty),
           type: song,
           timestamp
         }

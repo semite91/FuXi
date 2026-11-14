@@ -1,0 +1,175 @@
+FuXi - Phase 5d - Spotify liked songs
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-14 16:59 UTC
+Status: CONFIRMED BY THE LEARNER ON 2026-11-14, with the proposals by Claude
+Amended on 2026-11-14 for the code review fixes approved by the Learner: D7 changed and D10, C12 to C15 and E14 were
+added (a broken page fails the source; a sturdier approval helper; clear sign-in errors); H3 also covers the shared
+call-and-check helper, the separators and the album key.
+Amended on 2026-11-14 for the second code review round, approved by the Learner: B4, C15, E1, E2 and E13 changed; D11
+and E15 were added (an exclusive port; the refresh call is tried again only after a 429; Spotify's next link is
+followed while it stays on the liked songs address; the client id is hidden too).
+Amended on 2026-11-14 for the third code review round, approved by the Learner: D7 and E15 changed; C16, C17 and D12
+were added (the helper can be run again at once; any settings error is a clear message; only invalid_grant asks for a new
+approval; a private token folder; the offset of a next link must move forward).
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 5d adds the fourth and last source to the RAG engine: the Learner's liked songs on Spotify. One text document per
+song is embedded with Qwen into fuxi_text. Evaluation (ragas) is version 2.
+
+Decisions taken by the Learner on 2026-11-14 (grilling rounds 1 to 3):
+- Q1 The liked songs are read from Spotify's Web API (GET /v1/me/tracks). The Learner has Spotify Premium, creates one
+  Spotify app and approves it once in the browser.
+- Q2 Each song document holds the song's https Spotify link, so the music card can use a liked song as its song_url.
+- Q3, Q5 PR #19 (Phase 5c) was merged first; Phase 5d starts from main.
+- Q4 The refresh token is kept in the git-ignored file rag/secrets/spotify_token.json. The approval helper writes it and
+  the engine rewrites it when Spotify returns a new refresh token.
+- Lyrics are not added: the free lyrics service found (LRCLIB) would make the first build too long.
+
+Proposed by Claude, to confirm with these scenarios:
+- Keys in the root .env: RAG_SPOTIFY_CLIENT_ID, RAG_SPOTIFY_CLIENT_SECRET and RAG_SPOTIFY_TOKEN_FILE (example text:
+  rag/secrets/spotify_token.json; a relative path is resolved from the repository root).
+- Sign-in is Spotify's Authorization Code flow with the client secret and the scope user-library-read only. The redirect
+  address registered in the Spotify app is http://127.0.0.1:8888/callback.
+- The approval helper is run by the Learner from /rag with: python spotify_authorize.py
+  It opens Spotify's approval page in the browser, waits for the answer on 127.0.0.1:8888, checks the state value,
+  exchanges the code for tokens and writes the refresh token to the token file. It is run again when the refresh token
+  ends (Spotify: after 6 months).
+- For each read the engine asks Spotify's token address for a new access token with the refresh token. The liked songs
+  are then read 50 per page by following Spotify's next link, while it starts with https://api.spotify.com/v1/me/tracks,
+  until Spotify gives no next page.
+- No new library: the installed httpx and Python's standard library (http.server, webbrowser, secrets, json).
+- Calls use the shared rag/resources/http_retry.py: a 429 follows Retry-After; a 5xx answer, a timeout or a dropped
+  connection is tried again after 1, 2, 4 and 8 seconds, at most 5 attempts.
+- Document text, one song per document, no splitter:
+    Song: <name>
+    Musician: <artist names joined with ", ">
+    Album: <album name>
+    Link: <https://open.spotify.com/track/...>
+  A line without a value is left out. A link that does not start with https://open.spotify.com/ is left out (for
+  example a local file in the liked songs).
+- Metadata: name (song name), path (empty text), musician, album, type "song" and timestamp (the time the song was
+  liked, as Spotify gives it).
+- An item without a track, an item that is not a song (a podcast episode) or a song without a name is skipped and
+  counted. The same Spotify track id twice is read once.
+- A missing client id, client secret or token file, a token file that cannot be read, a refresh token Spotify refuses
+  (ended or withdrawn), a 401 or a 403 makes the Spotify source fail: the build is not complete and the old collections
+  are kept. The error names the setting or says to run spotify_authorize.py again; it never holds a token, the client
+  secret or the file's path.
+- Gemini receives the song documents as text context like Notion pages and movies; the prompt files are not changed.
+- Live tests call the real Spotify only when RAG_LIVE_TESTS=true in .env.test, and only after the Learner's go-ahead.
+
+Marks:
+[PY]  Python scenario, verified by a pytest test with a fake embedder and recorded Spotify answers.
+[LIVE] Python scenario, verified by a pytest test that calls the real Spotify or loads the real models; runs only when enabled.
+[RV]  verified by reading the code, running a command or a real run.
+
+==================================================
+A. LIBRARIES AND SETUP
+==================================================
+A1. [RV] Given rag/requirements.in and rag/requirements.txt, when they are compared with main, then no library is added.
+A2. [RV] Given .env.example and .env.test.example, when they are read, then RAG_SPOTIFY_CLIENT_ID, RAG_SPOTIFY_CLIENT_SECRET and RAG_SPOTIFY_TOKEN_FILE exist without a value.
+A3. [RV] Given the setup script, when it runs, then it adds the three Spotify keys to .env without a value.
+A4. [RV] Given .gitignore, when it is read, then rag/secrets/ (the token file's folder) is still ignored.
+
+==================================================
+B. SETTINGS
+==================================================
+B1. [PY] Given a .env with the three Spotify keys, when the settings are read, then all three are read.
+B2. [PY] Given a relative RAG_SPOTIFY_TOKEN_FILE, when it is used, then it is resolved from the repository root.
+B3. [PY] Given a missing Spotify key, when the engine starts, then it starts, and the error names the key only when the songs are read.
+B4. [PY] Given the settings, when they are printed, then the client id, the client secret and the token file path are not shown.
+
+==================================================
+C. APPROVAL HELPER (spotify_authorize.py)
+==================================================
+C1. [PY] Given the client id, when the approval address is built, then it is Spotify's authorize address with response_type=code, the client id, the scope user-library-read only, the redirect address http://127.0.0.1:8888/callback and a random state.
+C2. [PY] Given two runs, when their state values are compared, then they differ.
+C3. [PY] Given a callback with the right state and a code, when it is handled, then the code is exchanged at Spotify's token address with grant_type=authorization_code, the redirect address and the client id and secret in a Basic Authorization header.
+C4. [PY] Given a successful exchange, when it ends, then the refresh token is written to the token file and no token is printed.
+C5. [PY] Given a callback with another state, when it is handled, then nothing is exchanged, no file is written and the helper reports the refusal.
+C6. [PY] Given a callback with error=access_denied, when it is handled, then no file is written and the helper says the approval was refused.
+C7. [PY] Given an exchange that Spotify refuses, when it ends, then no file is written and the message holds the status, not the code, the client secret or a token.
+C8. [PY] Given a missing client id or client secret, when the helper starts, then it stops before opening the browser and names the missing key.
+C9. [PY] Given an existing token file, when a new approval succeeds, then the file is replaced with the new refresh token.
+C10. [PY] Given the callback server, when it is started, then it listens on 127.0.0.1 only and stops after one answer.
+C12. [PY] Given a callback whose state has another value, non-ASCII letters included, when it is handled, then the browser gets the refusal page and the helper keeps waiting for the right answer until its time limit.
+C13. [PY] Given a connection that sends nothing, when the helper waits, then it is closed after a short read timeout and the 5-minute time limit still holds.
+C14. [PY] Given a callback with another Spotify error (for example invalid_client or invalid_scope), when it is handled, then no file is written and the helper names that error.
+C15. [PY] Given port 8888 in use by another program (the port is opened for the helper only, also on Windows), when the helper starts, then it exits with code 1 and says the port is in use, without a stack trace.
+C16. [PY] Given a helper run that has just ended after answering the browser, when the helper is run again at once, then it can open port 8888 again.
+C17. [PY] Given any settings error (for example a value that is not a number in .env), when the helper starts, then it exits with code 1 and a clear message, without a stack trace and without opening the browser.
+C11. [PY] Given an answer page for the browser, when it is sent, then it says whether the approval worked and holds no code or token.
+
+==================================================
+D. SPOTIFY SIGN-IN (ENGINE)
+==================================================
+D1. [PY] Given a token file with a refresh token, when the resource reads, then it asks Spotify's token address with grant_type=refresh_token and the Basic Authorization header, before any song call.
+D2. [PY] Given the access token, when a song call is sent, then it carries "Authorization: Bearer <token>" and the token is not in the URL.
+D3. [PY] Given a refresh answer without a refresh token, when it is read, then the token file is not changed.
+D4. [PY] Given a refresh answer with a new refresh token, when it is read, then the token file holds the new refresh token.
+D5. [PY] Given a missing token file, when the resource reads, then it fails before any call and the error names RAG_SPOTIFY_TOKEN_FILE and spotify_authorize.py, without the file's path.
+D6. [PY] Given a token file that is not valid JSON or has no refresh token, when the resource reads, then it fails with the same kind of error and no call is made.
+D7. [PY] Given a refresh token Spotify refuses (400 invalid_grant), when the resource reads, then it fails and the error says to run spotify_authorize.py again. Given 400 or 401 invalid_client, the error says to check RAG_SPOTIFY_CLIENT_ID and RAG_SPOTIFY_CLIENT_SECRET instead. Given another refusal (for example invalid_request or a body without an error), the error names the status and the error, and does not ask for a new approval.
+D8. [PY] Given an empty RAG_SPOTIFY_CLIENT_ID or RAG_SPOTIFY_CLIENT_SECRET, when the resource reads, then it fails before any call and the error names the key.
+D10. [PY] Given the code exchange of spotify_authorize.py, when it times out or the connection drops, then it is not tried again (the code works only once) and the helper says the exchange did not finish and to run it again.
+D11. [PY] Given a refresh call that times out, drops its connection or gets a 5xx answer, when the resource reads, then it is not tried again (Spotify may have used the refresh token) and the source fails; a 429 is still waited for and tried again.
+D12. [PY] Given a token file in a folder that does not exist yet, when it is written, then the folder is created readable by the Learner only, and the temporary file is always closed and removed when the write fails.
+D9. [PY] Given any failure of the sign-in, when its error is logged, then it holds no access token, no refresh token and no client secret.
+
+==================================================
+E. LIKED SONGS READ
+==================================================
+E1. [PY] Given recorded answers over 3 pages, when the resource reads, then /v1/me/tracks is called first with limit=50, then each page's next link is followed, and every song is read once.
+E2. [PY] Given a last page without a next page, when it is read, then no further page is asked.
+E15. [PY] Given a next link that does not start with https://api.spotify.com/v1/me/tracks, a next link already followed, or a next link whose offset does not move forward, when it is read, then the Spotify resource fails with an error that holds the endpoint and not the link.
+E3. [PY] Given no liked song, when the resource reads, then it gives no document and no error.
+E4. [PY] Given an item without a track, a podcast episode or a song without a name, when it is read, then it is skipped, the others are read and the skip is counted.
+E5. [PY] Given the same track id in two items, when they are read, then one document is made and the second is counted as repeated.
+E6. [PY] Given a 401 or a 403 answer on a song call, when the resource reads, then the Spotify resource fails.
+E7. [PY] Given a 429 answer with Retry-After, when the resource reads, then it waits as Retry-After says and tries again.
+E8. [PY] Given a 5xx answer, a timeout or a dropped connection, when the resource reads, then it waits 1, 2, 4 and 8 seconds and tries again, at most 5 attempts, then fails the source.
+E9. [PY] Given a 200 answer that is not a JSON object, when the resource reads, then the Spotify resource fails with an error that holds the endpoint.
+E10. [PY] Given a Spotify call that fails the source, when the error is raised, then it holds the status or error kind and the endpoint, not a token and not a song's name.
+E11. [PY] Given a read, when it ends or fails, then its summary holds the songs, skipped items, repeated items, calls, rate limit waits, network retries and seconds.
+E12. [PY] Given the new resource class, when it is added, then it implements the Resource base with kind TEXT, uses the shared http_retry helpers, and the other resources' tests pass unchanged.
+E14. [PY] Given a page whose items are missing, null or not a list, when it is read, then the Spotify resource fails with an error that holds the endpoint; only a page with an empty item list and no next page ends the read.
+E13. [LIVE] Given the real token file, when the resource reads the first page, then at least one song document is returned and every document has a musician.
+
+==================================================
+F. SONG DOCUMENT
+==================================================
+F1. [PY] Given a recorded song, when the document is built, then its text has the Song, Musician, Album and Link lines.
+F2. [PY] Given a song with 3 artists, when the document is built, then the Musician line and the musician metadata hold the 3 names joined with ", ".
+F3. [PY] Given a song without an album name, when the document is built, then the Album line is left out and the document is still made.
+F4. [PY] Given a local file or a link that does not start with https://open.spotify.com/, when the document is built, then the Link line is left out.
+F5. [PY] Given a song, when its metadata is built, then it has name, path (empty text), musician, album, type "song" and timestamp (the liked time), and every value is a string.
+
+==================================================
+G. PIPELINE, ENGINE AND CLIENTS
+==================================================
+G1. [PY] Given the Notion, Drive, movie and song resources, when the engine builds, then all four are read and the song documents go to fuxi_text.
+G2. [PY] Given a song resource that fails, when the pipeline runs, then the other sources are still embedded, the build is not complete and the old collections are kept.
+G3. [PY] Given a song read, when it ends, then its read summary is written to the embedding log.
+G4. [PY] Given a missing token file, when POST /Update_Collections is called, then the answer is 502 with a generic message and the details are only in the log.
+G5. [PY] Given song documents (type "song") in fuxi_text, when retrieve runs, then results above RAG_TEXT_THRESHOLD are returned with their text and metadata.
+G6. [PY] Given a song result, when the Gemini input is built, then it is sent as a text context item with its document, name and empty path.
+G7. [PY] Given the music method and Gemini's answer with a song_url that is a liked song's https://open.spotify.com/ link, when it is read, then the content keeps that link.
+G8. [RV] Given the prompts folder, when it is compared with main, then nothing is changed.
+
+==================================================
+H. STRUCTURE AND QUALITY
+==================================================
+H1. [RV] Given /rag, when "RAG_LIVE_TESTS=false pytest" runs, then no test fails and the LIVE tests are skipped.
+H2. [RV] Given the frontend and the backend, when they are compared with main, then nothing is changed.
+H3. [RV] Given the Python code, when it is read, then names follow the coding standards, no secret or magic value is hardcoded and no retry, client, timing, call-and-check code, separator or metadata key is repeated.
+H4. [RV] Given project.md, when it is read, then the Spotify section holds the agreed decisions and the three new RAG_ keys are listed.
+H5. [RV] Given the tracked files, when they are read, then no token, no client secret and no token file is in them.
+H6. [LIVE] Given the real Spotify app, token file, models and Gemini, when spotify_authorize.py and Update embeddings run, then fuxi_text has the Learner's liked songs and a music card can link a liked song.
+
+==================================================
+I. OUT OF SCOPE CHECKS
+==================================================
+I1. [RV] Given /rag, when it is read, then no lyrics are fetched and no call goes to another service than Spotify for the songs.
+I2. [RV] Given the song resource, when it is read, then it reads only the liked songs: no other playlist, no audio features, no play history, and it asks no scope other than user-library-read.
+I3. [RV] Given /rag, when it is read, then no evaluation file exists (version 2).
+I4. [RV] Given the database, when the migrations are listed, then no new migration exists.

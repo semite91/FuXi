@@ -33,10 +33,11 @@ readonly GENERATE_VAPID_KEYS_COMMAND="generate-vapid-keys"
 readonly RAG_PYTHON="python3.13"
 readonly RAG_DIRECTORY="rag"
 readonly RAG_VENV=".venv"
-# Git-ignored folders readable by the developer only: the Google service account key and Letterboxd's watched.csv.
+# Git-ignored folders readable by the developer only: the Google service account key, the Spotify token file and
+# Letterboxd's watched.csv.
 readonly RAG_PRIVATE_DIRECTORIES=("secrets" "data" "data/letterboxd")
 readonly PRIVATE_DIRECTORY_MODE=700
-readonly RAG_SECRET_KEYS=("RAG_NOTION_TOKEN" "RAG_GEMINI_API_KEY" "RAG_GOOGLE_SERVICE_ACCOUNT_FILE" "RAG_TMDB_TOKEN" "RAG_LETTERBOXD_WATCHED_FILE" "RAG_LIVE_TESTS")
+readonly RAG_SECRET_KEYS=("RAG_NOTION_TOKEN" "RAG_GEMINI_API_KEY" "RAG_GOOGLE_SERVICE_ACCOUNT_FILE" "RAG_TMDB_TOKEN" "RAG_LETTERBOXD_WATCHED_FILE" "RAG_SPOTIFY_CLIENT_ID" "RAG_SPOTIFY_CLIENT_SECRET" "RAG_SPOTIFY_TOKEN_FILE" "RAG_LIVE_TESTS")
 readonly RAG_DEFAULT_SETTINGS=("RAG_GEMINI_MODEL=gemini-3.8-flash" "RAG_TEXT_THRESHOLD=0.5" "RAG_IMAGE_THRESHOLD=0.25" "RAG_BATCH_SIZE=16" "RAG_REBUILD_COOLDOWN_MINUTES=10")
 readonly PASSWORD_BYTES=24
 readonly PRIVATE_FILE_UMASK=077
