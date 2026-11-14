@@ -1,0 +1,33 @@
+@import (reference) '../../css/tokens.less';
+
+.credits {
+  // Pushed to the bottom of the page card.
+  margin-top: auto;
+  padding: @space-large @space-xsmall 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: @space-small;
+  border-top: @border-default;
+}
+
+.credits__title {
+  margin: 0;
+  font-size: var(--font-size-xsmall);
+  font-weight: @font-weight-strong;
+  letter-spacing: @letter-spacing-label;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.credits__logo {
+  height: @space-medium;
+  width: auto;
+}
+
+.credits__notice {
+  margin: 0;
+  font-size: var(--font-size-xsmall);
+  line-height: @line-height-base;
+  color: var(--color-text-muted);
+}
