@@ -23,4 +23,5 @@ logs/
 # RAG engine data
 rag/chroma_data/
 rag/secrets/
+rag/data/
 .cache/

@@ -1,0 +1,175 @@
+FuXi - Phase 5c - Letterboxd watched movies and TMDB
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-14 09:07 UTC
+Status: CONFIRMED BY THE LEARNER ON 2026-11-14, with the proposals by Claude
+Amended on 2026-11-14 for the code review fixes approved by the Learner: D3 and D4 changed (R1: search with
+primary_release_year, an exact title is preferred among the same-year results); C8, D16, D17 and I8 were added (R2 file
+error without the path, R3 TMDB error without the movie's name, R4 summary of a failed read, shared helpers).
+Amended on 2026-11-14 for the second code review round, approved by the Learner: D4 and D8 changed (titles are compared
+in lowercase with the Turkish letters turned into their Latin equivalents; a 400 or 422 answer skips the movie); D18 was
+added (R5: an answer that is not a JSON object fails the source as a TMDB error).
+Amended on 2026-11-14 for the third code review round, approved by the Learner: D16 changed (R9: every httpx error is
+wrapped); D19 and D20 were added (R11: every row refused fails the source; R12: only passing network errors are tried
+again, for Drive and TMDB); I8 changed (R10: the HTTP client, its timeout and the timed read are shared too).
+Amended on 2026-11-14 for the fourth code review round, approved by the Learner: C9 was added (R13: one document per
+TMDB movie); E6 and D13 changed (R14: an empty path; R15: a refused count); D20 changed (R16: Notion follows the same
+network rule).
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 5c adds the third source to the RAG engine: the Learner's watched movies. Letterboxd gives the list, TMDB gives
+each movie's details. One text document per movie is embedded with Qwen into fuxi_text.
+Spotify (5d) comes later. Evaluation (ragas) is version 2.
+
+Decisions taken by the Learner on 2026-11-14 (grilling rounds 1 and 2):
+- Q1 The watched list is Letterboxd's own data export: the Learner saves watched.csv in the git-ignored folder
+  rag/data/letterboxd/. No Letterboxd API (closed beta), no RSS feed, no scraping. project.md is updated to say so.
+- Q2 TMDB is called with its API Read Access Token, RAG_TMDB_TOKEN in the root .env, sent as "Authorization: Bearer".
+- Q3 The Settings page gets a Credits block with the TMDB notice and the approved TMDB logo (TMDB terms).
+- Q4 A row is matched by searching TMDB with its name and year; the first result whose release year equals the row's
+  year is taken. No such result: the movie is skipped and counted in the read summary.
+- Q5 The top 10 billed actors go into the document.
+- Q6 A missing watched.csv or an empty RAG_TMDB_TOKEN makes the source fail; the build is not complete and the old
+  collections are kept.
+- Q7 TMDB is asked in English (language=en-US).
+
+Proposed by Claude, to confirm with these scenarios:
+- RAG_LETTERBOXD_WATCHED_FILE in the root .env holds the path of watched.csv (default text in the examples:
+  rag/data/letterboxd/watched.csv); a relative path is resolved from the repository root, like the 5b key path.
+- watched.csv is read with Python's csv module as UTF-8 (a BOM is allowed). The columns Name and Year are required,
+  Date is used for the timestamp. A row with an empty name or a year that is not a number is skipped and counted.
+  The same name and year twice is read once.
+- For each row: GET /3/search/movie?query=<Name>&year=<Year>&language=en-US, then
+  GET /3/movie/<id>?append_to_response=credits&language=en-US. No new library: the installed httpx and the shared
+  rag/resources/http_retry.py helper (429, 5xx, dropped connection and timeout wait 1, 2, 4, 8 seconds, at most 5
+  attempts; Retry-After is followed). A 401 fails the source. A 404 on the details call skips the movie.
+- The movies are looked up in parallel by a few workers (4, like Drive); documents keep the order of watched.csv.
+- Document text, one movie per document, no splitter:
+    <Title> (<Year>)
+    Director: <names>
+    Music: <names>
+    Screenplay: <names>
+    Genres: <names>
+    Actors: <top 10 names>
+    Summary: <overview>
+  A line without a value is left out. Names are joined with ", ".
+  Director = crew job "Director"; Music = crew job "Original Music Composer"; Screenplay = crew department "Writing"
+  with job "Screenplay" or "Writer"; Actors = cast in TMDB's order.
+- Metadata: name (TMDB title), director, musician, genre (each joined with ", ", empty text when none), timestamp
+  (the watched Date of watched.csv, ISO date) and type "text".
+- Gemini receives the movie documents as text context like Notion pages; the prompt files are not changed.
+- The Credits block is shown at the bottom of the Settings page: the TMDB logo (an approved logo file kept in the
+  frontend, not loaded from the web) and the sentence "This product uses the TMDB API but is not endorsed or
+  certified by TMDB."
+- Live tests call the real TMDB only when RAG_LIVE_TESTS=true in .env.test, and only after the Learner's go-ahead.
+
+Marks:
+[PY]  Python scenario, verified by a pytest test with a fake embedder and recorded TMDB answers.
+[LIVE] Python scenario, verified by a pytest test that calls the real TMDB or loads the real models; runs only when enabled.
+[FE]  frontend scenario, verified by a Vitest test.
+[RV]  verified by reading the code, running a command or a real run.
+
+==================================================
+A. LIBRARIES AND SETUP
+==================================================
+A1. [RV] Given rag/requirements.in and rag/requirements.txt, when they are compared with main, then no library is added.
+A2. [RV] Given .gitignore, when it is read, then rag/data/ is ignored.
+A3. [RV] Given .env.example and .env.test.example, when they are read, then RAG_TMDB_TOKEN and RAG_LETTERBOXD_WATCHED_FILE exist without a value.
+A4. [RV] Given the setup script, when it runs, then it creates rag/data/letterboxd/ and adds RAG_TMDB_TOKEN and RAG_LETTERBOXD_WATCHED_FILE to .env without a value.
+
+==================================================
+B. SETTINGS
+==================================================
+B1. [PY] Given a .env with RAG_TMDB_TOKEN and RAG_LETTERBOXD_WATCHED_FILE, when the settings are read, then both are read.
+B2. [PY] Given a relative RAG_LETTERBOXD_WATCHED_FILE, when it is used, then it is resolved from the repository root.
+B3. [PY] Given a missing RAG_TMDB_TOKEN or RAG_LETTERBOXD_WATCHED_FILE, when the engine starts, then it starts, and the error names the key only when the movies are read.
+B4. [PY] Given the settings, when they are printed, then the token is not shown.
+
+==================================================
+C. LETTERBOXD WATCHED LIST
+==================================================
+C1. [PY] Given a recorded watched.csv, when it is read, then each row gives its name, year and watched date.
+C2. [PY] Given a watched.csv that starts with a UTF-8 BOM and has non-English names, when it is read, then the first column and the names are read correctly.
+C3. [PY] Given a watched.csv path that does not exist, when the resource reads, then it fails and the error names RAG_LETTERBOXD_WATCHED_FILE without the full path.
+C4. [PY] Given a watched.csv without the Name or the Year column, when the resource reads, then it fails and the error names the missing column.
+C5. [PY] Given a row with an empty name or a year that is not a number, when it is read, then it is skipped, the other rows are read and the skip is counted.
+C6. [PY] Given the same name and year in two rows, when they are read, then TMDB is asked once and one document is made.
+C7. [PY] Given a watched.csv with only the header row, when the resource reads, then it gives no document and no error.
+C9. [PY] Given two rows with different names that match the same TMDB movie, when the resource reads, then one document is made and the second row is counted as repeated.
+C8. [PY] Given a watched.csv that cannot be opened or read (for example locked by another program), when the resource reads, then it fails and the error names RAG_LETTERBOXD_WATCHED_FILE without the file's path.
+
+==================================================
+D. TMDB LOOKUP
+==================================================
+D1. [PY] Given an empty RAG_TMDB_TOKEN, when the resource reads, then it fails before any call and the error names RAG_TMDB_TOKEN.
+D2. [PY] Given a TMDB call, when it is sent, then it carries "Authorization: Bearer <token>" and the token is not in the URL.
+D3. [PY] Given a row, when it is searched, then /3/search/movie is called with query=<Name>, primary_release_year=<Year> and language=en-US.
+D4. [PY] Given search results where the first has another year and the second has the row's year, when the match is chosen, then the second is taken. Among the results of the row's year, one whose title or original title equals the row's name is taken first (both are compared in lowercase, with the Turkish letters turned into their Latin equivalents: ı and İ to i, ö to o, ü to u, ş to s, ğ to g, ç to c); without one, the first result of that year is taken.
+D5. [PY] Given search results with no result of the row's year, or no result at all, when the match is chosen, then the movie is skipped and counted.
+D6. [PY] Given a result without a release date, when the match is chosen, then it does not count as the row's year.
+D7. [PY] Given a match, when its details are asked, then /3/movie/<id> is called once with append_to_response=credits and language=en-US.
+D8. [PY] Given a 404 on the details call, or a 400 or 422 on a movie's search or details call, when the resource reads, then the movie is skipped and counted, and the others are still read.
+D9. [PY] Given a 401 answer, when the resource reads, then the movie resource fails.
+D10. [PY] Given a 429 answer with Retry-After, when the resource reads, then it waits as Retry-After says and tries again.
+D11. [PY] Given a 5xx answer, a dropped connection or a timeout, when the resource reads, then it waits 1, 2, 4 and 8 seconds and tries again, at most 5 attempts, then fails the source.
+D12. [PY] Given 10 rows, when they are looked up in parallel by a bounded number of workers, then the documents keep the order of watched.csv.
+D13. [PY] Given a movie read, when it ends or fails, then its summary holds the rows, movies, skipped rows (bad row, no match, not found, refused with 400 or 422), repeated rows, calls, rate limit waits, network retries and seconds.
+D14. [PY] Given the new resource class, when it is added, then it implements the Resource base with kind TEXT, uses rag/resources/http_retry.py, and the Notion and Drive resources do not change.
+D16. [PY] Given a TMDB answer that fails the source (401, or 5xx after every attempt) or any other httpx error (for example an answer that cannot be decoded), when the error is raised, then it holds the status and the endpoint, not the movie's name and not the token.
+D17. [PY] Given a read that fails after some movies were read or skipped, when its summary is written, then it counts the movies and skips finished so far.
+D18. [PY] Given a 200 answer whose body is not a JSON object, when the resource reads, then the movie resource fails with a TMDB error that holds the endpoint, not the movie's name.
+D19. [PY] Given rows that are all refused by TMDB with 400 or 422, when the resource reads, then the movie resource fails; when at least one row is not refused, the refused rows are skipped as in D8.
+D20. [PY] Given a network error that cannot pass by trying again (for example a malformed request header or an unsupported protocol), when a Notion, Drive or TMDB call fails with it, then it is not tried again; a timeout, a failed connection, a read or write error and a dropped connection are still tried again.
+D15. [LIVE] Given the real TMDB token and 3 known movies, when the resource reads, then 3 documents with a director and actors are returned.
+
+==================================================
+E. MOVIE DOCUMENT
+==================================================
+E1. [PY] Given recorded details with credits, when the document is built, then its text has the title and year, Director, Music, Screenplay, Genres, Actors and Summary lines.
+E2. [PY] Given crew with several jobs, when the document is built, then Director is job "Director", Music is job "Original Music Composer", and Screenplay is department "Writing" with job "Screenplay" or "Writer".
+E3. [PY] Given a cast of 15 actors, when the document is built, then the first 10 in TMDB's order are listed.
+E4. [PY] Given a person listed twice in the same role (for example two writing jobs), when the document is built, then the name appears once in that line.
+E5. [PY] Given a movie without a composer or without an overview, when the document is built, then that line is left out and the document is still made.
+E6. [PY] Given a movie, when its metadata is built, then it has name, path (empty text), director, musician, genre (joined with ", "), timestamp (the watched date) and type "text", and every value is a string.
+
+==================================================
+F. EMBEDDING PIPELINE AND ENGINE
+==================================================
+F1. [PY] Given the Notion, Drive and movie resources, when the engine builds, then all three are read and the movie documents go to fuxi_text.
+F2. [PY] Given a movie resource that fails, when the pipeline runs, then the other sources are still embedded, the build is not complete and the old collections are kept.
+F3. [PY] Given a movie read, when it ends, then its read summary is written to the embedding log.
+F4. [PY] Given a missing RAG_TMDB_TOKEN, when POST /Update_Collections is called, then the answer is 502 with a generic message and the token name is only in the log.
+
+==================================================
+G. RAG CLIENT AND LLM CLIENT
+==================================================
+G1. [PY] Given movie documents in fuxi_text, when retrieve runs, then results above RAG_TEXT_THRESHOLD are returned with their text and metadata.
+G2. [PY] Given a movie result, when the Gemini input is built, then it is sent as a text context item with its document and name, like a Notion page.
+G3. [RV] Given the prompts folder, when it is compared with main, then nothing is changed.
+
+==================================================
+H. FRONTEND CREDITS
+==================================================
+H1. [FE] Given the Settings page, when it is shown, then a Credits block shows "This product uses the TMDB API but is not endorsed or certified by TMDB."
+H2. [FE] Given the Credits block, when it is shown, then the TMDB logo is shown with the alternative text "TMDB".
+H3. [RV] Given the built page, when it is read, then the logo is a local file, and the Content-Security-Policy is not changed.
+H4. [FE] Given the Settings page, when the Credits block is added, then the existing Settings tests still pass.
+
+==================================================
+I. STRUCTURE AND QUALITY
+==================================================
+I1. [RV] Given /rag, when "RAG_LIVE_TESTS=false pytest" runs, then no test fails and the LIVE tests are skipped.
+I2. [RV] Given the frontend, when "npm run build" and "npm test" run, then there is no TypeScript error and no failed test.
+I3. [RV] Given the backend, when "dotnet test" runs, then no test fails (no backend change is expected).
+I4. [RV] Given the Python code, when it is read, then names follow the coding standards and no secret or magic value is hardcoded.
+I5. [RV] Given project.md, when it is read, then the Letterboxd, TMDB section holds the agreed decisions and the new RAG_ keys are listed.
+I6. [RV] Given the tracked files, when they are read, then no token, no watched.csv and no secret value is in them.
+I8. [RV] Given the resources, when they are read, then the ordered parallel helper (rag/resources/parallel.py), the Bearer header, the core retry rule, the HTTP client with its timeout and the timed read are shared, not repeated.
+I7. [LIVE] Given the real watched.csv, TMDB token, models and Gemini, when Update embeddings runs, then fuxi_text has the Learner's movies and a card can show content built from a movie.
+
+==================================================
+J. OUT OF SCOPE CHECKS
+==================================================
+J1. [RV] Given /rag, when it is read, then no Spotify resource exists (5d).
+J2. [RV] Given /rag, when it is read, then no evaluation file exists (version 2).
+J3. [RV] Given the database, when the migrations are listed, then no new migration exists.
+J4. [RV] Given the movie resource, when it is read, then it reads no rating, review or diary data and makes no TMDB cache.
