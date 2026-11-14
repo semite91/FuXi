@@ -46,7 +46,7 @@ This file is initializer instructor of my project.
   - RAG technologies will be defined at next parts.
   - Phase 5 is split: 5a builds the engine core with Notion; Google Drive (5b), letterboxd - TMDB (5c) and Spotify (5d) follow one by one.
   - The engine runs on the Learner's Windows laptop with Python 3.13 and CPU-only PyTorch. It is started from /rag with: uvicorn engine:app --port 8000
-  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
+  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GOOGLE_SERVICE_ACCOUNT_FILE, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
 
   -- Words --
   - Words will be added to database manually by the Learner. There is no add word page or api.
@@ -87,7 +87,7 @@ This file is initializer instructor of my project.
     - When user opens Word History toggle clicking text and arrow icon at flashcard component's back side, if history is not exists, it should loaded by GetWordHistory api call.
     - When user clicks to reinforcement button next at the top right side of flashcard component's back side, next word should be shown and UpdateIsReinforcement api should be called with true parameter value.
     - After getting card data, GetWordContent api is called with words whose Content value is empty, in groups of 5 words, one group after another; each group's content is shown and stored when it arrives. Its body is { "words": [{ "name", "translation" }] }; the Translation is the word's meaning. Last, GetWordContent data and card data should be merged by word. Every generated content will be passed to UpdateWordContent api with word id.
-    - Back side of card shows a loading state until content arrives. Word Content is a JSON string and is shown by its method: text methods (story, quote, film reference) show title and content as plain text, with the source reference as a small caption; photo shows the image; music shows song title, artist, the lyric excerpt (when there is one) and a link to the song. Only https image and song links are shown. An old plain-text Content is shown as a story. If it cannot be generated, the card says that content is not available.
+    - Back side of card shows a loading state until content arrives. Word Content is a JSON string and is shown by its method: text methods (story, quote, film reference) show title and content as plain text, with the source reference as a small caption; photo shows the image (an https or data:image/jpeg link); music shows song title, artist, the lyric excerpt (when there is one) and a link to the song. Only https image and song links, and data:image/jpeg images, are shown. An old plain-text Content is shown as a story. If it cannot be generated, the card says that content is not available.
     - When the app opens, the frontend calls the RAG engine's Init_RAG once. A failure is not shown.
     - The X button at the top right of the back side is the reinforcement button.
     - On the last card's back side the right arrow is hidden and a Done button opens the Done screen.
@@ -286,6 +286,12 @@ This file is initializer instructor of my project.
       - Google Drive API will be used
       - Just images will be taken. Image name, content, date and path
       - Image's itself will be embedded.
+      - The engine signs in with a Google Cloud service account (drive.readonly). RAG_GOOGLE_SERVICE_ACCOUNT_FILE holds the path of its JSON key, kept in the git-ignored rag/secrets/ folder. google-auth signs in; httpx calls the Drive REST API.
+      - Every image the service account can see is read, subfolders included. The Learner shares a folder with the service account's email to add images.
+      - Each image is downloaded as Drive's 512 px thumbnail; the full file is used only when there is no thumbnail. It becomes a JPEG of at most 512 px. A file Pillow cannot open is skipped and counted in the embedding log.
+      - The date is the photo's taken time when Drive has it, otherwise its created time. The path is the parent folder names; a folder the service account cannot see (403 or 404) ends the path.
+      - Errors and retries follow Notion and use the same shared retry code: a 429 (or Drive's 403 rateLimitExceeded / userRateLimitExceeded), a 5xx, a dropped connection or a timeout is tried again after 1, 2, 4 and 8 seconds (at most 5 attempts). Each read writes its summary to the embedding log.
+      - Images are downloaded and prepared in parallel by a few workers. CLIP decodes each batch from Base64, so memory stays bounded.
 
       # letterboxd, TMDB
       - letterboxd's api will be used to take watched movies
@@ -309,6 +315,7 @@ This file is initializer instructor of my project.
     - All steps will be logged manually to text file. It will be under /logs/embedding path with yyyy_MM_dd_HH_mm date formatted file name.
     - If data is image. Image's embeds will be stored second collection.
     - Plain data will be used as one of the parameter while adding to collection. If data is image, image will be converted to Base64 and it will be used as collection's data.
+    - Before CLIP embeds an image document, its Base64 is decoded back into a picture.
     - Every resource types will be own model and function but pipeline - workflow will be same.
     - Workflow described as below:
       + If mode is create:
@@ -393,8 +400,9 @@ This file is initializer instructor of my project.
     - Response method will be chosen randomly by the code: story, quote, film reference, photo (picture) or music. It is sent to Gemini as "available_methods": ["<chosen>"], so the prompt files are not changed.
     - If the answer is insufficient_context, invalid or an error, one other random method is tried once. Then the word gets no content.
     - Each prompt file is read once, on its first use. Words are generated one after another, because of the free-tier rate limits.
-    - The answer is stored as a JSON string. Text methods: {"method","title","content","source_reference"}. photo: {"method","image_url"}. music: {"method","song_title","artist","song_url","lyrics_excerpt"}. Links must be https.
+    - The answer is stored as a JSON string. Text methods: {"method","title","content","source_reference"}. photo: {"method","image_url"}. music: {"method","song_title","artist","song_url","lyrics_excerpt"}. Links must be https, except a Drive photo's data:image/jpeg URL.
     - In 5a, photo is a web image found by Google Search. From 5b, Gemini may also choose the Learner's own Google Drive image.
+    - Drive images above RAG_IMAGE_THRESHOLD are sent to Gemini as {"image_url": "drive:<n>", "name", "path"}, without image data. When Gemini answers image_url "drive:<n>", the content's image_url is that image's JPEG as a data:image/jpeg;base64 URL. Otherwise image_url must be https.
     - Response will create using Google AI Studio API and gemini-3.8-flash model. Model name and search tool name were verified on 2026-11-13: gemini-3.8-flash and google_search.
     - Model will keep as parameter
     - If response method is picture or music, /prompts/llm_web.txt file's content will be used as prompt and google_search tool will be added to tools option of Google AI Studio API. 
