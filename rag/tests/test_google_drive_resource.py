@@ -425,6 +425,19 @@ def test_network_retries_wait_1_2_4_and_8_seconds_and_stop_after_5_attempts():
     assert api.routes.count("files.list") == MAX_ATTEMPTS
 
 
+@pytest.mark.parametrize("route", ["files.list", f"thumbnail:{PARIS_RAIN}"])
+def test_network_error_that_cannot_pass_by_trying_again_is_raised_after_one_attempt(route):
+    # Phase 5c D20
+    sleeps: list[float] = []
+    api = make_api(failures={route: [httpx.LocalProtocolError("a malformed request header")]})
+
+    with pytest.raises(httpx.LocalProtocolError):
+        make_resource(api, sleeps).read_documents()
+
+    assert api.routes.count(route) == 1
+    assert sleeps == []
+
+
 def test_server_error_is_tried_again():
     # Phase 5b C15 C17
     sleeps: list[float] = []

@@ -46,7 +46,7 @@ This file is initializer instructor of my project.
   - RAG technologies will be defined at next parts.
   - Phase 5 is split: 5a builds the engine core with Notion; Google Drive (5b), letterboxd - TMDB (5c) and Spotify (5d) follow one by one.
   - The engine runs on the Learner's Windows laptop with Python 3.13 and CPU-only PyTorch. It is started from /rag with: uvicorn engine:app --port 8000
-  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GOOGLE_SERVICE_ACCOUNT_FILE, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
+  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GOOGLE_SERVICE_ACCOUNT_FILE, RAG_TMDB_TOKEN, RAG_LETTERBOXD_WATCHED_FILE, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
 
   -- Words --
   - Words will be added to database manually by the Learner. There is no add word page or api.
@@ -294,10 +294,13 @@ This file is initializer instructor of my project.
       - Images are downloaded and prepared in parallel by a few workers. CLIP decodes each batch from Base64, so memory stays bounded.
 
       # letterboxd, TMDB
-      - letterboxd's api will be used to take watched movies
-      - Movies will be filtered using TMDB's ... api by data taken from letterboxd. Filter fields will be name and year.
-      - Watched list will be taken from letterboxd with letterboxd's API
-      - Watched movies' name, director, musician, scriptwriter, genre, summary and actors info will be taken from TMDB
+      - Watched list is taken from letterboxd's own data export, not its API (the API is a closed beta). The Learner saves the export's watched.csv in the git-ignored rag/data/letterboxd/ folder; RAG_LETTERBOXD_WATCHED_FILE holds its path. There is no RSS feed and no scraping.
+      - Each row is searched in TMDB's search movie api by name and year (language en-US). The search asks for the row's year as the primary release year. Among the results of that year, one whose title or original title equals the row's name is taken first, otherwise the first result of that year; a movie without such a result is skipped and counted in the embedding log.
+      - Watched movies' name, director, musician (original music composer), scriptwriter, genre, summary and the top 10 billed actors are taken from TMDB's movie details api with credits.
+      - TMDB is called with its API Read Access Token (RAG_TMDB_TOKEN) as a Bearer header. Calls follow the shared retry rules; movies are looked up in parallel by a few workers.
+      - A missing watched.csv or an empty RAG_TMDB_TOKEN makes the source fail, so the build is not complete and the old collections are kept.
+      - The watched date of watched.csv is the document's timestamp.
+      - The Settings page shows a Credits block with the TMDB logo and "This product uses the TMDB API but is not endorsed or certified by TMDB."
 
       # Spotify
       - Liked song playlist will be taken from Spotify's Web API.

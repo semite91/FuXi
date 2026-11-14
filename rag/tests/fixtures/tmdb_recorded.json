@@ -1,0 +1,872 @@
+{
+  "search": {
+    "The Lantern Keeper": {
+      "page": 1,
+      "results": [
+        {
+          "adult": false,
+          "backdrop_path": null,
+          "genre_ids": [
+            18
+          ],
+          "id": 9001,
+          "original_language": "en",
+          "original_title": "The Lantern Keeper",
+          "overview": "The first film of the lighthouse story.",
+          "popularity": 8.4,
+          "poster_path": null,
+          "release_date": "1987-03-13",
+          "title": "The Lantern Keeper",
+          "video": false,
+          "vote_average": 7.1,
+          "vote_count": 214
+        },
+        {
+          "adult": false,
+          "backdrop_path": null,
+          "genre_ids": [
+            18
+          ],
+          "id": 1001,
+          "original_language": "en",
+          "original_title": "The Lantern Keeper",
+          "overview": "A lighthouse keeper on a remote island finds a stranger's diary washed ashore and follows its clues to a secret the village has kept for thirty years.",
+          "popularity": 8.4,
+          "poster_path": null,
+          "release_date": "2019-10-04",
+          "title": "The Lantern Keeper",
+          "video": false,
+          "vote_average": 7.1,
+          "vote_count": 214
+        }
+      ],
+      "total_pages": 1,
+      "total_results": 2
+    },
+    "Kış Güneşi": {
+      "page": 1,
+      "results": [
+        {
+          "adult": false,
+          "backdrop_path": null,
+          "genre_ids": [
+            18
+          ],
+          "id": 1002,
+          "original_language": "tr",
+          "original_title": "Kış Güneşi",
+          "overview": "Karlı bir kasabada iki kardeş, babalarının eski fırınını yeniden açmaya çalışır.",
+          "popularity": 8.4,
+          "poster_path": null,
+          "release_date": "2021-01-22",
+          "title": "Winter Sun",
+          "video": false,
+          "vote_average": 7.1,
+          "vote_count": 214
+        }
+      ],
+      "total_pages": 1,
+      "total_results": 1
+    },
+    "Paper Harbor": {
+      "page": 1,
+      "results": [
+        {
+          "adult": false,
+          "backdrop_path": null,
+          "genre_ids": [
+            18
+          ],
+          "id": 1003,
+          "original_language": "en",
+          "original_title": "Paper Harbor",
+          "overview": "",
+          "popularity": 8.4,
+          "poster_path": null,
+          "release_date": "2015-06-19",
+          "title": "Paper Harbor",
+          "video": false,
+          "vote_average": 7.1,
+          "vote_count": 214
+        }
+      ],
+      "total_pages": 1,
+      "total_results": 1
+    },
+    "Les Étoiles Perdues": {
+      "page": 1,
+      "results": [
+        {
+          "adult": false,
+          "backdrop_path": null,
+          "genre_ids": [
+            18
+          ],
+          "id": 1004,
+          "original_language": "fr",
+          "original_title": "Les Étoiles Perdues",
+          "overview": "Two night-shift astronomers in Marseille track a comet that nobody else can see.",
+          "popularity": 8.4,
+          "poster_path": null,
+          "release_date": "2008-11-05",
+          "title": "The Lost Stars",
+          "video": false,
+          "vote_average": 7.1,
+          "vote_count": 214
+        }
+      ],
+      "total_pages": 1,
+      "total_results": 1
+    },
+    "Ghost Reel": {
+      "page": 1,
+      "results": [
+        {
+          "adult": false,
+          "backdrop_path": null,
+          "genre_ids": [
+            18
+          ],
+          "id": 9002,
+          "original_language": "en",
+          "original_title": "Ghost Reel",
+          "overview": "A found footage story.",
+          "popularity": 8.4,
+          "poster_path": null,
+          "release_date": "2011-08-30",
+          "title": "Ghost Reel",
+          "video": false,
+          "vote_average": 7.1,
+          "vote_count": 214
+        }
+      ],
+      "total_pages": 1,
+      "total_results": 1
+    },
+    "Undated Cut": {
+      "page": 1,
+      "results": [
+        {
+          "adult": false,
+          "backdrop_path": null,
+          "genre_ids": [
+            18
+          ],
+          "id": 9003,
+          "original_language": "en",
+          "original_title": "Undated Cut",
+          "overview": "A film that was never released.",
+          "popularity": 8.4,
+          "poster_path": null,
+          "release_date": "",
+          "title": "Undated Cut",
+          "video": false,
+          "vote_average": 7.1,
+          "vote_count": 214
+        },
+        {
+          "adult": false,
+          "backdrop_path": null,
+          "genre_ids": [
+            18
+          ],
+          "id": 9004,
+          "original_language": "en",
+          "original_title": "Undated Cut",
+          "overview": "",
+          "popularity": 8.4,
+          "poster_path": null,
+          "title": "Undated Cut",
+          "video": false,
+          "vote_average": 7.1,
+          "vote_count": 214
+        }
+      ],
+      "total_pages": 1,
+      "total_results": 2
+    },
+    "Vanished Print": {
+      "page": 1,
+      "results": [
+        {
+          "adult": false,
+          "backdrop_path": null,
+          "genre_ids": [
+            18
+          ],
+          "id": 1404,
+          "original_language": "en",
+          "original_title": "Vanished Print",
+          "overview": "A film removed from TMDB.",
+          "popularity": 8.4,
+          "poster_path": null,
+          "release_date": "2012-02-17",
+          "title": "Vanished Print",
+          "video": false,
+          "vote_average": 7.1,
+          "vote_count": 214
+        }
+      ],
+      "total_pages": 1,
+      "total_results": 1
+    }
+  },
+  "empty_search": {
+    "page": 1,
+    "results": [],
+    "total_pages": 0,
+    "total_results": 0
+  },
+  "movies": {
+    "1001": {
+      "adult": false,
+      "backdrop_path": null,
+      "belongs_to_collection": null,
+      "budget": 0,
+      "genres": [
+        {
+          "id": 18,
+          "name": "Drama"
+        },
+        {
+          "id": 9648,
+          "name": "Mystery"
+        }
+      ],
+      "homepage": "",
+      "id": 1001,
+      "imdb_id": "tt0001001",
+      "original_language": "en",
+      "original_title": "The Lantern Keeper",
+      "overview": "A lighthouse keeper on a remote island finds a stranger's diary washed ashore and follows its clues to a secret the village has kept for thirty years.",
+      "popularity": 8.4,
+      "poster_path": null,
+      "release_date": "2019-10-04",
+      "revenue": 0,
+      "runtime": 112,
+      "status": "Released",
+      "tagline": "",
+      "title": "The Lantern Keeper",
+      "video": false,
+      "vote_average": 7.1,
+      "vote_count": 214,
+      "credits": {
+        "cast": [
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5100,
+            "known_for_department": "Acting",
+            "name": "Iris Calloway",
+            "original_name": "Iris Calloway",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 1,
+            "character": "Villager 1",
+            "credit_id": "5f0a000013ec",
+            "order": 0
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5101,
+            "known_for_department": "Acting",
+            "name": "Daniel Ferro",
+            "original_name": "Daniel Ferro",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 2,
+            "character": "Villager 2",
+            "credit_id": "5f0a000013ed",
+            "order": 1
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5102,
+            "known_for_department": "Acting",
+            "name": "Noor Haddad",
+            "original_name": "Noor Haddad",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 3,
+            "character": "Villager 3",
+            "credit_id": "5f0a000013ee",
+            "order": 2
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5103,
+            "known_for_department": "Acting",
+            "name": "Samuel Okoye",
+            "original_name": "Samuel Okoye",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 4,
+            "character": "Villager 4",
+            "credit_id": "5f0a000013ef",
+            "order": 3
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5104,
+            "known_for_department": "Acting",
+            "name": "Greta Lindqvist",
+            "original_name": "Greta Lindqvist",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 5,
+            "character": "Villager 5",
+            "credit_id": "5f0a000013f0",
+            "order": 4
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5105,
+            "known_for_department": "Acting",
+            "name": "Theo Marsh",
+            "original_name": "Theo Marsh",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 6,
+            "character": "Villager 6",
+            "credit_id": "5f0a000013f1",
+            "order": 5
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5106,
+            "known_for_department": "Acting",
+            "name": "Paloma Reyes",
+            "original_name": "Paloma Reyes",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 7,
+            "character": "Villager 7",
+            "credit_id": "5f0a000013f2",
+            "order": 6
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5107,
+            "known_for_department": "Acting",
+            "name": "Kenji Arai",
+            "original_name": "Kenji Arai",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 8,
+            "character": "Villager 8",
+            "credit_id": "5f0a000013f3",
+            "order": 7
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5108,
+            "known_for_department": "Acting",
+            "name": "Odette Blanc",
+            "original_name": "Odette Blanc",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 9,
+            "character": "Villager 9",
+            "credit_id": "5f0a000013f4",
+            "order": 8
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5109,
+            "known_for_department": "Acting",
+            "name": "Ruben Castile",
+            "original_name": "Ruben Castile",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 10,
+            "character": "Villager 10",
+            "credit_id": "5f0a000013f5",
+            "order": 9
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5110,
+            "known_for_department": "Acting",
+            "name": "Maeve Dunne",
+            "original_name": "Maeve Dunne",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 11,
+            "character": "Villager 11",
+            "credit_id": "5f0a000013f6",
+            "order": 10
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5111,
+            "known_for_department": "Acting",
+            "name": "Felix Aubert",
+            "original_name": "Felix Aubert",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 12,
+            "character": "Villager 12",
+            "credit_id": "5f0a000013f7",
+            "order": 11
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5112,
+            "known_for_department": "Acting",
+            "name": "Yara Suleiman",
+            "original_name": "Yara Suleiman",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 13,
+            "character": "Villager 13",
+            "credit_id": "5f0a000013f8",
+            "order": 12
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5113,
+            "known_for_department": "Acting",
+            "name": "Colm Rafferty",
+            "original_name": "Colm Rafferty",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 14,
+            "character": "Villager 14",
+            "credit_id": "5f0a000013f9",
+            "order": 13
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5114,
+            "known_for_department": "Acting",
+            "name": "Bianca Moretti",
+            "original_name": "Bianca Moretti",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 15,
+            "character": "Villager 15",
+            "credit_id": "5f0a000013fa",
+            "order": 14
+          }
+        ],
+        "crew": [
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6101,
+            "known_for_department": "Directing",
+            "name": "Mara Ellison",
+            "original_name": "Mara Ellison",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c000017d5",
+            "department": "Directing",
+            "job": "Director"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6101,
+            "known_for_department": "Writing",
+            "name": "Mara Ellison",
+            "original_name": "Mara Ellison",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c000017d5",
+            "department": "Writing",
+            "job": "Screenplay"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6102,
+            "known_for_department": "Writing",
+            "name": "Jonas Whitfield",
+            "original_name": "Jonas Whitfield",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c000017d6",
+            "department": "Writing",
+            "job": "Screenplay"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6102,
+            "known_for_department": "Writing",
+            "name": "Jonas Whitfield",
+            "original_name": "Jonas Whitfield",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c000017d6",
+            "department": "Writing",
+            "job": "Writer"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6103,
+            "known_for_department": "Writing",
+            "name": "Ada Brennan",
+            "original_name": "Ada Brennan",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c000017d7",
+            "department": "Writing",
+            "job": "Novel"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6104,
+            "known_for_department": "Sound",
+            "name": "Tobias Rehn",
+            "original_name": "Tobias Rehn",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c000017d8",
+            "department": "Sound",
+            "job": "Original Music Composer"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6105,
+            "known_for_department": "Sound",
+            "name": "Lena Okafor",
+            "original_name": "Lena Okafor",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c000017d9",
+            "department": "Sound",
+            "job": "Music Supervisor"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6106,
+            "known_for_department": "Directing",
+            "name": "Piet Vandermeer",
+            "original_name": "Piet Vandermeer",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c000017da",
+            "department": "Directing",
+            "job": "Assistant Director"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6107,
+            "known_for_department": "Production",
+            "name": "Sofia Marchetti",
+            "original_name": "Sofia Marchetti",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c000017db",
+            "department": "Production",
+            "job": "Producer"
+          }
+        ]
+      }
+    },
+    "1002": {
+      "adult": false,
+      "backdrop_path": null,
+      "belongs_to_collection": null,
+      "budget": 0,
+      "genres": [
+        {
+          "id": 18,
+          "name": "Drama"
+        },
+        {
+          "id": 10751,
+          "name": "Family"
+        }
+      ],
+      "homepage": "",
+      "id": 1002,
+      "imdb_id": "tt0001002",
+      "original_language": "tr",
+      "original_title": "Kış Güneşi",
+      "overview": "Karlı bir kasabada iki kardeş, babalarının eski fırınını yeniden açmaya çalışır.",
+      "popularity": 8.4,
+      "poster_path": null,
+      "release_date": "2021-01-22",
+      "revenue": 0,
+      "runtime": 98,
+      "status": "Released",
+      "tagline": "",
+      "title": "Winter Sun",
+      "video": false,
+      "vote_average": 7.1,
+      "vote_count": 214,
+      "credits": {
+        "cast": [
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5201,
+            "known_for_department": "Acting",
+            "name": "Elif Karaca",
+            "original_name": "Elif Karaca",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 1,
+            "character": "Zeynep",
+            "credit_id": "5f0a00001451",
+            "order": 0
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5202,
+            "known_for_department": "Acting",
+            "name": "Mert Aydın",
+            "original_name": "Mert Aydın",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 2,
+            "character": "Emre",
+            "credit_id": "5f0a00001452",
+            "order": 1
+          }
+        ],
+        "crew": [
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6201,
+            "known_for_department": "Directing",
+            "name": "Selin Yıldız",
+            "original_name": "Selin Yıldız",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c00001839",
+            "department": "Directing",
+            "job": "Director"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6202,
+            "known_for_department": "Writing",
+            "name": "Çağan Öztürk",
+            "original_name": "Çağan Öztürk",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c0000183a",
+            "department": "Writing",
+            "job": "Writer"
+          }
+        ]
+      }
+    },
+    "1003": {
+      "adult": false,
+      "backdrop_path": null,
+      "belongs_to_collection": null,
+      "budget": 0,
+      "genres": [
+        {
+          "id": 35,
+          "name": "Comedy"
+        }
+      ],
+      "homepage": "",
+      "id": 1003,
+      "imdb_id": "tt0001003",
+      "original_language": "en",
+      "original_title": "Paper Harbor",
+      "overview": "",
+      "popularity": 8.4,
+      "poster_path": null,
+      "release_date": "2015-06-19",
+      "revenue": 0,
+      "runtime": 91,
+      "status": "Released",
+      "tagline": "",
+      "title": "Paper Harbor",
+      "video": false,
+      "vote_average": 7.1,
+      "vote_count": 214,
+      "credits": {
+        "cast": [
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5301,
+            "known_for_department": "Acting",
+            "name": "Hugh Pemberton",
+            "original_name": "Hugh Pemberton",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 1,
+            "character": "Captain",
+            "credit_id": "5f0a000014b5",
+            "order": 0
+          }
+        ],
+        "crew": [
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6301,
+            "known_for_department": "Directing",
+            "name": "Nell Ashby",
+            "original_name": "Nell Ashby",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c0000189d",
+            "department": "Directing",
+            "job": "Director"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6302,
+            "known_for_department": "Sound",
+            "name": "Oskar Lund",
+            "original_name": "Oskar Lund",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c0000189e",
+            "department": "Sound",
+            "job": "Original Music Composer"
+          }
+        ]
+      }
+    },
+    "1004": {
+      "adult": false,
+      "backdrop_path": null,
+      "belongs_to_collection": null,
+      "budget": 0,
+      "genres": [
+        {
+          "id": 878,
+          "name": "Science Fiction"
+        },
+        {
+          "id": 10749,
+          "name": "Romance"
+        }
+      ],
+      "homepage": "",
+      "id": 1004,
+      "imdb_id": "tt0001004",
+      "original_language": "fr",
+      "original_title": "Les Étoiles Perdues",
+      "overview": "Two night-shift astronomers in Marseille track a comet that nobody else can see.",
+      "popularity": 8.4,
+      "poster_path": null,
+      "release_date": "2008-11-05",
+      "revenue": 0,
+      "runtime": 104,
+      "status": "Released",
+      "tagline": "",
+      "title": "The Lost Stars",
+      "video": false,
+      "vote_average": 7.1,
+      "vote_count": 214,
+      "credits": {
+        "cast": [
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5401,
+            "known_for_department": "Acting",
+            "name": "Camille Deschamps",
+            "original_name": "Camille Deschamps",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 1,
+            "character": "Hélène",
+            "credit_id": "5f0a00001519",
+            "order": 0
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 5402,
+            "known_for_department": "Acting",
+            "name": "Loïc Barre",
+            "original_name": "Loïc Barre",
+            "popularity": 2.5,
+            "profile_path": null,
+            "cast_id": 2,
+            "character": "Antoine",
+            "credit_id": "5f0a0000151a",
+            "order": 1
+          }
+        ],
+        "crew": [
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6401,
+            "known_for_department": "Directing",
+            "name": "Étienne Roussel",
+            "original_name": "Étienne Roussel",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c00001901",
+            "department": "Directing",
+            "job": "Director"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6402,
+            "known_for_department": "Writing",
+            "name": "Margaux Petit",
+            "original_name": "Margaux Petit",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c00001902",
+            "department": "Writing",
+            "job": "Screenplay"
+          },
+          {
+            "adult": false,
+            "gender": 0,
+            "id": 6403,
+            "known_for_department": "Sound",
+            "name": "Bastien Morel",
+            "original_name": "Bastien Morel",
+            "popularity": 1.2,
+            "profile_path": null,
+            "credit_id": "5f0c00001903",
+            "department": "Sound",
+            "job": "Original Music Composer"
+          }
+        ]
+      }
+    }
+  },
+  "not_found": {
+    "success": false,
+    "status_code": 34,
+    "status_message": "The resource you requested could not be found."
+  },
+  "unauthorized": {
+    "success": false,
+    "status_code": 7,
+    "status_message": "Invalid API key: You must be granted a valid key."
+  }
+}

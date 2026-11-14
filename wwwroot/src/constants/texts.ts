@@ -114,3 +114,9 @@ export const SETTINGS_TEXTS = {
   updated: 'Embeddings updated',
   failed: 'Embeddings could not be updated.',
 } as const;
+
+export const CREDITS_TEXTS = {
+  title: 'Credits',
+  tmdbLogo: 'TMDB',
+  tmdbNotice: 'This product uses the TMDB API but is not endorsed or certified by TMDB.',
+} as const;

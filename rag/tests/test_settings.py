@@ -163,3 +163,41 @@ def test_printed_settings_hide_the_key_file_path(tmp_path):
 
     assert "drive.json" not in repr(settings)
     assert "drive.json" not in str(settings)
+
+
+MOVIE_ENV = "RAG_TMDB_TOKEN=tmdb-test-token\nRAG_LETTERBOXD_WATCHED_FILE=rag/data/letterboxd/watched.csv\n"
+
+
+def test_tmdb_token_and_watched_file_are_read(tmp_path):
+    # Phase 5c B1
+    content = f"RAG_TMDB_TOKEN=tmdb-test-token\nRAG_LETTERBOXD_WATCHED_FILE={tmp_path / 'watched.csv'}\n"
+
+    settings = load_settings(write_env(tmp_path, content), environ={})
+
+    assert settings.require_tmdb_token() == "tmdb-test-token"
+    assert settings.require_letterboxd_watched_file() == tmp_path / "watched.csv"
+
+
+def test_relative_watched_file_is_resolved_from_the_repository_root(tmp_path):
+    # Phase 5c B2
+    settings = load_settings(write_env(tmp_path, MOVIE_ENV), environ={})
+
+    assert settings.require_letterboxd_watched_file() == REPO_ROOT / "rag" / "data" / "letterboxd" / "watched.csv"
+
+
+def test_missing_tmdb_token_and_watched_file_fail_only_when_used(tmp_path):
+    # Phase 5c B3
+    settings = load_settings(write_env(tmp_path, "RAG_TMDB_TOKEN=\nRAG_LETTERBOXD_WATCHED_FILE\n"), environ={})
+
+    with pytest.raises(MissingSettingError, match="RAG_TMDB_TOKEN"):
+        settings.require_tmdb_token()
+    with pytest.raises(MissingSettingError, match="RAG_LETTERBOXD_WATCHED_FILE"):
+        settings.require_letterboxd_watched_file()
+
+
+def test_printed_settings_hide_the_tmdb_token(tmp_path):
+    # Phase 5c B4
+    settings = load_settings(write_env(tmp_path, MOVIE_ENV), environ={})
+
+    assert "tmdb-test-token" not in repr(settings)
+    assert "tmdb-test-token" not in str(settings)

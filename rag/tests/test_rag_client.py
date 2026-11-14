@@ -203,3 +203,23 @@ def test_image_results_above_the_threshold_hold_their_base64_document_and_metada
     _, images = client.retrieve("q")
 
     assert images == [RetrievedItem(document=picture, metadata=metadata, similarity=pytest.approx(0.4))]
+
+
+def test_movie_results_above_the_text_threshold_hold_their_text_and_metadata(chroma_path, embedders):
+    # Phase 5c G1
+    client = make_client(chroma_path, embedders, settings=Settings(text_threshold=0.5))
+    movie_text = "The Lantern Keeper (2019)\nDirector: Mara Ellison\nGenres: Drama, Mystery"
+    metadata = {
+        "name": "The Lantern Keeper", "path": "", "director": "Mara Ellison", "musician": "Tobias Rehn",
+        "genre": "Drama, Mystery", "timestamp": "2026-01-05", "type": "text",
+    }
+    client.init().text.add(
+        ids=["kept", "dropped"],
+        documents=[movie_text, "Paper Harbor (2015)\nDirector: Nell Ashby"],
+        embeddings=[vector_with_similarity(0.7), vector_with_similarity(0.3)],
+        metadatas=[metadata, {**metadata, "name": "Paper Harbor"}],
+    )
+
+    texts, _ = client.retrieve("q")
+
+    assert texts == [RetrievedItem(document=movie_text, metadata=metadata, similarity=pytest.approx(0.7))]

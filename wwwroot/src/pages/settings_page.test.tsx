@@ -426,3 +426,26 @@ test('I14 the timeout is cleared when the service worker is ready', async () => 
   expect(screen.getByText('Notifications: allowed')).toBeInTheDocument();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+const TMDB_NOTICE = 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
+
+test('5c H1 the Settings page shows a Credits block with the TMDB notice under the other rows', () => {
+  openSettings();
+
+  const heading = screen.getByRole('heading', { level: 2, name: 'Credits' });
+  const notice = screen.getByText(TMDB_NOTICE);
+  expect(heading.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(
+    button('Enable notifications').compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+
+test('5c H2 the Credits block shows the TMDB logo from a local file with the alternative text "TMDB"', () => {
+  openSettings();
+
+  const logo = screen.getByRole('img', { name: 'TMDB' });
+  const source = logo.getAttribute('src') ?? '';
+  expect(source).toMatch(/tmdb_logo\.svg|^data:image\/svg\+xml/);
+  expect(source).not.toMatch(/^(https?:)?\/\//);
+  expect(screen.getByRole('heading', { level: 2, name: 'Credits' }).parentElement).toContainElement(logo);
+});

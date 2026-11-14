@@ -33,10 +33,10 @@ readonly GENERATE_VAPID_KEYS_COMMAND="generate-vapid-keys"
 readonly RAG_PYTHON="python3.13"
 readonly RAG_DIRECTORY="rag"
 readonly RAG_VENV=".venv"
-# Holds the Google service account key; git-ignored and readable by the developer only.
-readonly RAG_SECRETS_DIRECTORY="secrets"
+# Git-ignored folders readable by the developer only: the Google service account key and Letterboxd's watched.csv.
+readonly RAG_PRIVATE_DIRECTORIES=("secrets" "data" "data/letterboxd")
 readonly PRIVATE_DIRECTORY_MODE=700
-readonly RAG_SECRET_KEYS=("RAG_NOTION_TOKEN" "RAG_GEMINI_API_KEY" "RAG_GOOGLE_SERVICE_ACCOUNT_FILE" "RAG_LIVE_TESTS")
+readonly RAG_SECRET_KEYS=("RAG_NOTION_TOKEN" "RAG_GEMINI_API_KEY" "RAG_GOOGLE_SERVICE_ACCOUNT_FILE" "RAG_TMDB_TOKEN" "RAG_LETTERBOXD_WATCHED_FILE" "RAG_LIVE_TESTS")
 readonly RAG_DEFAULT_SETTINGS=("RAG_GEMINI_MODEL=gemini-3.8-flash" "RAG_TEXT_THRESHOLD=0.5" "RAG_IMAGE_THRESHOLD=0.25" "RAG_BATCH_SIZE=16" "RAG_REBUILD_COOLDOWN_MINUTES=10")
 readonly PASSWORD_BYTES=24
 readonly PRIVATE_FILE_UMASK=077
@@ -184,12 +184,15 @@ ensure_rag_keys() {
   done
 }
 
-# Creates rag/secrets for the Google service account key file.
-create_rag_secrets_directory() {
-  local secrets_path="${REPOSITORY_ROOT}/${RAG_DIRECTORY}/${RAG_SECRETS_DIRECTORY}"
-  mkdir -p "${secrets_path}"
-  chmod "${PRIVATE_DIRECTORY_MODE}" "${secrets_path}"
-  give_to_invoking_user "${secrets_path}"
+# Creates rag/secrets (Google service account key) and rag/data/letterboxd (watched.csv).
+create_rag_private_directories() {
+  local directory private_path
+  for directory in "${RAG_PRIVATE_DIRECTORIES[@]}"; do
+    private_path="${REPOSITORY_ROOT}/${RAG_DIRECTORY}/${directory}"
+    mkdir -p "${private_path}"
+    chmod "${PRIVATE_DIRECTORY_MODE}" "${private_path}"
+    give_to_invoking_user "${private_path}"
+  done
 }
 
 # Creates rag/.venv and installs the locked Python packages when Python 3.13 exists.
@@ -230,7 +233,7 @@ install_packages
 start_postgres
 create_env_files
 create_role_and_database
-create_rag_secrets_directory
+create_rag_private_directories
 create_rag_environment
 if [ "${RAG_ENVIRONMENT_MISSING:-}" = "true" ]; then
   echo "Environment is ready, except the RAG engine: install ${RAG_PYTHON} and run this script again." >&2
