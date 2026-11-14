@@ -1,10 +1,12 @@
-"""Retry rules, read statistics, the HTTP client and the Bearer header shared by the resources that call a web API."""
+"""Retry rules, read statistics, the HTTP client, the Authorization headers and the call errors shared by the resources
+that call a web API."""
 
+import base64
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import TypeVar
+from typing import Any, ClassVar, TypeVar
 
 import httpx
 
@@ -23,6 +25,13 @@ REQUEST_TIMEOUT_SECONDS = 60.0
 TRANSIENT_NETWORK_ERRORS = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
 AUTHORIZATION_HEADER = "Authorization"
 BEARER_FORMAT = "Bearer {token}"
+BASIC_FORMAT = "Basic {credentials}"
+BASIC_CREDENTIALS_FORMAT = "{user}:{password}"
+BASIC_CREDENTIALS_ENCODING = "utf-8"
+CALL_FAILED_FORMAT = "{service} call failed: {failure} on {endpoint}"
+NOT_A_JSON_OBJECT_FAILURE = "an answer that is not a JSON object"
+# The endpoint of an error that is not of one call.
+NO_ENDPOINT = ""
 
 T = TypeVar("T")
 # Seconds that only move forward; differences between two readings are measured.
@@ -112,6 +121,78 @@ def bearer_header(token: str) -> dict[str, str]:
     return {AUTHORIZATION_HEADER: BEARER_FORMAT.format(token=token)}
 
 
+def basic_header(user: str, password: str) -> dict[str, str]:
+    """The Authorization header of a call signed with HTTP Basic credentials."""
+    credentials = BASIC_CREDENTIALS_FORMAT.format(user=user, password=password).encode(BASIC_CREDENTIALS_ENCODING)
+    return {AUTHORIZATION_HEADER: BASIC_FORMAT.format(credentials=base64.b64encode(credentials).decode("ascii"))}
+
+
+class ApiCallError(RuntimeError):
+    """A web API failure that fails the source. The message holds the status (or the kind of failure) and the
+    endpoint's path only: never the query string, an answer's body or a token. Subclasses name the service."""
+
+    SERVICE: ClassVar[str] = "API"
+
+    def __init__(self, message: str, status: int | None = None, endpoint: str = NO_ENDPOINT) -> None:
+        super().__init__(message)
+        self.status = status
+        self.endpoint = endpoint
+
+    @classmethod
+    def of_call(cls, failure: int | str, endpoint: str) -> "ApiCallError":
+        """A call that failed after the retries, or whose answer is not a JSON object."""
+        status = failure if isinstance(failure, int) else None
+        return cls(cls.call_failed_message(failure, endpoint), status, endpoint)
+
+    @classmethod
+    def call_failed_message(cls, failure: int | str, endpoint: str) -> str:
+        return CALL_FAILED_FORMAT.format(service=cls.SERVICE, failure=failure, endpoint=endpoint)
+
+    @classmethod
+    def of_http_error(cls, error: httpx.HTTPError | httpx.InvalidURL, endpoint: str) -> "ApiCallError":
+        """The status of a failed answer, else the kind of the httpx error. The caller drops the cause: its
+        message holds the full address."""
+        if isinstance(error, httpx.HTTPStatusError):
+            return cls.of_call(error.response.status_code, endpoint)
+        return cls.of_call(type(error).__name__, endpoint)
+
+
+def json_object_or_none(response: httpx.Response) -> dict[str, Any] | None:
+    """The answer's JSON object; None when the body is not UTF-8, not JSON or not an object."""
+    try:
+        answer = response.json()
+    except ValueError:
+        return None
+    return answer if isinstance(answer, dict) else None
+
+
+def json_object(response: httpx.Response, endpoint: str, error_type: type[ApiCallError]) -> dict[str, Any]:
+    """The answer's JSON object; anything else raises error_type without the answer's body."""
+    answer = json_object_or_none(response)
+    if answer is None:
+        raise error_type.of_call(NOT_A_JSON_OBJECT_FAILURE, endpoint)
+    return answer
+
+
+def call_json(
+    call: Callable[[], httpx.Response],
+    endpoint: str,
+    error_type: type[ApiCallError],
+    retry_rule: RetryRule,
+    stats: ReadStats,
+    sleep: Callable[[float], None],
+) -> dict[str, Any]:
+    """The JSON object of a successful call, tried again as retry_rule says. A failed answer or any other httpx
+    error raises error_type with the status or the error's kind and the endpoint; so does an answer that is not
+    a JSON object."""
+    try:
+        response = call_with_retry(lambda: call().raise_for_status(), retry_rule, stats, sleep)
+    except (httpx.HTTPError, httpx.InvalidURL) as error:
+        # The cause is dropped: an httpx error can hold the full address and the request with its token.
+        raise error_type.of_http_error(error, endpoint) from None
+    return json_object(response, endpoint, error_type)
+
+
 def backoff_seconds(attempt: int) -> float:
     return NETWORK_RETRY_SECONDS * NETWORK_RETRY_GROWTH**attempt
 
@@ -127,6 +208,14 @@ def http_retry_wait(error: Exception, attempt: int) -> Wait | None:
         return rate_limit_wait(response, attempt)
     if response.status_code >= MIN_SERVER_ERROR_STATUS:
         return Wait(backoff_seconds(attempt), rate_limited=False)
+    return None
+
+
+def rate_limit_retry_wait(error: Exception, attempt: int) -> Wait | None:
+    """The rule of a call that must not reach the server twice (a single-use code): only a 429, which the server
+    refused before it used the call, waits Retry-After (or backs off); any other error is raised at once."""
+    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == RATE_LIMITED_STATUS:
+        return rate_limit_wait(error.response, attempt)
     return None
 
 

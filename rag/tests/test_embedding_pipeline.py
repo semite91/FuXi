@@ -23,6 +23,7 @@ from fakes import (
     FakeDriveApi,
     FakeEmbedder,
     FakeNotionClient,
+    FakeSpotifyApi,
     FakeTmdbApi,
     FakeTokens,
     RenameFailingClient,
@@ -32,6 +33,7 @@ from fakes import (
 from resources.google_drive_resource import GoogleDriveResource
 from resources.letterboxd_tmdb_resource import LetterboxdTmdbResource
 from resources.notion_resource import NotionResource
+from resources.spotify_resource import SpotifyCredentials, SpotifyResource
 
 FIXED_TIME = datetime(2026, 11, 13, 9, 5, 42)
 LOG_FILE_NAME = "2026_11_13_09_05.txt"
@@ -590,3 +592,95 @@ def test_failed_movie_read_summary_is_written_to_the_embedding_log(chroma_client
     assert "resource letterboxd_tmdb: read summary: 4 rows, 3 movies," in log
     assert "toiles" not in log
     assert MOVIE_TEST_TOKEN not in log
+
+
+SONG_NAMES = ["Glass Harbor Lights", "Kitchen Demo", "Paper Moons", "Saltwater", "Winter Radio"]
+SONG_TEST_SECRET = "spotify-test-client-secret"
+SONG_TEST_REFRESH_TOKEN = "spotify-test-refresh-token"
+
+
+def song_resource(tmp_path, failures=None) -> SpotifyResource:
+    api = FakeSpotifyApi(load_fixture("spotify_recorded.json"), failures)
+    token_file = tmp_path / "spotify_token.json"
+    token_file.write_text(f'{{"refresh_token": "{SONG_TEST_REFRESH_TOKEN}"}}', encoding="utf-8")
+    return SpotifyResource(
+        credentials_factory=lambda: SpotifyCredentials("spotify-test-client-id", SONG_TEST_SECRET),
+        token_file_factory=lambda: token_file,
+        http_client_factory=api.client,
+        sleep=lambda _: None,
+    )
+
+
+def test_notion_drive_movies_and_songs_are_all_read_and_song_documents_go_to_fuxi_text(chroma_client, embedders, tmp_path):
+    # Phase 5d G1
+    resources = [notion_resource(), drive_resource(), movie_resource(), song_resource(tmp_path)]
+
+    result = run_pipeline(Mode.CREATE, resources, chroma_client, embedders, tmp_path)
+
+    assert result.complete is True
+    assert result.failed_resources == []
+    texts = open_collection(chroma_client, TEXT_COLLECTION_NAME).get()
+    images = open_collection(chroma_client, IMAGE_COLLECTION_NAME).get()
+    songs = {
+        metadata["name"]: (text, metadata)
+        for text, metadata in zip(texts["documents"], texts["metadatas"])
+        if metadata["type"] == "song"
+    }
+    assert sorted(songs) == SONG_NAMES
+    assert any("director" in metadata for metadata in texts["metadatas"])  # the movies are in fuxi_text too
+    assert len(texts["documents"]) > len(songs) + len(MOVIE_NAMES)  # and the Notion documents
+    assert len(images["documents"]) == len(DRIVE_PICTURE_IDS)
+    assert not any(metadata["type"] == "song" for metadata in images["metadatas"])
+    text, metadata = songs["Paper Moons"]
+    assert text == (
+        "Song: Paper Moons\nMusician: Leo Varga, Ines Duval, The Quiet Rooms\nAlbum: Paper Moons\n"
+        "Link: https://open.spotify.com/track/2bPaperMoonsTrack0002"
+    )
+    assert metadata == {
+        "name": "Paper Moons", "path": "", "musician": "Leo Varga, Ines Duval, The Quiet Rooms", "album": "Paper Moons",
+        "type": "song", "timestamp": "2026-09-14T07:45:00Z",
+    }
+    assert any(text in batch for batch in embedders.text.document_batches)  # embedded by the text embedder
+
+
+def test_failing_songs_keep_the_other_sources_embedding_but_the_build_is_incomplete_and_old_collections_stay(
+    chroma_client, embedders, tmp_path
+):
+    # Phase 5d G2
+    run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
+    failing_songs = song_resource(tmp_path, failures={"token": [httpx.Response(400, json={"error": "invalid_grant"})]})
+
+    result = run_pipeline(
+        Mode.UPDATE, [notion_resource(), failing_songs, movie_resource(), drive_resource()], chroma_client, embedders, tmp_path
+    )
+
+    assert result.failed_resources == ["spotify"]
+    assert result.added_documents > len(DRIVE_PICTURE_IDS) + len(MOVIE_NAMES)  # Notion, movies and Drive were embedded
+    assert embedders.image.document_batches  # Drive, read after the failed songs
+    assert result.complete is False
+    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert is_build_complete(chroma_client)
+
+
+def test_song_read_summary_is_written_to_the_embedding_log(chroma_client, embedders, tmp_path):
+    # Phase 5d G3
+    run_pipeline(Mode.CREATE, [song_resource(tmp_path)], chroma_client, embedders, tmp_path)
+
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert (
+        "resource spotify: read summary: 9 items, 5 songs, "
+        "3 skipped items (1 no track, 1 not a song, 1 no name), 1 repeated items, 4 calls,"
+    ) in log
+
+
+def test_failed_song_read_summary_is_written_to_the_embedding_log(chroma_client, embedders, tmp_path):
+    # Phase 5d G3
+    failing_songs = song_resource(tmp_path, failures={"tracks:50": [httpx.Response(401)]})
+
+    run_pipeline(Mode.CREATE, [failing_songs], chroma_client, embedders, tmp_path)
+
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert "resource spotify failed: SpotifyError: Spotify call failed: 401 on /v1/me/tracks\n" in log
+    assert "resource spotify: read summary: 3 items, 2 songs," in log
+    assert "Glass Harbor" not in log
+    assert SONG_TEST_SECRET not in log and SONG_TEST_REFRESH_TOKEN not in log and "spotify-test-access-token" not in log

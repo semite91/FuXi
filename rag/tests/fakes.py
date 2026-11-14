@@ -19,6 +19,9 @@ THUMBNAIL_SIZE_MARK = "=s"
 FAKE_ACCESS_TOKEN = "test-access-token"
 TMDB_SEARCH_PATH = "/3/search/movie"
 TMDB_NOT_FOUND_STATUS = 404
+SPOTIFY_TOKEN_PATH = "/api/token"
+SPOTIFY_TRACKS_PATH = "/v1/me/tracks"
+FIRST_OFFSET = "0"
 TEST_PICTURE_SIZE = (32, 24)
 TEST_PICTURE_COLOR = (40, 120, 200)
 
@@ -88,32 +91,17 @@ class _FakePages:
         return self.owner.recorded["pages"][page_id]
 
 
-class FakeDriveApi:
-    """Answers Drive REST calls from recorded JSON through httpx.MockTransport; pictures are bytes by file id.
+class RecordedApi:
+    """Answers a web API's calls from recorded JSON through httpx.MockTransport; subclasses name each call's
+    route and give its recorded answer. failures[route] answers (responses or errors) are used one per call
+    before the recorded answer. Safe from the parallel threads of a resource."""
 
-    Routes: "files.list", "files.get:<id>" (folders), "media:<id>" (alt=media) and "thumbnail:<id>".
-    failures[route] answers (responses or errors) are used one per call before the recorded answer.
-    """
-
-    def __init__(
-        self,
-        recorded: dict[str, Any],
-        pictures: dict[str, bytes],
-        failures: dict[str, list[httpx.Response | Exception]] | None = None,
-    ):
+    def __init__(self, recorded: dict[str, Any], failures: dict[str, list[httpx.Response | Exception]] | None = None):
         self.recorded = recorded
-        self.pictures = pictures
         self.failures = {route: list(answers) for route, answers in (failures or {}).items()}
         self.requests: list[httpx.Request] = []
         self.routes: list[str] = []
-        # The resource downloads in parallel threads.
         self._lock = threading.Lock()
-        self._thumbnail_ids = {
-            file["thumbnailLink"].rsplit(THUMBNAIL_SIZE_MARK, 1)[0]: file["id"]
-            for page in recorded["files_list"].values()
-            for file in page["files"]
-            if file.get("thumbnailLink")
-        }
 
     def client(self) -> httpx.Client:
         return httpx.Client(transport=httpx.MockTransport(self))
@@ -127,6 +115,34 @@ class FakeDriveApi:
         if isinstance(answer, Exception):
             raise answer
         return answer if answer is not None else self._answer(request, route)
+
+    def _route(self, request: httpx.Request) -> str:
+        raise NotImplementedError
+
+    def _answer(self, request: httpx.Request, route: str) -> httpx.Response:
+        raise NotImplementedError
+
+
+class FakeDriveApi(RecordedApi):
+    """Answers Drive REST calls; pictures are bytes by file id.
+
+    Routes: "files.list", "files.get:<id>" (folders), "media:<id>" (alt=media) and "thumbnail:<id>".
+    """
+
+    def __init__(
+        self,
+        recorded: dict[str, Any],
+        pictures: dict[str, bytes],
+        failures: dict[str, list[httpx.Response | Exception]] | None = None,
+    ):
+        super().__init__(recorded, failures)
+        self.pictures = pictures
+        self._thumbnail_ids = {
+            file["thumbnailLink"].rsplit(THUMBNAIL_SIZE_MARK, 1)[0]: file["id"]
+            for page in recorded["files_list"].values()
+            for file in page["files"]
+            if file.get("thumbnailLink")
+        }
 
     def _route(self, request: httpx.Request) -> str:
         if request.url.host == DRIVE_THUMBNAIL_HOST:
@@ -146,40 +162,19 @@ class FakeDriveApi:
         return httpx.Response(200, content=self.pictures[file_id], headers={"Content-Type": "image/jpeg"})
 
 
-class FakeTmdbApi:
-    """Answers TMDB calls from recorded JSON through httpx.MockTransport.
+class FakeTmdbApi(RecordedApi):
+    """Answers TMDB calls.
 
     Routes: "search:<query>" and "movie:<id>". A query or an id that is not recorded answers TMDB's empty
-    search page or its 404. failures[route] answers (responses or errors) are used one per call first.
+    search page or its 404.
     """
-
-    def __init__(self, recorded: dict[str, Any], failures: dict[str, list[httpx.Response | Exception]] | None = None):
-        self.recorded = recorded
-        self.failures = {route: list(answers) for route, answers in (failures or {}).items()}
-        self.requests: list[httpx.Request] = []
-        self.routes: list[str] = []
-        # The resource looks movies up in parallel threads.
-        self._lock = threading.Lock()
-
-    def client(self) -> httpx.Client:
-        return httpx.Client(transport=httpx.MockTransport(self))
-
-    def __call__(self, request: httpx.Request) -> httpx.Response:
-        route = self._route(request)
-        with self._lock:
-            self.requests.append(request)
-            self.routes.append(route)
-            answer = self.failures[route].pop(0) if self.failures.get(route) else None
-        if isinstance(answer, Exception):
-            raise answer
-        return answer if answer is not None else self._answer(route)
 
     def _route(self, request: httpx.Request) -> str:
         if request.url.path == TMDB_SEARCH_PATH:
             return f"search:{request.url.params.get('query')}"
         return f"movie:{request.url.path.rsplit('/', 1)[-1]}"
 
-    def _answer(self, route: str) -> httpx.Response:
+    def _answer(self, request: httpx.Request, route: str) -> httpx.Response:
         kind, _, key = route.partition(":")
         if kind == "search":
             return httpx.Response(200, json=self.recorded["search"].get(key, self.recorded["empty_search"]))
@@ -187,6 +182,30 @@ class FakeTmdbApi:
         if movie is None:
             return httpx.Response(TMDB_NOT_FOUND_STATUS, json=self.recorded["not_found"])
         return httpx.Response(200, json=movie)
+
+
+class FakeSpotifyApi(RecordedApi):
+    """Answers Spotify's token and liked songs calls.
+
+    Routes: "token" (POST /api/token) and "tracks:<offset>" (GET /v1/me/tracks; the first call has no offset: 0).
+    The token call answers the recorded "token"; an offset that is not recorded answers the recorded empty page.
+    """
+
+    def _route(self, request: httpx.Request) -> str:
+        if request.url.path == SPOTIFY_TOKEN_PATH:
+            return "token"
+        return f"tracks:{request.url.params.get('offset', FIRST_OFFSET)}"
+
+    def _answer(self, request: httpx.Request, route: str) -> httpx.Response:
+        kind, _, offset = route.partition(":")
+        if kind == "token":
+            return httpx.Response(200, json=self.recorded["token"])
+        return httpx.Response(200, json=self.recorded["tracks"].get(offset, self.recorded["empty_tracks"]))
+
+    def form(self, index: int = 0) -> dict[str, str]:
+        """The form fields of the index-th token call."""
+        token_calls = [request for request in self.requests if request.url.path == SPOTIFY_TOKEN_PATH]
+        return dict(httpx.QueryParams(token_calls[index].content.decode("ascii")))
 
 
 class FakeTokens:

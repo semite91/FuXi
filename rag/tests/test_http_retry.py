@@ -1,9 +1,20 @@
+import ast
+import inspect
 import threading
+import traceback
 
 import httpx
 import pytest
 
-from resources import google_drive_resource, http_retry, letterboxd_tmdb_resource, notion_resource
+import base
+from resources import (
+    document_fields,
+    google_drive_resource,
+    http_retry,
+    letterboxd_tmdb_resource,
+    notion_resource,
+    spotify_resource,
+)
 from resources.http_retry import (
     MAX_ATTEMPTS,
     MAX_RETRY_AFTER_SECONDS,
@@ -224,3 +235,160 @@ def test_resources_share_the_http_client_and_the_timed_read():
         assert not hasattr(module, "REQUEST_TIMEOUT_SECONDS") and not hasattr(module, "_create_http_client")
     for module in (google_drive_resource, letterboxd_tmdb_resource, notion_resource):
         assert module.timed_read is http_retry.timed_read
+
+
+def test_basic_header_holds_the_base64_of_the_user_and_password():
+    # Phase 5d C3 D1
+    assert http_retry.basic_header("client-id", "client-secret") == {
+        "Authorization": "Basic Y2xpZW50LWlkOmNsaWVudC1zZWNyZXQ="
+    }
+
+
+class ExampleError(http_retry.ApiCallError):
+    SERVICE = "Example"
+
+
+def failed_answer(status: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("GET", "https://api.example.com/v1/items?query=secret-name")
+    response = httpx.Response(status, request=request)
+    return httpx.HTTPStatusError("failed for secret-name", request=request, response=response)
+
+
+def test_call_error_of_a_status_holds_the_status_and_the_endpoint_only():
+    # Phase 5d E10
+    error = ExampleError.of_http_error(failed_answer(503), "/v1/items")
+
+    assert str(error) == "Example call failed: 503 on /v1/items"
+    assert (error.status, error.endpoint) == (503, "/v1/items")
+
+
+def test_call_error_of_a_network_error_holds_its_kind_and_the_endpoint_only():
+    # Phase 5d E10
+    error = ExampleError.of_http_error(httpx.ConnectError("no route to secret-name"), "/v1/items")
+
+    assert str(error) == "Example call failed: ConnectError on /v1/items"
+    assert (error.status, error.endpoint) == (None, "/v1/items")
+
+
+@pytest.mark.parametrize("content", ["<html>secret-name</html>", "", "[]", "null", '"secret-name"', "7"])
+def test_answer_that_is_not_a_json_object_raises_the_call_error_without_its_body(content):
+    # Phase 5d E9
+    with pytest.raises(ExampleError) as raised:
+        http_retry.json_object(httpx.Response(200, content=content.encode("utf-8")), "/v1/items", ExampleError)
+
+    assert str(raised.value) == "Example call failed: an answer that is not a JSON object on /v1/items"
+    assert raised.value.__cause__ is None
+    assert "secret-name" not in "".join(traceback.format_exception(raised.value))
+
+
+def test_json_object_answer_is_given_as_a_dict():
+    # Phase 5d E9
+    assert http_retry.json_object(httpx.Response(200, json={"items": []}), "/v1/items", ExampleError) == {"items": []}
+
+
+@pytest.mark.parametrize("content", [b"<html>secret-name</html>", b"", b"[]", b"null", b'"secret-name"', b"7", b"\xff\xfe{}"])
+def test_answer_that_is_not_a_json_object_is_none_for_a_caller_that_does_not_fail(content):
+    # Phase 5d H3 (one JSON parsing for json_object and the Spotify error code)
+    assert http_retry.json_object_or_none(httpx.Response(400, content=content)) is None
+
+
+def test_json_object_answer_is_given_as_a_dict_also_to_a_caller_that_does_not_fail():
+    # Phase 5d H3
+    assert http_retry.json_object_or_none(httpx.Response(400, json={"error": "invalid_grant"})) == {"error": "invalid_grant"}
+
+
+def ok_answer(json_body) -> httpx.Response:
+    return httpx.Response(200, json=json_body, request=httpx.Request("GET", "https://api.example.com/v1/items"))
+
+
+def test_call_json_gives_the_json_object_of_a_successful_call():
+    # Phase 5d H3
+    stats = ReadStats()
+
+    answer = http_retry.call_json(
+        lambda: ok_answer({"items": []}), "/v1/items", ExampleError, http_retry_wait, stats, lambda _: None
+    )
+
+    assert answer == {"items": []}
+    assert stats.calls == 1
+
+
+def test_call_json_retries_with_the_given_rule_and_raises_the_given_error_without_the_cause():
+    # Phase 5d H3
+    stats, sleeps = ReadStats(), []
+    answers = iter([httpx.ConnectError("no route to secret-name")] * MAX_ATTEMPTS)
+
+    def call():
+        raise next(answers)
+
+    with pytest.raises(ExampleError) as raised:
+        http_retry.call_json(call, "/v1/items", ExampleError, http_retry_wait, stats, sleeps.append)
+
+    assert str(raised.value) == "Example call failed: ConnectError on /v1/items"
+    assert raised.value.__cause__ is None
+    assert "secret-name" not in "".join(traceback.format_exception(raised.value))
+    assert sleeps == [1.0, 2.0, 4.0, 8.0]
+
+
+def test_call_json_checks_the_status_and_the_json_object():
+    # Phase 5d H3
+    request = httpx.Request("GET", "https://api.example.com/v1/items?query=secret-name")
+
+    with pytest.raises(ExampleError) as refused:
+        http_retry.call_json(
+            lambda: httpx.Response(404, request=request), "/v1/items", ExampleError, http_retry_wait, ReadStats(),
+            lambda _: None,
+        )
+    with pytest.raises(ExampleError) as not_json:
+        http_retry.call_json(
+            lambda: ok_answer(["secret-name"]), "/v1/items", ExampleError, http_retry_wait, ReadStats(), lambda _: None
+        )
+
+    assert (refused.value.status, refused.value.endpoint) == (404, "/v1/items")
+    assert str(not_json.value) == "Example call failed: an answer that is not a JSON object on /v1/items"
+
+
+def module_constants(module) -> set[str]:
+    """The names a module assigns at its top level (imported names are left out)."""
+    tree = ast.parse(inspect.getsource(module))
+    return {
+        target.id
+        for node in tree.body if isinstance(node, ast.Assign)
+        for target in node.targets if isinstance(target, ast.Name)
+    }
+
+
+def test_web_api_resources_share_the_call_and_check_code_the_separators_and_the_metadata_keys():
+    # Phase 5d H3
+    for module in (letterboxd_tmdb_resource, spotify_resource):
+        assert module.call_json is http_retry.call_json
+        assert not hasattr(module, "call_with_retry") and not hasattr(module, "json_object")
+        assert module.LINE_SEPARATOR is document_fields.LINE_SEPARATOR
+        assert module.SUMMARY_SEPARATOR is document_fields.SUMMARY_SEPARATOR
+        assert not {"LINE_SEPARATOR", "SUMMARY_SEPARATOR", "METADATA_ALBUM"} & module_constants(module)
+    assert (document_fields.LINE_SEPARATOR, document_fields.SUMMARY_SEPARATOR) == ("\n", ", ")
+    assert base.METADATA_ALBUM == "album"
+    assert spotify_resource.METADATA_ALBUM is base.METADATA_ALBUM
+
+
+@pytest.mark.parametrize("error", [
+    httpx.ConnectError("no route"),
+    httpx.ReadTimeout("slow"),
+    httpx.RemoteProtocolError("dropped"),
+    failed_answer(503),
+    failed_answer(500),
+    failed_answer(400),
+    ValueError("other"),
+])
+def test_rate_limit_rule_does_not_try_again_a_call_the_server_may_have_used(error):
+    # Phase 5d D10
+    assert http_retry.rate_limit_retry_wait(error, 0) is None
+
+
+def test_rate_limit_rule_waits_the_retry_after_of_a_429():
+    # Phase 5d D10
+    request = httpx.Request("POST", "https://accounts.example.com/api/token")
+    response = httpx.Response(429, headers={"Retry-After": "3"}, request=request)
+    error = httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    assert http_retry.rate_limit_retry_wait(error, 0) == Wait(3.0, rate_limited=True)

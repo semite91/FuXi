@@ -9,6 +9,7 @@ from settings import (
     DEFAULT_REBUILD_COOLDOWN_MINUTES,
     DEFAULT_TEXT_THRESHOLD,
     REPO_ROOT,
+    ConfigurationError,
     MissingSettingError,
     SettingsError,
     load_settings,
@@ -201,3 +202,63 @@ def test_printed_settings_hide_the_tmdb_token(tmp_path):
 
     assert "tmdb-test-token" not in repr(settings)
     assert "tmdb-test-token" not in str(settings)
+
+
+SPOTIFY_ENV = (
+    "RAG_SPOTIFY_CLIENT_ID=spotify-test-client-id\n"
+    "RAG_SPOTIFY_CLIENT_SECRET=spotify-test-client-secret\n"
+    "RAG_SPOTIFY_TOKEN_FILE=rag/secrets/spotify_token.json\n"
+)
+
+
+def test_spotify_client_id_client_secret_and_token_file_are_read(tmp_path):
+    # Phase 5d B1
+    content = (
+        "RAG_SPOTIFY_CLIENT_ID=spotify-test-client-id\n"
+        "RAG_SPOTIFY_CLIENT_SECRET=spotify-test-client-secret\n"
+        f"RAG_SPOTIFY_TOKEN_FILE={tmp_path / 'spotify_token.json'}\n"
+    )
+
+    settings = load_settings(write_env(tmp_path, content), environ={})
+
+    assert settings.require_spotify_client_id() == "spotify-test-client-id"
+    assert settings.require_spotify_client_secret() == "spotify-test-client-secret"
+    assert settings.require_spotify_token_file() == tmp_path / "spotify_token.json"
+
+
+def test_relative_spotify_token_file_is_resolved_from_the_repository_root(tmp_path):
+    # Phase 5d B2
+    settings = load_settings(write_env(tmp_path, SPOTIFY_ENV), environ={})
+
+    assert settings.require_spotify_token_file() == REPO_ROOT / "rag" / "secrets" / "spotify_token.json"
+
+
+def test_missing_spotify_keys_fail_only_when_used(tmp_path):
+    # Phase 5d B3
+    settings = load_settings(
+        write_env(tmp_path, "RAG_SPOTIFY_CLIENT_ID=\nRAG_SPOTIFY_CLIENT_SECRET\nRAG_SPOTIFY_TOKEN_FILE=  \n"), environ={}
+    )
+
+    with pytest.raises(MissingSettingError, match="RAG_SPOTIFY_CLIENT_ID"):
+        settings.require_spotify_client_id()
+    with pytest.raises(MissingSettingError, match="RAG_SPOTIFY_CLIENT_SECRET"):
+        settings.require_spotify_client_secret()
+    with pytest.raises(MissingSettingError, match="RAG_SPOTIFY_TOKEN_FILE"):
+        settings.require_spotify_token_file()
+
+
+def test_printed_settings_hide_the_spotify_client_id_client_secret_and_token_file(tmp_path):
+    # Phase 5d B4
+    settings = load_settings(write_env(tmp_path, SPOTIFY_ENV), environ={})
+
+    for printed in (repr(settings), str(settings)):
+        assert "spotify-test-client-id" not in printed
+        assert "spotify-test-client-secret" not in printed
+        assert "spotify_token.json" not in printed
+
+
+def test_every_settings_error_shares_one_base_and_keeps_its_old_type():
+    # Phase 5d C17 (the approval helper catches the base; other callers keep catching ValueError or RuntimeError)
+    assert issubclass(SettingsError, ConfigurationError) and issubclass(SettingsError, ValueError)
+    assert issubclass(MissingSettingError, ConfigurationError) and issubclass(MissingSettingError, RuntimeError)
+    assert not issubclass(ConfigurationError, (ValueError, RuntimeError))

@@ -14,20 +14,32 @@ from typing import Any
 import httpx
 
 from base import (
+    METADATA_MUSICIAN,
     METADATA_NAME,
     METADATA_PATH,
     METADATA_TIMESTAMP,
     METADATA_TYPE,
+    NO_PATH,
     TEXT_DOCUMENT_TYPE,
     Document,
     Resource,
     ResourceKind,
 )
+from resources.document_fields import (
+    LINE_SEPARATOR,
+    SUMMARY_SEPARATOR,
+    clean_text,
+    join_names,
+    json_entries,
+    labelled_lines,
+    unique_names,
+)
 from resources.http_retry import (
+    ApiCallError,
     Clock,
     ReadStats,
     bearer_header,
-    call_with_retry,
+    call_json,
     create_http_client,
     http_retry_wait,
     timed_read,
@@ -57,14 +69,8 @@ UNPROCESSABLE_STATUS = 422
 REFUSED_REQUEST_STATUSES = frozenset({BAD_REQUEST_STATUS, UNPROCESSABLE_STATUS})
 # A movie that the search found can be gone when its details are asked.
 SKIPPED_DETAILS_STATUSES = REFUSED_REQUEST_STATUSES | {NOT_FOUND_STATUS}
-TMDB_ERROR_FORMAT = "TMDB call failed: {failure} on {endpoint}"
-NOT_A_JSON_OBJECT_FAILURE = "an answer that is not a JSON object"
 INVALID_ADDRESS = "an address that is not valid"
 EVERY_REQUEST_REFUSED_MESSAGE = "TMDB refused every movie request (400 or 422)"
-# The endpoint of an error that is not of one call.
-NO_ENDPOINT = ""
-# A movie has no folder path.
-NO_PATH = ""
 # Movies are looked up this many at a time.
 LOOKUP_WORKERS = 4
 
@@ -80,19 +86,14 @@ SCREENPLAY_JOBS = frozenset({"Screenplay", "Writer"})
 MAX_ACTORS = 10
 
 TITLE_FORMAT = "{title} ({year})"
-LINE_FORMAT = "{label}: {value}"
 DIRECTOR_LABEL = "Director"
 MUSIC_LABEL = "Music"
 SCREENPLAY_LABEL = "Screenplay"
 GENRES_LABEL = "Genres"
 ACTORS_LABEL = "Actors"
 SUMMARY_LABEL = "Summary"
-NAME_SEPARATOR = ", "
-SUMMARY_SEPARATOR = ", "
-LINE_SEPARATOR = "\n"
 
 METADATA_DIRECTOR = "director"
-METADATA_MUSICIAN = "musician"
 METADATA_GENRE = "genre"
 
 
@@ -100,21 +101,11 @@ class WatchedFileError(RuntimeError):
     """The watched.csv cannot be used. The message names the setting, never the file's path."""
 
 
-class TmdbError(RuntimeError):
+class TmdbError(ApiCallError):
     """A TMDB failure that fails the source. The message never holds the query string, so never the movie's
     name, and never the token."""
 
-    def __init__(self, message: str, status: int | None = None, endpoint: str = NO_ENDPOINT) -> None:
-        super().__init__(message)
-        self.status = status
-        self.endpoint = endpoint
-
-    @classmethod
-    def of_call(cls, failure: int | str, endpoint: str) -> "TmdbError":
-        """A call that failed after the retries, or whose answer is not a JSON object: the message holds the
-        status (or the kind of failure) and the endpoint's path."""
-        status = failure if isinstance(failure, int) else None
-        return cls(TMDB_ERROR_FORMAT.format(failure=failure, endpoint=endpoint), status, endpoint)
+    SERVICE = "TMDB"
 
 
 class TmdbRefusedError(TmdbError):
@@ -247,24 +238,18 @@ class _TmdbSession:
     def get(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
         """The JSON object of a successful call. A 4xx, a 5xx or any other httpx error raises TmdbError after
         the retries; an answer that is not a JSON object raises it at once."""
-        endpoint = _endpoint(url)
-        try:
-            response = call_with_retry(
-                lambda: self._client.get(url, params=params, headers=self._headers).raise_for_status(),
-                http_retry_wait,
-                self._stats,
-                self._sleep,
-            )
-        except httpx.HTTPStatusError as error:
-            # The cause is dropped: its message holds the URL with the movie's name.
-            raise TmdbError.of_call(error.response.status_code, endpoint) from None
-        except (httpx.HTTPError, httpx.InvalidURL) as error:
-            raise TmdbError.of_call(type(error).__name__, endpoint) from None
-        return _json_object(response, endpoint)
+        return call_json(
+            lambda: self._client.get(url, params=params, headers=self._headers),
+            _endpoint(url),
+            TmdbError,
+            http_retry_wait,
+            self._stats,
+            self._sleep,
+        )
 
     def search(self, row: WatchedRow) -> list[dict[str, Any]]:
         params = {"query": row.name, "primary_release_year": row.year, "language": TMDB_LANGUAGE}
-        return _entries(self.get(SEARCH_MOVIE_URL, params).get("results"))
+        return json_entries(self.get(SEARCH_MOVIE_URL, params).get("results"))
 
     def details(self, movie_id: int) -> dict[str, Any]:
         return self.get(MOVIE_URL_FORMAT.format(movie_id=movie_id), DETAILS_PARAMS)
@@ -277,17 +262,6 @@ def _endpoint(url: str) -> str:
     except httpx.InvalidURL as error:
         # The cause is dropped: its message can hold a part of the address.
         raise TmdbError.of_call(type(error).__name__, INVALID_ADDRESS) from None
-
-
-def _json_object(response: httpx.Response, endpoint: str) -> dict[str, Any]:
-    try:
-        answer = response.json()
-    except ValueError:
-        # The cause is dropped: it holds the answer's body.
-        raise TmdbError.of_call(NOT_A_JSON_OBJECT_FAILURE, endpoint) from None
-    if not isinstance(answer, dict):
-        raise TmdbError.of_call(NOT_A_JSON_OBJECT_FAILURE, endpoint)
-    return answer
 
 
 def create_letterboxd_tmdb_resource(settings: Settings) -> LetterboxdTmdbResource:
@@ -337,11 +311,11 @@ def _watched_list(csv_rows: Iterable[dict[str, Any]]) -> WatchedList:
 
 
 def _watched_row(csv_row: dict[str, Any]) -> WatchedRow | None:
-    name = _text(csv_row.get(NAME_COLUMN))
-    year = _text(csv_row.get(YEAR_COLUMN))
+    name = clean_text(csv_row.get(NAME_COLUMN))
+    year = clean_text(csv_row.get(YEAR_COLUMN))
     if not name or not year.isdecimal():
         return None
-    return WatchedRow(name, int(year), _iso_date(_text(csv_row.get(DATE_COLUMN))))
+    return WatchedRow(name, int(year), _iso_date(clean_text(csv_row.get(DATE_COLUMN))))
 
 
 def _iso_date(text: str) -> str:
@@ -400,7 +374,7 @@ def _matching_movie_id(results: list[dict[str, Any]], row: WatchedRow) -> int | 
 
 
 def _title_keys(result: dict[str, Any]) -> set[str]:
-    return {_title_key(_text(result.get(key))) for key in TITLE_KEYS}
+    return {_title_key(clean_text(result.get(key))) for key in TITLE_KEYS}
 
 
 def _title_key(title: str) -> str:
@@ -414,24 +388,24 @@ def _release_year(result: dict[str, Any]) -> str:
 
 
 def build_document(details: dict[str, Any], row: WatchedRow) -> Document:
-    title = _text(details.get("title")) or row.name
+    title = clean_text(details.get("title")) or row.name
     credits = details.get("credits")
     credits = credits if isinstance(credits, dict) else {}
-    crew = _entries(credits.get("crew"))
-    directors = _join(_names(member for member in crew if member.get("job") == DIRECTOR_JOB))
-    musicians = _join(_names(member for member in crew if member.get("job") == COMPOSER_JOB))
-    writers = _join(_names(member for member in crew if _is_screenplay(member)))
-    genres = _join(_names(_entries(details.get("genres"))))
-    actors = _join(_names(_entries(credits.get("cast")))[:MAX_ACTORS])
+    crew = json_entries(credits.get("crew"))
+    directors = join_names(unique_names(member for member in crew if member.get("job") == DIRECTOR_JOB))
+    musicians = join_names(unique_names(member for member in crew if member.get("job") == COMPOSER_JOB))
+    writers = join_names(unique_names(member for member in crew if _is_screenplay(member)))
+    genres = join_names(unique_names(json_entries(details.get("genres"))))
+    actors = join_names(unique_names(json_entries(credits.get("cast")))[:MAX_ACTORS])
     lines = [
         TITLE_FORMAT.format(title=title, year=row.year),
-        *_lines(
+        *labelled_lines(
             (DIRECTOR_LABEL, directors),
             (MUSIC_LABEL, musicians),
             (SCREENPLAY_LABEL, writers),
             (GENRES_LABEL, genres),
             (ACTORS_LABEL, actors),
-            (SUMMARY_LABEL, _text(details.get("overview"))),
+            (SUMMARY_LABEL, clean_text(details.get("overview"))),
         ),
     ]
     metadata = {
@@ -448,26 +422,3 @@ def build_document(details: dict[str, Any], row: WatchedRow) -> Document:
 
 def _is_screenplay(member: dict[str, Any]) -> bool:
     return member.get("department") == WRITING_DEPARTMENT and member.get("job") in SCREENPLAY_JOBS
-
-
-def _entries(entries: Any) -> list[dict[str, Any]]:
-    """The objects of a TMDB list (search results, crew, cast or genres); anything else is an empty list."""
-    return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
-
-
-def _names(entries: Iterable[dict[str, Any]]) -> list[str]:
-    """Each name once, in TMDB's order."""
-    return list(dict.fromkeys(name for name in (_text(entry.get("name")) for entry in entries) if name))
-
-
-def _join(names: list[str]) -> str:
-    return NAME_SEPARATOR.join(names)
-
-
-def _lines(*labelled_values: tuple[str, str]) -> list[str]:
-    """One line per value; a line without a value is left out."""
-    return [LINE_FORMAT.format(label=label, value=value) for label, value in labelled_values if value]
-
-
-def _text(value: Any) -> str:
-    return value.strip() if isinstance(value, str) else ""

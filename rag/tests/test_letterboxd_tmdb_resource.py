@@ -939,7 +939,7 @@ def test_movie_resource_implements_the_resource_base_as_a_text_source_with_the_s
 
     assert isinstance(resource, Resource)
     assert (resource.name, resource.kind) == ("letterboxd_tmdb", ResourceKind.TEXT)
-    assert letterboxd_tmdb_resource.call_with_retry is http_retry.call_with_retry
+    assert letterboxd_tmdb_resource.call_json is http_retry.call_json  # Phase 5d H3
     assert letterboxd_tmdb_resource.http_retry_wait is http_retry.http_retry_wait
     assert letterboxd_tmdb_resource.ReadStats is http_retry.ReadStats
 

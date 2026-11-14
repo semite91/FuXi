@@ -17,6 +17,9 @@ GEMINI_API_KEY_KEY = "RAG_GEMINI_API_KEY"
 GOOGLE_SERVICE_ACCOUNT_FILE_KEY = "RAG_GOOGLE_SERVICE_ACCOUNT_FILE"
 TMDB_TOKEN_KEY = "RAG_TMDB_TOKEN"
 LETTERBOXD_WATCHED_FILE_KEY = "RAG_LETTERBOXD_WATCHED_FILE"
+SPOTIFY_CLIENT_ID_KEY = "RAG_SPOTIFY_CLIENT_ID"
+SPOTIFY_CLIENT_SECRET_KEY = "RAG_SPOTIFY_CLIENT_SECRET"
+SPOTIFY_TOKEN_FILE_KEY = "RAG_SPOTIFY_TOKEN_FILE"
 GEMINI_MODEL_KEY = "RAG_GEMINI_MODEL"
 TEXT_THRESHOLD_KEY = "RAG_TEXT_THRESHOLD"
 IMAGE_THRESHOLD_KEY = "RAG_IMAGE_THRESHOLD"
@@ -40,11 +43,15 @@ LIST_SEPARATOR = ","
 ENV_FILE_ENCODING = "utf-8"
 
 
-class SettingsError(ValueError):
+class ConfigurationError(Exception):
+    """A setting is missing or has an invalid value; the message names its key."""
+
+
+class SettingsError(ConfigurationError, ValueError):
     """A setting has an invalid value."""
 
 
-class MissingSettingError(RuntimeError):
+class MissingSettingError(ConfigurationError, RuntimeError):
     """A required setting is used but has no value."""
 
 
@@ -63,6 +70,9 @@ class Settings:
     google_service_account_file: str | None = field(default=None, repr=False)
     tmdb_token: str | None = field(default=None, repr=False)
     letterboxd_watched_file: str | None = field(default=None, repr=False)
+    spotify_client_id: str | None = field(default=None, repr=False)
+    spotify_client_secret: str | None = field(default=None, repr=False)
+    spotify_token_file: str | None = field(default=None, repr=False)
 
     def require_notion_token(self) -> str:
         return _require(self.notion_token, NOTION_TOKEN_KEY)
@@ -81,6 +91,16 @@ class Settings:
         """The watched.csv path; a relative path is resolved from the repository root."""
         return _require_path(self.letterboxd_watched_file, LETTERBOXD_WATCHED_FILE_KEY)
 
+    def require_spotify_client_id(self) -> str:
+        return _require(self.spotify_client_id, SPOTIFY_CLIENT_ID_KEY)
+
+    def require_spotify_client_secret(self) -> str:
+        return _require(self.spotify_client_secret, SPOTIFY_CLIENT_SECRET_KEY)
+
+    def require_spotify_token_file(self) -> Path:
+        """The refresh token file path; a relative path is resolved from the repository root."""
+        return _require_path(self.spotify_token_file, SPOTIFY_TOKEN_FILE_KEY)
+
 
 def load_settings(
     env_path: Path = ROOT_ENV_PATH, environ: Mapping[str, str] | None = None
@@ -93,6 +113,9 @@ def load_settings(
         google_service_account_file=_text(values, GOOGLE_SERVICE_ACCOUNT_FILE_KEY),
         tmdb_token=_text(values, TMDB_TOKEN_KEY),
         letterboxd_watched_file=_text(values, LETTERBOXD_WATCHED_FILE_KEY),
+        spotify_client_id=_text(values, SPOTIFY_CLIENT_ID_KEY),
+        spotify_client_secret=_text(values, SPOTIFY_CLIENT_SECRET_KEY),
+        spotify_token_file=_text(values, SPOTIFY_TOKEN_FILE_KEY),
         gemini_model=_text(values, GEMINI_MODEL_KEY) or DEFAULT_GEMINI_MODEL,
         text_threshold=_threshold(values, TEXT_THRESHOLD_KEY, DEFAULT_TEXT_THRESHOLD),
         image_threshold=_threshold(values, IMAGE_THRESHOLD_KEY, DEFAULT_IMAGE_THRESHOLD),

@@ -421,3 +421,42 @@ def test_movie_result_is_sent_as_a_text_context_item_with_its_document_and_name(
         {"document": movie.document, "name": "The Lantern Keeper", "path": ""},
     ]
     assert context["images"] == []
+
+
+SONG_LINK = "https://open.spotify.com/track/1aGlassHarborLight0001"
+SONG = RetrievedItem(
+    document="Song: Glass Harbor Lights" + chr(10) + "Musician: Mira Solen" + chr(10) + "Album: Night Ferries" + chr(10)
+    + f"Link: {SONG_LINK}",
+    metadata={
+        "name": "Glass Harbor Lights", "path": "", "musician": "Mira Solen", "album": "Night Ferries", "type": "song",
+        "timestamp": "2026-10-02T18:20:11Z",
+    },
+    similarity=0.64,
+)
+
+
+def test_song_result_is_sent_as_a_text_context_item_with_its_document_name_and_empty_path():
+    # Phase 5d G6
+    client, gemini, _ = make_client([RECORDED["music_success"]], ["music"])
+
+    client.generate(WORD, MEANING, [*TEXT_RESULTS, SONG], [])
+
+    context = json.loads(gemini.calls[0]["contents"])["retrieved_context"]
+    assert context["texts"] == [
+        {"document": "A stranger lent me an umbrella.", "name": "Travel Notes", "path": ""},
+        {"document": SONG.document, "name": "Glass Harbor Lights", "path": ""},
+    ]
+    assert context["images"] == []
+
+
+def test_music_answer_with_a_liked_songs_spotify_link_keeps_that_link():
+    # Phase 5d G7
+    answer = json.loads(RECORDED["music_success"])
+    answer["memory_aid"].update(song_title="Glass Harbor Lights", artist="Mira Solen", song_url=SONG_LINK)
+    client, _, _ = make_client([json.dumps(answer)], ["music"])
+
+    content = json.loads(client.generate(WORD, MEANING, [*TEXT_RESULTS, SONG], []))
+
+    assert content["method"] == "music"
+    assert content["song_url"] == SONG_LINK
+    assert (content["song_title"], content["artist"]) == ("Glass Harbor Lights", "Mira Solen")

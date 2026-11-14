@@ -14,6 +14,7 @@ from chroma_store import TEXT_COLLECTION_NAME, create_chroma_client, is_build_co
 from resources.google_drive_resource import GoogleDriveResource, create_google_drive_resource
 from resources.letterboxd_tmdb_resource import LetterboxdTmdbResource, create_letterboxd_tmdb_resource
 from resources.notion_resource import NotionResource, create_notion_resource
+from resources.spotify_resource import SpotifyResource, create_spotify_resource
 from settings import Settings
 
 ALLOWED_ORIGIN = "http://localhost:5173"
@@ -590,13 +591,18 @@ def test_name_length_is_checked_after_trimming(tmp_path):
     assert answer.json() == [{"name": f"  {name}  ", "translation": "x", "content": "content"}]
 
 
-def test_default_resources_are_notion_google_drive_and_the_movies():
-    # Phase 5b E1, Phase 5c F1
+def test_default_resources_are_notion_google_drive_the_movies_and_the_songs():
+    # Phase 5b E1, Phase 5c F1, Phase 5d G1
     resources = engine.default_resources(Settings())
 
-    assert [type(resource) for resource in resources] == [NotionResource, GoogleDriveResource, LetterboxdTmdbResource]
+    assert [type(resource) for resource in resources] == [
+        NotionResource, GoogleDriveResource, LetterboxdTmdbResource, SpotifyResource
+    ]
     assert [(resource.name, resource.kind) for resource in resources] == [
-        ("notion", ResourceKind.TEXT), ("google_drive", ResourceKind.IMAGE), ("letterboxd_tmdb", ResourceKind.TEXT)
+        ("notion", ResourceKind.TEXT),
+        ("google_drive", ResourceKind.IMAGE),
+        ("letterboxd_tmdb", ResourceKind.TEXT),
+        ("spotify", ResourceKind.TEXT),
     ]
 
 
@@ -680,5 +686,40 @@ def test_missing_tmdb_token_fails_update_with_a_generic_message_and_names_the_to
     assert "RAG_TMDB_TOKEN" not in answer.text
     log = "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "logs").iterdir())
     assert "resource letterboxd_tmdb failed: MissingSettingError: RAG_TMDB_TOKEN is not set" in log
+    assert harness.stored_documents() == ["note 1"]
+    assert harness.client.post("/Init_RAG").json() == {"status": "ready"}
+
+
+def test_engine_starts_without_the_spotify_settings_and_names_the_key_when_the_songs_are_read(tmp_path):
+    # Phase 5d B3
+    harness = Harness(tmp_path, settings=Settings(), resource_factory=engine.default_resources)
+
+    assert harness.client.post("/Init_RAG").status_code == 202
+    harness.wait_for_build()
+
+    log = "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "logs").iterdir())
+    assert "resource spotify failed: MissingSettingError: RAG_SPOTIFY_CLIENT_ID is not set" in log
+
+
+def test_missing_spotify_token_file_fails_update_with_a_generic_message_and_the_details_only_in_the_log(tmp_path):
+    # Phase 5d G4
+    token_file = tmp_path / "secrets" / "spotify_token.json"
+    settings = Settings(
+        spotify_client_id="spotify-test-client-id", spotify_client_secret=SECRET, spotify_token_file=str(token_file)
+    )
+    resources: list[Resource] = [NotesResource()]
+    harness = Harness(tmp_path, settings=settings, resource_factory=lambda settings: list(resources))
+    harness.build_ready()
+    resources.append(create_spotify_resource(settings))
+
+    answer = harness.client.post("/Update_Collections")
+
+    assert answer.status_code == 502
+    assert answer.json() == {"detail": "The RAG collections could not be updated. The old collections are kept."}
+    assert "RAG_SPOTIFY_TOKEN_FILE" not in answer.text and "spotify_authorize" not in answer.text
+    log = "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "logs").iterdir())
+    assert "resource spotify failed: SpotifyTokenFileError: The RAG_SPOTIFY_TOKEN_FILE file does not exist" in log
+    assert "spotify_authorize.py" in log
+    assert str(token_file) not in log and SECRET not in log
     assert harness.stored_documents() == ["note 1"]
     assert harness.client.post("/Init_RAG").json() == {"status": "ready"}

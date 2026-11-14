@@ -223,3 +223,27 @@ def test_movie_results_above_the_text_threshold_hold_their_text_and_metadata(chr
     texts, _ = client.retrieve("q")
 
     assert texts == [RetrievedItem(document=movie_text, metadata=metadata, similarity=pytest.approx(0.7))]
+
+
+def test_song_results_above_the_text_threshold_hold_their_text_and_metadata(chroma_path, embedders):
+    # Phase 5d G5
+    client = make_client(chroma_path, embedders, settings=Settings(text_threshold=0.5))
+    song_text = (
+        "Song: Glass Harbor Lights" + chr(10) + "Musician: Mira Solen" + chr(10) + "Album: Night Ferries" + chr(10)
+        + "Link: https://open.spotify.com/track/1aGlassHarborLight0001"
+    )
+    metadata = {
+        "name": "Glass Harbor Lights", "path": "", "musician": "Mira Solen", "album": "Night Ferries", "type": "song",
+        "timestamp": "2026-10-02T18:20:11Z",
+    }
+    client.init().text.add(
+        ids=["kept", "dropped"],
+        documents=[song_text, "Song: Winter Radio"],
+        embeddings=[vector_with_similarity(0.8), vector_with_similarity(0.2)],
+        metadatas=[metadata, {**metadata, "name": "Winter Radio"}],
+    )
+
+    texts, images = client.retrieve("q")
+
+    assert texts == [RetrievedItem(document=song_text, metadata=metadata, similarity=pytest.approx(0.8))]
+    assert images == []

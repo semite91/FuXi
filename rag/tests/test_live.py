@@ -1,4 +1,4 @@
-"""LIVE tests: real models, real Notion, Google Drive, TMDB and Gemini. They run only when RAG_LIVE_TESTS=true."""
+"""LIVE tests: real models, real Notion, Google Drive, TMDB, Spotify and Gemini. They run only when RAG_LIVE_TESTS=true."""
 
 import base64
 import json
@@ -14,6 +14,7 @@ from llm_client import METHODS, LlmClient
 from resources.google_drive_resource import create_google_drive_resource, prepare_picture
 from resources.letterboxd_tmdb_resource import LetterboxdTmdbResource
 from resources.notion_resource import create_notion_resource
+from resources.spotify_resource import create_spotify_resource
 from settings import TEST_ENV_PATH, load_settings
 
 QWEN_VECTOR_SIZE = 1024
@@ -130,3 +131,12 @@ def test_real_tmdb_returns_three_known_movies_with_a_director_and_actors(tmp_pat
     assert [document.metadata["name"] for document in documents] == KNOWN_MOVIE_TITLES
     assert all(document.metadata["director"] for document in documents)
     assert all("\nActors: " in document.text for document in documents)
+
+
+def test_real_spotify_returns_liked_song_documents_with_a_musician():
+    # Phase 5d E13 (the real token file; a new refresh token from Spotify is written back to it)
+    documents = create_spotify_resource(LIVE_SETTINGS).read_documents()
+
+    assert len(documents) >= 1
+    assert all(document.metadata["musician"] for document in documents)
+    assert all(document.metadata["type"] == "song" for document in documents)
