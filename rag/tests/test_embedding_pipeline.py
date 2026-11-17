@@ -5,9 +5,10 @@ from pathlib import Path
 
 import httpx
 import pytest
+from notion_client import APIResponseError
 
 import chroma_store
-from base import Document, Resource, ResourceKind
+from base import Document, Resource, ResourceKind, ResourceSkipped
 from chroma_store import (
     DEFAULT_CHROMA_PATH,
     IMAGE_COLLECTION_NAME,
@@ -271,6 +272,46 @@ def test_failing_resource_is_logged_and_others_continue(chroma_client, embedders
     assert collection_names(chroma_client) == []  # an incomplete build is not stored
     log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
     assert "broken failed: RuntimeError: source is down" in log
+
+
+class NotConnectedResource(Resource):
+    name = "notion"
+    kind = ResourceKind.TEXT
+
+    def read_documents(self) -> list[Document]:
+        raise ResourceSkipped("not connected")
+
+
+def test_skipped_resource_is_logged_and_the_build_still_completes(chroma_client, embedders, tmp_path):
+    # Phase 6b D5, D6
+    result = run_pipeline(
+        Mode.CREATE, [NotConnectedResource(), ListResource("movies", 3)], chroma_client, embedders, tmp_path
+    )
+
+    assert result.failed_resources == []
+    assert result.added_documents == 3
+    assert result.complete is True
+    assert is_build_complete(chroma_client)
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert "resource notion: not connected, skipped" in log
+    assert "notion failed" not in log
+
+
+def test_rejected_notion_token_is_logged_with_the_reconnect_message_and_the_build_is_incomplete(
+    chroma_client, embedders, tmp_path
+):
+    # Phase 6b D7
+    rejected = APIResponseError(
+        code="unauthorized", status=401, message="API token is invalid.", headers=httpx.Headers(), raw_body_text=""
+    )
+    notion = NotionResource(client_factory=lambda: FakeNotionClient(load_fixture("notion_recorded.json"), errors=[rejected]))
+
+    result = run_pipeline(Mode.CREATE, [notion, ListResource("movies", 3)], chroma_client, embedders, tmp_path)
+
+    assert result.failed_resources == ["notion"]
+    assert result.complete is False
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert "resource notion failed: NotionTokenRejected: Notion token rejected: connect Notion again on the Settings page" in log
 
 
 def test_unknown_mode_is_rejected(chroma_client, embedders, tmp_path):

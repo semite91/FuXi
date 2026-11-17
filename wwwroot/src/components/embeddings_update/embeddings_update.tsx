@@ -1,10 +1,8 @@
 import { Icon } from '../../image/icons';
 import Dialog from '../dialog/dialog';
-import Tooltip from '../tooltip/tooltip';
+import InfoTooltip from '../info_tooltip/info_tooltip';
 import './embeddings_update.less';
 
-const INFO_ICON_SIZE = 12;
-const INFO_ICON_STROKE = 3.6;
 const WARNING_ICON_SIZE = 32;
 const WARNING_ICON_STROKE = 2.5;
 
@@ -43,11 +41,7 @@ const EmbeddingsUpdate = ({
     <button type="button" className="embeddings-update__link" onClick={onAsk}>
       {linkLabel}
     </button>
-    <Tooltip text={tipText}>
-      <button type="button" className="embeddings-update__info" aria-label={aboutLabel}>
-        <Icon name="info" size={INFO_ICON_SIZE} strokeWidth={INFO_ICON_STROKE} />
-      </button>
-    </Tooltip>
+    <InfoTooltip label={aboutLabel} text={tipText} />
 
     {isConfirmOpen && (
       <Dialog

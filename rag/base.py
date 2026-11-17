@@ -28,6 +28,13 @@ class Document:
     metadata: dict[str, MetadataValue] = field(default_factory=dict)
 
 
+class ResourceSkipped(Exception):
+    """A source that is not set up yet, such as Notion before the Learner connects it.
+
+    The build leaves it out and still counts as complete; the message says why, for the embedding log.
+    """
+
+
 class Resource(ABC):
     """A data source. New sources subclass this; nothing existing changes."""
 

@@ -23,4 +23,8 @@ public static class ApiRoutes
 
     public const string GET_VAPID_PUBLIC_KEY = PREFIX + "/GetVapidPublicKey";
     public const string SAVE_PUSH_SUBSCRIPTION = PREFIX + "/SavePushSubscription";
+
+    public const string NOTION_CONNECT = PREFIX + "/NotionConnect";
+    public const string NOTION_CALLBACK = PREFIX + "/NotionCallback";
+    public const string GET_NOTION_CONNECTION = PREFIX + "/GetNotionConnection";
 }

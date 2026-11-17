@@ -1,0 +1,16 @@
+@import (reference) '../../css/tokens.less';
+
+.info-tooltip__button {
+  .control-reset();
+  .focus-ring();
+  width: @size-icon-small;
+  height: @size-icon-small;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: @border-width-strong solid var(--color-info);
+  border-radius: @border-radius-round;
+  color: var(--color-info);
+  cursor: help;
+}

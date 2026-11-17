@@ -9,13 +9,18 @@ from settings import (
     DEFAULT_REBUILD_COOLDOWN_MINUTES,
     DEFAULT_TEXT_THRESHOLD,
     REPO_ROOT,
+    DatabaseSettings,
     MissingSettingError,
     SettingsError,
     load_settings,
 )
 
 FULL_ENV = """# comment line
-RAG_NOTION_TOKEN=notion-test-token
+FUXI_DB_HOST=db.fuxi.test
+FUXI_DB_PORT=5433
+FUXI_DB_NAME=fuxi_test
+FUXI_DB_USER=fuxi_reader
+FUXI_DB_PASSWORD=db-test-password
 RAG_GEMINI_API_KEY="gemini-test-key"
 RAG_GEMINI_MODEL=gemini-test-model
 RAG_TEXT_THRESHOLD=0.6
@@ -37,7 +42,9 @@ def test_every_rag_key_is_parsed(tmp_path):
     # B1
     settings = load_settings(write_env(tmp_path, FULL_ENV), environ={})
 
-    assert settings.require_notion_token() == "notion-test-token"
+    assert settings.require_database() == DatabaseSettings(
+        host="db.fuxi.test", port=5433, name="fuxi_test", user="fuxi_reader", password="db-test-password"
+    )  # Phase 6b D3
     assert settings.require_gemini_api_key() == "gemini-test-key"
     assert settings.gemini_model == "gemini-test-model"
     assert settings.text_threshold == 0.6
@@ -105,10 +112,52 @@ def test_missing_secrets_do_not_stop_loading(tmp_path):
     # B5
     settings = load_settings(write_env(tmp_path, ""), environ={})
 
-    with pytest.raises(MissingSettingError, match="RAG_NOTION_TOKEN"):
-        settings.require_notion_token()
     with pytest.raises(MissingSettingError, match="RAG_GEMINI_API_KEY"):
         settings.require_gemini_api_key()
+
+
+@pytest.mark.parametrize("key", ["FUXI_DB_HOST", "FUXI_DB_PORT", "FUXI_DB_NAME", "FUXI_DB_USER", "FUXI_DB_PASSWORD"])
+def test_missing_database_key_fails_only_when_used(tmp_path, key):
+    # Phase 6b D3, D8
+    content = "".join(line + "\n" for line in FULL_ENV.splitlines() if not line.startswith(key))
+    settings = load_settings(write_env(tmp_path, content), environ={})
+
+    with pytest.raises(MissingSettingError, match=key):
+        settings.require_database()
+
+
+def test_database_port_must_be_a_whole_number(tmp_path):
+    # Phase 6b D3
+    settings = load_settings(write_env(tmp_path, FULL_ENV.replace("5433", "port")), environ={})
+
+    with pytest.raises(SettingsError, match="FUXI_DB_PORT"):
+        settings.require_database()
+
+
+def test_printed_settings_hide_the_database_password(tmp_path):
+    # Phase 6b D8
+    settings = load_settings(write_env(tmp_path, FULL_ENV), environ={})
+
+    assert "db-test-password" not in repr(settings)
+    assert "db-test-password" not in repr(settings.require_database())
+
+
+def test_notion_token_is_no_env_setting(tmp_path):
+    # Phase 6b D9: the token lives in the Settings table, not in .env
+    settings = load_settings(write_env(tmp_path, "RAG_NOTION_TOKEN=old-env-token\n"), environ={})
+
+    assert not hasattr(settings, "notion_token")
+    assert not hasattr(settings, "require_notion_token")
+    assert "old-env-token" not in repr(settings)
+
+
+def test_settings_with_database_values_can_be_hashed(tmp_path):
+    # Phase 6b review SRS-13: a frozen Settings stays usable as a dict key or set member
+    env_file = write_env(tmp_path, "FUXI_DB_HOST=localhost\nFUXI_DB_NAME=fuxi\n")
+
+    first, second = (load_settings(env_file, environ={}) for _ in range(2))
+
+    assert {first: "cached"}[second] == "cached"
 
 
 def test_inline_comment_and_export_lines_are_read(tmp_path):

@@ -15,7 +15,7 @@ public sealed class RouteTests : IDisposable
     private const string DELETE = "DELETE";
     private const string ANY_METHOD = "*";
     private const char ROUTE_SEPARATOR = '/';
-    private const int ROUTE_COUNT = 15;
+    private const int ROUTE_COUNT = 18;
     private const string INTERNAL_FUNCTION_NAME = "GetNotificationWords";
     private const string INTERNAL_FUNCTION_ROUTE = ApiRoutes.PREFIX + "/" + INTERNAL_FUNCTION_NAME;
     private static readonly string[] GET_ROUTES =
@@ -27,6 +27,9 @@ public sealed class RouteTests : IDisposable
         ApiRoutes.GET_CONFIGS,
         ApiRoutes.GET_SCHEDULE,
         ApiRoutes.GET_VAPID_PUBLIC_KEY,
+        ApiRoutes.NOTION_CONNECT,
+        ApiRoutes.NOTION_CALLBACK,
+        ApiRoutes.GET_NOTION_CONNECTION,
     ];
     private static readonly string[] POST_ROUTES =
     [
@@ -73,9 +76,9 @@ public sealed class RouteTests : IDisposable
     }
 
     [Fact]
-    public void ApiHasExactlyFifteenRoutes()
+    public void ApiHasExactlyEighteenRoutes()
     {
-        // B5
+        // B5, Phase 6b: three Notion routes
         (string Route, string Method)[] expected =
         [
             .. GET_ROUTES.Select(route => (route, GET)),

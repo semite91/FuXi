@@ -23,6 +23,8 @@ public static class ApiFields
     public const string END_DATE = "endDate";
     public const string PUBLIC_KEY = "publicKey";
     public const string STATUS = "status";
+    public const string IS_CONNECTED = "isConnected";
+    public const string WORKSPACE_NAME = "workspaceName";
 
     public const string WORD_IDS = "wordIds";
     public const string WORD_ID = "wordId";

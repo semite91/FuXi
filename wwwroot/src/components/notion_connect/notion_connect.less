@@ -1,0 +1,40 @@
+@import (reference) '../../css/tokens.less';
+
+.notion-connect {
+  padding: 0 @space-xsmall;
+  display: flex;
+  flex-direction: column;
+  gap: @space-small;
+}
+
+.notion-connect__row {
+  display: flex;
+  align-items: center;
+  gap: @space-small;
+}
+
+.notion-connect__button {
+  .control-reset();
+  .focus-ring();
+  width: @size-control;
+  height: @size-control;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: @border-default;
+  border-radius: @border-radius-small;
+  background: var(--color-surface);
+  color: var(--color-text);
+  transition: background-color @transition-fast;
+
+  &:hover {
+    background: var(--color-hover);
+  }
+}
+
+.notion-connect__state {
+  margin: 0;
+  font-size: var(--font-size-text);
+  font-weight: @font-weight-medium;
+  color: var(--color-text-muted);
+}

@@ -1,4 +1,5 @@
 using FuXi.Api.Database;
+using FuXi.Api.Notion;
 using FuXi.Api.Push;
 
 namespace FuXi.Api.Tests.Api;
@@ -29,6 +30,10 @@ public sealed class NowApi(NowApiSettings? settings = null) : IDisposable
         DatabaseMigration.ENABLED_KEY,
         VapidSettings.PUBLIC_KEY_KEY,
         VapidSettings.PRIVATE_KEY_KEY,
+        NotionSettings.CLIENT_ID_KEY,
+        NotionSettings.CLIENT_SECRET_KEY,
+        NotionSettings.REDIRECT_URI_KEY,
+        NotionSettings.APP_URL_KEY,
     ];
 
     private readonly NowApiSettings settings = settings ?? new NowApiSettings();
@@ -98,5 +103,9 @@ public sealed class NowApi(NowApiSettings? settings = null) : IDisposable
         [DatabaseMigration.ENABLED_KEY] = settings.MigrateAtStartup,
         [VapidSettings.PUBLIC_KEY_KEY] = settings.VapidPublicKey,
         [VapidSettings.PRIVATE_KEY_KEY] = settings.VapidPrivateKey,
+        [NotionSettings.CLIENT_ID_KEY] = settings.NotionClientId,
+        [NotionSettings.CLIENT_SECRET_KEY] = settings.NotionClientSecret,
+        [NotionSettings.REDIRECT_URI_KEY] = settings.NotionRedirectUri,
+        [NotionSettings.APP_URL_KEY] = settings.AppUrl,
     };
 }

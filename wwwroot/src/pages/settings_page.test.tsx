@@ -1,17 +1,31 @@
 // Section P: the Settings page.
-import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { expect, onTestFinished, test, vi } from 'vitest';
-import { deferred, mockApi, networkFailure, problem } from '../test/api_mock';
-import { renderApp } from '../test/render_app';
+import { moveTo } from '../services/page_location';
+import { API_URL, deferred, mockApi, type ApiMock, networkFailure, problem } from '../test/api_mock';
+import { LOCATION_TEST_ID, renderApp } from '../test/render_app';
 
-const openSettings = (route = {}) => {
-  const api = mockApi({ 'POST /Update_Collections': { status: 204 }, ...route });
-  renderApp('/settings');
+// jsdom cannot leave the page; the Notion button's move is recorded instead.
+vi.mock('../services/page_location', () => ({ moveTo: vi.fn() }));
+
+const NOT_CONNECTED_ANSWER = { body: { isConnected: false, workspaceName: null } };
+
+const openSettings = (route = {}, path = '/settings') => {
+  const api = mockApi({
+    'POST /Update_Collections': { status: 204 },
+    'GET /api/GetNotionConnection': NOT_CONNECTED_ANSWER,
+    ...route,
+  });
+  renderApp(path);
 
   return api;
 };
 
 const button = (name: string) => screen.getByRole('button', { name });
+
+// Since 6b the page reads the Notion state when it opens (6b E3); "no call" means no other call.
+const callsBesidesNotionState = (api: ApiMock) =>
+  api.calls.filter((call) => !call.path.endsWith('/GetNotionConnection'));
 
 const stubNotification = (permission: NotificationPermission, answer: NotificationPermission = permission) => {
   const requestPermission = vi.fn(async () => answer);
@@ -74,7 +88,7 @@ test('P1 the page shows its title and link without a call', () => {
 
   expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
   expect(button('Update embeddings')).toBeInTheDocument();
-  expect(api.calls).toHaveLength(0);
+  expect(callsBesidesNotionState(api)).toHaveLength(0);
 });
 
 test('P2 the info button shows its tooltip on hover and focus', () => {
@@ -92,7 +106,7 @@ test('P3 the link asks "Are you sure?" without a call', () => {
 
   expect(screen.getByRole('dialog', { name: 'Are you sure?' })).toBeInTheDocument();
   expect(button('Yes')).toBeInTheDocument();
-  expect(api.calls).toHaveLength(0);
+  expect(callsBesidesNotionState(api)).toHaveLength(0);
 });
 
 test('P4 Yes calls Update_Collections once, P6 even when clicked twice, P5 then shows the result', async () => {
@@ -192,7 +206,7 @@ test('I1 opening the Settings page asks nothing and calls no push API', async ()
   expect(requestPermission).not.toHaveBeenCalled();
   expect(pushManager.getSubscription).not.toHaveBeenCalled();
   expect(pushManager.subscribe).not.toHaveBeenCalled();
-  expect(api.calls).toHaveLength(0);
+  expect(callsBesidesNotionState(api)).toHaveLength(0);
 });
 
 test('I2 "Enable notifications" asks the browser for permission', async () => {
@@ -521,7 +535,9 @@ test('6a C13 the confirm and the result dialog titles come from Dialog and they 
 
 // Phase 6a section E: the Requests toggle.
 const requestsToggle = () => button('Requests');
+// 6a's empty note; since 6b the toggle holds the Notion row (6b E1).
 const NO_REQUESTS = 'No requests yet.';
+const CONNECT_NOTION = 'Connect Notion';
 
 test('6a E1 the Requests toggle is after "Enable notifications" and before the Credits block', () => {
   openSettings();
@@ -536,19 +552,19 @@ test('6a E2 the Requests toggle starts closed without its content', () => {
   openSettings();
 
   expect(requestsToggle()).toHaveAttribute('aria-expanded', 'false');
-  expect(screen.queryByText(NO_REQUESTS)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: CONNECT_NOTION })).not.toBeInTheDocument();
 });
 
-test('6a E3 a click opens the toggle, E5 it says "No requests yet." and E4 a second click closes it', () => {
+test('6a E3 a click opens the toggle with its content and E4 a second click closes it', () => {
   openSettings();
 
   fireEvent.click(requestsToggle());
   expect(requestsToggle()).toHaveAttribute('aria-expanded', 'true');
-  expect(screen.getByText(NO_REQUESTS)).toBeInTheDocument();
+  expect(button(CONNECT_NOTION)).toBeInTheDocument();
 
   fireEvent.click(requestsToggle());
   expect(requestsToggle()).toHaveAttribute('aria-expanded', 'false');
-  expect(screen.queryByText(NO_REQUESTS)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: CONNECT_NOTION })).not.toBeInTheDocument();
 });
 
 test('6a E3 a click on the arrow opens the toggle', () => {
@@ -580,16 +596,233 @@ test('6a E7 the arrow turns when the toggle opens', () => {
   expect(arrow()).toHaveClass('disclosure-toggle__icon', 'disclosure-toggle__icon--open');
 });
 
-test('6a E10 "No requests yet." is a plain note with no status or live region role', () => {
-  openSettings();
-
+// Phase 6b section E: the Notion row in the Requests toggle.
+const openRequests = (route = {}, path = '/settings') => {
+  const api = openSettings(route, path);
   fireEvent.click(requestsToggle());
 
-  const note = screen.getByText(NO_REQUESTS);
-  expect(note).not.toHaveAttribute('role');
-  expect(note).not.toHaveAttribute('aria-live');
-  expect(note.closest('[role="status"], [role="alert"], [aria-live]')).toBeNull();
-  expect(note).toHaveClass('status-message--note');
+  return api;
+};
+
+test('6b E1 the open Requests toggle holds the "Connect Notion" button and no "No requests yet."', () => {
+  openRequests();
+
+  expect(button(CONNECT_NOTION)).toBeInTheDocument();
+  expect(screen.queryByText(NO_REQUESTS)).not.toBeInTheDocument();
+});
+
+test('6b E2 the Notion button draws the inline Notion logo hidden from screen readers and keeps its name', () => {
+  openRequests();
+
+  const logo = button(CONNECT_NOTION).querySelector('svg');
+  expect(logo).toHaveClass('notion-logo');
+  expect(logo?.querySelector('path')).not.toBeNull();
+  expect(logo).toHaveAttribute('aria-hidden', 'true');
+  expect(button(CONNECT_NOTION)).toHaveAccessibleName(CONNECT_NOTION);
+});
+
+test('6b E3 opening the Settings page calls GetNotionConnection once', async () => {
+  const api = openSettings();
+
+  await act(async () => Promise.resolve());
+
+  const calls = api.callsTo('GetNotionConnection');
+  expect(calls).toHaveLength(1);
+  expect(calls[0].method).toBe('GET');
+  expect(calls[0].url.origin).toBe(API_URL);
+});
+
+const notionAnswer = (isConnected: boolean, workspaceName: string | null) => ({
+  'GET /api/GetNotionConnection': { body: { isConnected, workspaceName } },
+});
+
+test.each([
+  ['E4', false, null, 'Not connected'],
+  ['E5', true, 'Study Notes', 'Connected: Study Notes'],
+  ['E6', true, null, 'Connected'],
+])('6b %s isConnected %s with workspace %s reads "%s"', async (_, isConnected, workspaceName, text) => {
+  openRequests(notionAnswer(isConnected, workspaceName));
+
+  expect(await screen.findByText(text)).toBeInTheDocument();
+});
+
+const NOTION_CONNECT_URL = `${API_URL}/api/NotionConnect`;
+
+const clickConnect = () => {
+  vi.mocked(moveTo).mockClear();
+  fireEvent.click(button(CONNECT_NOTION));
+};
+
+test.each([
+  ['E7', 'Not connected', notionAnswer(false, null)],
+  ['E8 (reconnect)', 'Connected: Study Notes', notionAnswer(true, 'Study Notes')],
+  ['E10 when GetNotionConnection fails', 'Not connected', { 'GET /api/GetNotionConnection': networkFailure }],
+])('6b %s the row reads "%s" and the Notion button moves the browser to the API sign-in start', async (_, text, route) => {
+  openRequests(route);
+  expect(await screen.findByText(text)).toBeInTheDocument();
+
+  clickConnect();
+
+  expect(moveTo).toHaveBeenCalledExactlyOnceWith(NOTION_CONNECT_URL);
+});
+
+test('6b E4-E6 while GetNotionConnection is pending the row shows no state, so a connected Notion never reads "Not connected"', async () => {
+  const pending = deferred();
+  openRequests({ 'GET /api/GetNotionConnection': () => pending.promise });
+
+  expect(screen.queryByText('Not connected')).not.toBeInTheDocument();
+  await act(async () => pending.resolve({ body: { isConnected: true, workspaceName: 'Study Notes' } }));
+
+  expect(screen.getByText('Connected: Study Notes')).toBeInTheDocument();
+});
+
+test('6b E9 the row has no Disconnect button', async () => {
+  openRequests(notionAnswer(true, 'Study Notes'));
+  await screen.findByText('Connected: Study Notes');
+
+  expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
+});
+
+test('6b E11 ?notion=connected opens the Requests toggle with the state from GetNotionConnection and starts no build', async () => {
+  const api = openSettings(notionAnswer(true, 'Study Notes'), '/settings?notion=connected');
+
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'true');
+  expect(await screen.findByText('Connected: Study Notes')).toBeInTheDocument();
+  expect(api.callsTo('Update_Collections')).toHaveLength(0);
+});
+
+test('6b E12 ?notion=failed opens the Requests toggle with the alert "Notion could not be connected."', async () => {
+  openSettings({}, '/settings?notion=failed');
+
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('alert')).toHaveTextContent('Notion could not be connected.');
+  expect(await screen.findByText('Not connected')).toBeInTheDocument();
+});
+
+test('6b E11 ?notion=connected shows no alert', async () => {
+  openSettings(notionAnswer(true, 'Study Notes'), '/settings?notion=connected');
+
+  await screen.findByText('Connected: Study Notes');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test.each(['connected', 'failed'])(
+  '6b E13 ?notion=%s is removed from the address and the page keeps the result',
+  async (result) => {
+    openSettings({}, `/settings?notion=${result}`);
+
+    await waitFor(() => expect(screen.getByTestId(LOCATION_TEST_ID)).toHaveTextContent(/^\/settings$/));
+    expect(requestsToggle()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryAllByRole('alert')).toHaveLength(result === 'failed' ? 1 : 0);
+  },
+);
+
+test('6b E14 the Settings page opened without ?notion shows the Requests toggle closed', () => {
+  openSettings({}, '/settings?other=1');
+
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByTestId(LOCATION_TEST_ID)).toHaveTextContent('/settings?other=1');
+});
+
+// Phase 6b section F: the i tooltip of the Notion row.
+const ABOUT_NOTION = 'About Notion';
+const NOTION_TIP = 'Connect Notion pages';
+
+test('6b F1 an i button named "About Notion" is at the right of the Notion button, in the same row', () => {
+  openRequests();
+
+  const notion = button(CONNECT_NOTION);
+  const about = button(ABOUT_NOTION);
+  expect(notion.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(notion.closest('.notion-connect__row')).toContainElement(about);
+  expect(about.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+});
+
+const expectNotionTipShown = () => {
+  const tip = screen.getByRole('tooltip');
+  expect(tip).toHaveTextContent(NOTION_TIP);
+  // F6: the i button names the tooltip it shows.
+  expect(button(ABOUT_NOTION)).toHaveAttribute('aria-describedby', tip.id);
+};
+
+test.each([
+  ['F2 the pointer moves over it', fireEvent.mouseEnter],
+  ['F3 it gets keyboard focus', fireEvent.focus],
+  ['F4 it is clicked or tapped', fireEvent.click],
+])('6b when %s, the i button shows "Connect Notion pages" (F6 role tooltip, aria-describedby)', (_, show) => {
+  openRequests();
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+  show(button(ABOUT_NOTION));
+
+  expectNotionTipShown();
+});
+
+test.each([
+  ['Escape is pressed', (about: HTMLElement) => fireEvent.keyDown(about, { key: 'Escape' })],
+  ['the pointer leaves', fireEvent.mouseLeave],
+  ['the focus leaves', fireEvent.blur],
+])('6b F5 the shown tooltip is hidden when %s', (_, hide) => {
+  openRequests();
+  fireEvent.focus(button(ABOUT_NOTION));
+  expectNotionTipShown();
+
+  hide(button(ABOUT_NOTION));
+
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  expect(button(ABOUT_NOTION)).not.toHaveAttribute('aria-describedby');
+});
+
+// A tap goes pointer down, focus, click; the tip was hidden at the pointer down, so the tap shows it.
+const tap = (target: HTMLElement) => {
+  fireEvent.pointerDown(target);
+  fireEvent.focus(target);
+  fireEvent.click(target);
+};
+
+test('6b review SRS-9 a first tap on the i button shows the tip, a second tap hides it', () => {
+  openRequests();
+
+  tap(button(ABOUT_NOTION));
+  expectNotionTipShown();
+
+  tap(button(ABOUT_NOTION));
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+});
+
+test('6b review SRS-9 after a tap hid the tip, Enter on the i button (a click with no pointer) shows it again', () => {
+  openRequests();
+  tap(button(ABOUT_NOTION));
+  tap(button(ABOUT_NOTION));
+
+  fireEvent.click(button(ABOUT_NOTION));
+
+  expectNotionTipShown();
+});
+
+test('6b F5 another key keeps the tooltip shown', () => {
+  openRequests();
+  fireEvent.focus(button(ABOUT_NOTION));
+
+  fireEvent.keyDown(button(ABOUT_NOTION), { key: 'Tab' });
+
+  expectNotionTipShown();
+});
+
+test('6b F7 the Notion tip starts at the i button and grows to the right, so it stays on a phone screen', () => {
+  openRequests();
+
+  fireEvent.focus(button(ABOUT_NOTION));
+
+  expect(screen.getByRole('tooltip')).toHaveClass('tooltip__text', 'tooltip__text--start');
+});
+
+test('P2 the "Update embeddings" tip keeps ending at its i button', () => {
+  openSettings();
+
+  fireEvent.focus(button('About updating embeddings'));
+
+  expect(screen.getByRole('tooltip')).not.toHaveClass('tooltip__text--start');
 });
 
 const TMDB_NOTICE = 'This product uses the TMDB API but is not endorsed or certified by TMDB.';

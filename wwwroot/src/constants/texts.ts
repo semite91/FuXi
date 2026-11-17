@@ -117,7 +117,16 @@ export const SETTINGS_TEXTS = {
 
 export const REQUESTS_TEXTS = {
   title: 'Requests',
-  empty: 'No requests yet.',
+} as const;
+
+export const NOTION_TEXTS = {
+  connect: 'Connect Notion',
+  notConnected: 'Not connected',
+  connected: 'Connected',
+  workspaceSeparator: ': ',
+  failed: 'Notion could not be connected.',
+  about: 'About Notion',
+  tip: 'Connect Notion pages',
 } as const;
 
 export const CREDITS_TEXTS = {

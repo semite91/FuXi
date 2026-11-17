@@ -7,7 +7,7 @@ import math
 import httpx
 import pytest
 
-from base import RetrievedItem
+from base import ResourceSkipped, RetrievedItem
 from embedders import ImageEmbedder, TextEmbedder, decode_picture
 from fakes import ScriptedRandom, picture_text
 from llm_client import METHODS, LlmClient
@@ -30,8 +30,11 @@ pytestmark = pytest.mark.skipif(not LIVE_SETTINGS.live_tests, reason="RAG_LIVE_T
 
 
 def test_real_notion_returns_documents():
-    # C10
-    documents = create_notion_resource(LIVE_SETTINGS).read_documents()
+    # C10; since Phase 6b the token is the one the Learner connected, in the database of the root .env
+    try:
+        documents = create_notion_resource(load_settings()).read_documents()
+    except ResourceSkipped:
+        pytest.skip("Notion is not connected on the Settings page")
 
     assert len(documents) >= 1
 
