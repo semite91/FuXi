@@ -274,6 +274,25 @@ test('O14 a failed delete keeps the dialog with an error', async () => {
   expect(within(dialog()).getByRole('alert')).toHaveTextContent('The Notification Window was not found.');
 });
 
+test('6a C6 the Schedule entry dialog shows the close button', () => {
+  openSchedule();
+
+  fireEvent.click(button('New entry'));
+
+  expect(within(dialog()).getByRole('button', { name: 'Close dialog' })).toHaveClass('dialog__close');
+});
+
+test('6a C13 the Schedule entry dialog title comes from Dialog and it draws no title of its own', () => {
+  openSchedule();
+
+  fireEvent.click(button('New entry'));
+
+  const titles = dialog().querySelectorAll('h2');
+  expect(titles).toHaveLength(1);
+  expect(titles[0]).toHaveClass('dialog__title');
+  expect(titles[0]).toHaveTextContent('New entry');
+});
+
 test('O15 Cancel, the backdrop and Escape close the dialog without a call', () => {
   const api = openSchedule();
 

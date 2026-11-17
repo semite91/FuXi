@@ -2,6 +2,9 @@ FuXi - Phase 1 - Database
 Test scenarios, shredded to atomic processes.
 Created: 2026-11-10 05:18 UTC
 Status: CONFIRMED BY THE LEARNER ON 2026-11-10
+Amended on 2026-11-16 for Phase 6a (Q20, approved by the Learner): the Settings table adds a second migration,
+AddSettings, and a seventh table. B1, B5 and B6 and the unique index check now expect the migrations Initial and
+AddSettings in that order, all of them applied, the Settings table, and the unique index on Settings.Code.
 
 Every scenario has one purpose. "Given / When / Then" is used.
 Phase 1 contains tables, migrations and Config seed data. It contains no API, no job and no page.

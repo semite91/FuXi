@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react';
 import { loadEnv, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { fontPrecache } from './src/service_worker_font_list';
 
 const ENV_DIRECTORY = '..';
 const API_URL_KEY = 'VITE_FUXI_API_URL';
@@ -51,7 +52,7 @@ export default defineConfig(({ mode }) => {
   const connectSources = [env[API_URL_KEY], env[RAG_URL_KEY]].filter((url): url is string => Boolean(url));
 
   return {
-    plugins: [react(), contentSecurityPolicy(connectSources)],
+    plugins: [react(), contentSecurityPolicy(connectSources), fontPrecache()],
     envDir: ENV_DIRECTORY,
     server: { port: APP_PORT, strictPort: true },
     preview: { port: APP_PORT, strictPort: true },

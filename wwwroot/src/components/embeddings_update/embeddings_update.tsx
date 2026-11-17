@@ -5,12 +5,16 @@ import './embeddings_update.less';
 
 const INFO_ICON_SIZE = 12;
 const INFO_ICON_STROKE = 3.6;
+const WARNING_ICON_SIZE = 32;
+const WARNING_ICON_STROKE = 2.5;
 
 interface EmbeddingsUpdateProps {
   linkLabel: string;
   aboutLabel: string;
   tipText: string;
   confirmTitle: string;
+  /** The line under the confirm title, which tells what the update does. */
+  confirmNotice: string;
   confirmLabel: string;
   closeLabel: string;
   /** The title of the result dialog. Without it no result is shown. */
@@ -26,6 +30,7 @@ const EmbeddingsUpdate = ({
   aboutLabel,
   tipText,
   confirmTitle,
+  confirmNotice,
   confirmLabel,
   closeLabel,
   resultTitle,
@@ -45,8 +50,18 @@ const EmbeddingsUpdate = ({
     </Tooltip>
 
     {isConfirmOpen && (
-      <Dialog label={confirmTitle} closeLabel={closeLabel} onClose={onClose}>
-        <h2 className="embeddings-update__title">{confirmTitle}</h2>
+      <Dialog
+        label={confirmTitle}
+        closeLabel={closeLabel}
+        onClose={onClose}
+        isTitleCentered
+        icon={
+          <span className="embeddings-update__warning" aria-hidden="true">
+            <Icon name="info" size={WARNING_ICON_SIZE} strokeWidth={WARNING_ICON_STROKE} />
+          </span>
+        }
+      >
+        <p className="embeddings-update__notice">{confirmNotice}</p>
         <button type="button" className="embeddings-update__confirm" onClick={onConfirm}>
           {confirmLabel}
         </button>
@@ -54,11 +69,7 @@ const EmbeddingsUpdate = ({
     )}
 
     {resultTitle !== undefined && (
-      <Dialog label={resultTitle} closeLabel={closeLabel} onClose={onClose}>
-        <h2 className="embeddings-update__title" role="status">
-          {resultTitle}
-        </h2>
-      </Dialog>
+      <Dialog label={resultTitle} closeLabel={closeLabel} onClose={onClose} isTitleCentered isTitleStatus />
     )}
   </div>
 );

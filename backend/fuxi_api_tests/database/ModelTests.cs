@@ -311,22 +311,21 @@ public sealed class ModelTests : IDisposable
     }
 
     [Fact]
-    public void OnlyRotatedWordsWordIdAndConfigCodeAreUnique()
+    public void OnlyRotatedWordsWordIdConfigCodeAndSettingsCodeAreUnique()
     {
-        // C13, D7, E9
+        // C13, D7, E9, F3 (Phase 6a)
         var uniqueColumns = Model.GetEntityTypes()
             .SelectMany(entity => entity.GetIndexes().Where(index => index.IsUnique))
             .Select(index => $"{index.DeclaringEntityType.GetTableName()}.{string.Join(',', index.Properties.Select(property => property.GetColumnName()))}");
 
-        uniqueColumns.Should().BeEquivalentTo("RotatedWords.WordId", "Config.Code");
+        uniqueColumns.Should().BeEquivalentTo("RotatedWords.WordId", "Config.Code", "Settings.Code");
     }
 
     [Fact]
-    public void ModelHasOnlySixTables()
+    public void ModelHasOnlyExpectedTables()
     {
-        // B6
-        Model.GetEntityTypes().Select(entity => entity.GetTableName()).Should().BeEquivalentTo(
-            "Words", "RotatedWords", "Config", "WordHistory", "Schedule", "PushSubscription");
+        // B6, F1 (Phase 6a)
+        Model.GetEntityTypes().Select(entity => entity.GetTableName()).Should().BeEquivalentTo(ExpectedSchema.TABLE_NAMES);
     }
 
     [Fact]

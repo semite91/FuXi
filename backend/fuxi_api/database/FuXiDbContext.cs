@@ -18,6 +18,8 @@ public sealed class FuXiDbContext(DbContextOptions<FuXiDbContext> options) : DbC
 
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
 
+    public DbSet<Setting> Settings => Set<Setting>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(FuXiDbContext).Assembly);
 

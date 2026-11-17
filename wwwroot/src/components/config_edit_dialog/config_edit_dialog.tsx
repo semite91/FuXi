@@ -29,7 +29,6 @@ const ConfigEditDialog = ({
   notice,
 }: ConfigEditDialogProps) => (
   <Dialog label={title} closeLabel={closeLabel} onClose={onClose}>
-    <h2>{title}</h2>
     <input
       className="config-edit-dialog__input"
       type={inputType}

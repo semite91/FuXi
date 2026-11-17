@@ -1,0 +1,105 @@
+FuXi - Phase 6a - General (template, Update Embeddings pop-up, dialogs, Requests toggle, Settings table)
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_16_06_20.txt (confirmed; amended seven times for
+the Learner's answers Q13 to Q20 and the four code review rounds, Q21 to Q27)
+Run: 2026-11-16 09:27 UTC, branch claude/phase-6a-general, base commit 376acf1 (work not yet committed)
+
+Totals
+- Frontend: last whole run (after review round 3): "npm test" 19 files, 356 passed (16 files, 279 before Phase 6a).
+  Round 4, related files only (the Learner's rule of 2026-11-16: run only the related tests): service_worker.test.ts 41,
+  service_worker_font_list.test.ts 11, disclosure_toggle.test.tsx 8, settings_page.test.tsx 50, flashcard_page.test.tsx
+  37; all passed. "npx tsc --noEmit": exit 0. "npm run build": exit 0. There is no lint script.
+- Backend (dotnet test with Microsoft.Testing.Platform, run from /backend):
+  - Whole runs: 387 passed after the Q20 test update (15 min 30 s) and after SRS-8 (17 min 12 s). The whole run after
+    SRS-25 had 386 passed and 1 failed: GetWordsByFilterTests.WordOutsideRotationHasNoCounter could not recreate the
+    test database ("42501: permission denied to terminate process", another connection under another role); it passed
+    alone, and 23 of 23 GetWordsByFilterTests passed again later.
+  - Related runs after the last changes: --filter-namespace FuXi.Api.Tests.Database 81 of 81 (an earlier run of the same
+    filter had 1 failure that was not captured and did not come back; see ToDos #2), MigrationTests 6 of 6 and
+    DatabaseTests 28 of 28 after SRS-36.
+- RAG engine: not run; /rag does not differ from main (H1).
+- Scenarios: 70. PASS 67. PARTIAL 1 (B7). NOT RUN 2 (C10, C12: need a browser that can open dialogs).
+
+Status words: PASS, PARTIAL, NOT RUN. FE scenarios are proven by wwwroot tests named "6a <id>"; BE scenarios by
+backend/fuxi_api_tests/database (SettingsTableTests, MigrationTests, DatabaseTests, ModelTests, ExpectedSchema).
+
+A. TEMPLATE OPTIONS
+A1-A6 PASS   ui-ux-pro-max gave the base; 3 options (Ink and Paper, Jade Study, Soft Clay) on the private preview page
+             https://claude.ai/artifact/4h4d7jaM1mpRyYHx3fZGJ1 (Settings page, flashcard front and back, confirm pop-up,
+             light and dark, #FCFAEE kept, fonts with license and size). The Learner chose Soft Clay, light, logo unchanged.
+
+B. APPLYING THE CHOSEN TEMPLATE
+B1  PASS     Colors only in color.less, light and dark; new --color-warning (#b45309 light, #fbbf24 dark).
+B2  PASS     Nunito base font; @font-family-display (Baloo 2) for page titles, the word, the translation, dialog titles.
+B3  PASS     border.less: radius 28px for cards and dialogs, @border-radius-pill, @border-card, double card shadow,
+             @focus-outline-room; spaces.less: @size-icon-large, @transition-turn.
+B4  PASS     @fontsource/baloo-2 and @fontsource/nunito 5.3.0 vetted (upstream README install, same publisher as the
+             earlier Manrope package, OFL-1.1, no install scripts, no dependencies, npm audit signatures verified) and
+             pinned; @fontsource/manrope removed; the built CSS links no other site.
+B5  PASS     service_worker.test.ts "6a B5 ...": the build writes the font list and the cache name of that build; install
+             caches the list; activate deletes older font caches; cache-first answers; a missed font is fetched, answered
+             at once and stored (waitUntil called before any await); other sites, other files and non-GET are left alone.
+             Build check: dist/service_worker.js holds fuxi-fonts-25b8e4d1 and 10 woff2 URLs that exist in dist/assets.
+B6  PASS     No new hardcoded value. Older px values remain in schedule_list, schedule_toolbar, status_message, words_table.
+B7  PARTIAL  Headless Edge (600 px; its minimum width is about 500 px): Words, Active Words, Schedule, Configs and
+             Settings show the template, the logo is unchanged, nothing overflows. Found and fixed: the Requests toggle sat
+             8 px right of the rows above it (isFlush option, test "6a B7"). Not seen: the Flashcard page with real cards.
+B8  PASS     The light background is #fcfaee.
+B9  PASS     All earlier frontend tests pass (last whole run).
+B10 PASS     "6a B10 ...": with Static Routing only font requests reach the worker; a failing addRoutes never breaks install.
+B11 PASS     Only Baloo 2 800 (latin, latin-ext) is imported; the built CSS has only weight 800 for Baloo 2.
+B12 PASS     service_worker_font_list.test.ts "6a B12 ...": placeholders in one shared module and once each in the worker,
+             refill in watch mode, failed build left alone, relative and absolute output folders, literal $ values.
+B13 PASS     "6a B13 ...": the precache waits at most FONT_PRECACHE_LIMIT_MS (4 s, under the 10 s push ready timeout).
+B14 PASS     "6a B14 ...": the dev server's worker opens no font cache and leaves font requests to the browser.
+
+C. DIALOG CLOSE BUTTON AND HEADER
+C1-C9 PASS   dialog.test.tsx and the page tests "6a C1" to "6a C9". The X is named by the dialog's close text ("Close
+             dialog"; "Close filters"). Each dialog has exactly one X.
+C10 NOT RUN  The header row keeps the title clear of the X by layout; a dialog could not be opened headless. Learner to check.
+C11 PASS     "6a C11 ...": the header row holds the title and the X; the X is first in the focus order.
+C12 NOT RUN  Structure proven ("6a C12": only .dialog__body scrolls); the scroll itself needs a browser. Learner to check.
+C13 PASS     Every dialog's single title comes from Dialog (one test per dialog).
+C14 PASS     "6a C14 ...": no body for none, null, false or only empty conditional children.
+C3 also PASS for the plain backdrop element (aria-hidden, not focusable, closes on click).
+
+D. UPDATE EMBEDDINGS CONFIRM POP-UP
+D1  PASS     ui-ux-pro-max had no full alternative; the Learner took only the amber icon (Q15).
+D2-D8 PASS   "6a D2" to "6a D8"; the amber icon is the Dialog's icon slot above the centered title.
+
+E. REQUESTS TOGGLE
+E1-E9 PASS   settings_page.test.tsx and disclosure_toggle.test.tsx; E8: the History toggle uses DisclosureToggle and its
+             tests pass unchanged; E7: the arrow keeps its base class and adds --open.
+E10 PASS     "No requests yet." is a StatusMessage with isAnnounced={false}: note style, no role, no live region.
+E11 PASS     "6a E11 ...": aria-controls names the content (useId) while the toggle is open.
+
+F. SETTINGS TABLE
+F1-F5 PASS   SettingsTableTests.cs (migration 20261116063637_AddSettings, unique index IX_Settings_Code, no seed row, the six
+             earlier tables keep their columns and data).
+F6  PASS     No API, endpoint or service uses Setting.
+F7  PASS     The Phase 1 tests that expected one migration and six tables were updated (Q20) and pass.
+F8  PASS     ExpectedSchema holds the migration and table lists and ShouldMatchMigrationSuffixes; migrations are sorted by id.
+
+G. DOCUMENTATION AND STRUCTURE
+G1, G2 PASS  project.md: Settings table, Requests toggle, amber i pop-up, dialog header row with the X, Soft Clay in the
+             LESS token files (Claude Design not changed), Baloo 2 and Nunito, offline fonts.
+G3  PASS     Styles in own .less files, texts in texts.ts, no API call in a component.
+G4  PASS     The Learner approved the shared toggle component.
+G5  PASS     APP_TEXTS.close is removed.
+G6  PASS     wwwroot/tsconfig.tsbuildinfo is git-ignored (git check-ignore).
+
+H. OUT OF SCOPE CHECKS
+H1-H3 PASS   /rag unchanged; no source button in the toggle; no UserId column.
+
+Code review (Claude Code's built-in /code-review, high), four rounds
+- Round 1: SRS-1 to SRS-9, all fixed (Q21, Q22).
+- Round 2: SRS-10 to SRS-19 fixed except SRS-18 (repeated backend test constants), left as it is (Q23 to Q25).
+- Round 3: SRS-20 to SRS-25 fixed (Q26).
+- Round 4: SRS-30, 31, 34, 36, 37 fixed (Q27).
+Known limits accepted by the Learner
+- SRS-18/SRS-35: some backend test constants are repeated in SettingsTableTests and DatabaseTests.
+- SRS-26: a tab left open during a deploy may miss fonts of the old build that it had not loaded yet.
+- SRS-27/SRS-32: without Static Routing (Firefox, Safari) every request passes the worker's fetch listener.
+- SRS-28/SRS-33: every latin-ext font file is precached (the Turkish translations need it); on a first visit a font may
+  be downloaded twice.
+Not taken
+- SRS-29 (merge Settings into Config): Config rows are shown and edited on the Configs page; Settings will hold tokens.

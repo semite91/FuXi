@@ -62,6 +62,10 @@ This file is initializer instructor of my project.
   - HTML will be created from components. Components should only contains visual content like visual interaction, visibility preference.
   - Logical functions like content api request will be at services.
   - App's dashboard should open Words page. Words page will be described at next parts.
+  - The template is Soft Clay (chosen in Phase 6a): indigo accent, Baloo 2 headings (page titles, flashcard word and translation, dialog titles), Nunito body text, pill buttons, 2 px card borders and double shadows. It is kept only in the LESS token files (color.less, typography.less, border.less, spaces.less); Claude Design was not changed for it. The app shows the light mode; color.less also holds the dark values. The FuXi logo is not changed.
+  - The fonts Baloo 2 and Nunito (OFL-1.1) are bundled from the @fontsource npm packages, so no font is loaded from another site.
+  - The fonts work offline: the build writes the list of built font files and a cache name for that build into the service worker, which caches them on install (at most 4 seconds, so push is never held back), stores a missed font when it is first loaded, and deletes older font caches on activate. Where the browser supports Static Routing, only font requests reach the worker. The dev server's worker caches no font.
+  - Every dialog has a header row with its title and a close (X) button at the top right; only the content under it scrolls. Escape and a click on the backdrop also close it.
 
     # DESIGN - ROUTES
     - React Router will be used. The header has the FuXi logo and a menu button at the top right. The menu lists Active Words, Words, Schedule, Configs and Settings. There is no bottom tab bar.
@@ -106,6 +110,8 @@ This file is initializer instructor of my project.
     -- settings --
     - When user clicks "Update embeddings" and confirms with Yes, Update_Collections api of the RAG engine is called. The result is shown in a dialog.
     - Settings page has "Enable notifications" button under the "Update embeddings" row. Browser asks notification permission only after this button is clicked. Permission state is visible at Settings page.
+    - The "Update embeddings" confirm pop-up shows a big amber i icon above its title and the text "Your info will be synced". The result dialog does not.
+    - Settings page has a "Requests" toggle after the "Enable notifications" row and before the Credits block. It is closed every time the page opens. Until the request buttons come (Phase 6b), it shows "No requests yet.".
 
     -- schedule --
     - When user opens schedule page, data should be loaded by GetSchedule api with current month's start and end date-times.
@@ -177,6 +183,12 @@ This file is initializer instructor of my project.
   P256dh: text
   Auth: text
   CreatedDate: timestamptz
+
+  -- Settings --
+  One set of values for the whole app (no UserId column yet). It is created empty. There is no Settings API yet.
+  Id: Guid, primary_key
+  Code: text, unique
+  Value: text
 
 
   # API

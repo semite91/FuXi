@@ -1,11 +1,8 @@
 import type { ReactNode } from 'react';
-import { Icon } from '../../image/icons';
+import DisclosureToggle from '../disclosure_toggle/disclosure_toggle';
 import IconButton from '../icon_button/icon_button';
 import Tooltip from '../tooltip/tooltip';
 import './flashcard_back.less';
-
-const HISTORY_ICON_SIZE = 18;
-const HISTORY_ICON_STROKE = 2.25;
 
 interface FlashcardBackProps {
   translation: string;
@@ -90,16 +87,9 @@ const FlashcardBack = ({
     {notice}
 
     <div className="flashcard-back__history">
-      <button type="button" className="flashcard-back__history-toggle" aria-expanded={isHistoryOpen} onClick={onToggleHistory}>
-        {historyLabel}
-        <Icon
-          name="down"
-          size={HISTORY_ICON_SIZE}
-          strokeWidth={HISTORY_ICON_STROKE}
-          className={isHistoryOpen ? 'flashcard-back__history-icon--open' : 'flashcard-back__history-icon'}
-        />
-      </button>
-      {isHistoryOpen && <div className="flashcard-back__history-list">{history}</div>}
+      <DisclosureToggle label={historyLabel} isOpen={isHistoryOpen} onToggle={onToggleHistory}>
+        {history}
+      </DisclosureToggle>
     </div>
   </div>
 );

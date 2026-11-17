@@ -132,7 +132,7 @@ test('J11 closing the panel without Apply keeps the applied filter and the rows'
 
   openFilters();
   setField('Is known', 'no');
-  fireEvent.click(screen.getAllByRole('button', { name: 'Close filters' })[1]);
+  fireEvent.click(button('Close filters'));
   openFilters();
 
   expect(field('Is known')).toHaveValue('yes');
@@ -200,12 +200,65 @@ test('J19 a click on a Name opens its History dialog and J20 Escape, backdrop an
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
   fireEvent.click(button('banana'));
-  fireEvent.click(await screen.findByRole('button', { name: 'Close dialog' }));
+  await screen.findByRole('dialog', { name: 'banana' });
+  fireEvent.click(document.querySelector('.dialog__backdrop') as Element);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
   fireEvent.click(button('banana'));
-  fireEvent.click(await screen.findByRole('button', { name: 'Close' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Close dialog' }));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+/** The close (X) buttons of a dialog: every button whose name starts with "Close". */
+const closeButtons = (dialog: HTMLElement) => within(dialog).queryAllByRole('button', { name: /^Close/ });
+
+test('6a C7 the Word History dialog shows exactly one close button, the shared one', async () => {
+  openWords({ 'GET /api/GetWordHistory': { body: [] } });
+  await filterBy('Name', 'a');
+
+  fireEvent.click(button('banana'));
+  const dialog = await screen.findByRole('dialog', { name: 'banana' });
+
+  const closes = closeButtons(dialog);
+  expect(closes).toHaveLength(1);
+  expect(closes[0]).toHaveAccessibleName('Close dialog');
+  expect(closes[0]).toHaveClass('dialog__close');
+});
+
+test('6a C8 the Words filter panel shows exactly one close button, the shared one named "Close filters"', () => {
+  openWords();
+  openFilters();
+
+  const closes = closeButtons(screen.getByRole('dialog', { name: 'Filters' }));
+  expect(closes).toHaveLength(1);
+  expect(closes[0]).toHaveAccessibleName('Close filters');
+  expect(closes[0]).toHaveClass('dialog__close');
+});
+
+const expectDialogTitle = (dialog: HTMLElement, title: string) => {
+  const titles = dialog.querySelectorAll('h2');
+  expect(titles).toHaveLength(1);
+  expect(titles[0]).toHaveClass('dialog__title');
+  expect(titles[0]).toHaveTextContent(title);
+};
+
+test('6a C13 the Word History dialog title comes from Dialog with the "History" line under it', async () => {
+  openWords({ 'GET /api/GetWordHistory': { body: [] } });
+  await filterBy('Name', 'a');
+
+  fireEvent.click(button('banana'));
+  const dialog = await screen.findByRole('dialog', { name: 'banana' });
+
+  expectDialogTitle(dialog, 'banana');
+  const subtitle = within(dialog).getByText('History');
+  expect(dialog.querySelector('.dialog__header')).toContainElement(subtitle);
+});
+
+test('6a C13 the Words filter panel title comes from Dialog and it draws no title of its own', () => {
+  openWords();
+  openFilters();
+
+  expectDialogTitle(screen.getByRole('dialog', { name: 'Filters' }), 'Filters');
 });
 
 test('J21 a failed call shows an error and no row', async () => {

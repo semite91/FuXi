@@ -1,0 +1,41 @@
+@import (reference) '../../css/tokens.less';
+
+.disclosure-toggle {
+  display: flex;
+  flex-direction: column;
+}
+
+.disclosure-toggle__button {
+  .control-reset();
+  .focus-ring();
+  align-self: flex-start;
+  height: @size-control;
+  padding: 0 @space-medium;
+  display: flex;
+  align-items: center;
+  gap: @space-xsmall;
+  font-size: var(--font-size-base);
+  font-weight: @font-weight-medium;
+  color: var(--color-text-soft);
+
+  &:hover {
+    color: var(--color-text);
+  }
+
+  &--flush {
+    padding: 0 @space-xsmall;
+  }
+}
+
+.disclosure-toggle__icon {
+  transition: transform @transition-turn;
+
+  &--open {
+    transform: rotate(180deg);
+  }
+}
+
+.disclosure-toggle__content {
+  margin-top: @space-small;
+  padding: 0 @space-small;
+}

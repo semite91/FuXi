@@ -25,3 +25,5 @@ rag/chroma_data/
 rag/secrets/
 rag/data/
 .cache/
+
+wwwroot/tsconfig.tsbuildinfo

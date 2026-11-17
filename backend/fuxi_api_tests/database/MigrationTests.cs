@@ -12,7 +12,6 @@ namespace FuXi.Api.Tests.Database;
 /// <summary>Reads the migrations and project files. No database is needed.</summary>
 public sealed class MigrationTests : IDisposable
 {
-    private const string INITIAL_MIGRATION_SUFFIX = "_Initial";
     private const string MIGRATIONS_NAMESPACE = "FuXi.Api.Database.Migrations";
     private const string CREATE_TABLE_TEMPLATE = "CREATE TABLE \"{0}\"";
     private const string BACKEND_FOLDER = "backend";
@@ -30,20 +29,17 @@ public sealed class MigrationTests : IDisposable
     private const string EF_TOOL = "dotnet-ef";
     private const string VERSION = "version";
     private const string EXACT_VERSION_PATTERN = @"^\d+\.\d+\.\d+$";
-    private static readonly string[] TABLE_NAMES =
-        ["Words", "RotatedWords", "Config", "WordHistory", "Schedule", "PushSubscription"];
 
     private readonly FuXiDbContext context = ModelOnlyContext.Create();
 
     [Fact]
-    public void OneInitialMigrationExists()
+    public void MigrationsAreInitialThenAddSettings()
     {
         // B1
         var migrations = context.GetService<IMigrationsAssembly>().Migrations;
 
-        var migration = migrations.Should().ContainSingle().Subject;
-        migration.Key.Should().EndWith(INITIAL_MIGRATION_SUFFIX);
-        migration.Value.Namespace.Should().Be(MIGRATIONS_NAMESPACE);
+        ExpectedSchema.ShouldMatchMigrationSuffixes(migrations.Keys);
+        migrations.Values.Should().OnlyContain(migration => migration.Namespace == MIGRATIONS_NAMESPACE);
     }
 
     [Fact]
@@ -54,12 +50,12 @@ public sealed class MigrationTests : IDisposable
     }
 
     [Fact]
-    public void MigrationScriptCreatesSixTables()
+    public void MigrationScriptCreatesEveryTable()
     {
         // B6
         var script = context.GetService<IMigrator>().GenerateScript();
 
-        foreach (var tableName in TABLE_NAMES)
+        foreach (var tableName in ExpectedSchema.TABLE_NAMES)
         {
             script.Should().Contain(string.Format(CREATE_TABLE_TEMPLATE, tableName));
         }
