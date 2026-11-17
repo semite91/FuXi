@@ -30,6 +30,8 @@ export interface ApiClient {
   get<T>(path: string, query?: Query): Promise<T>;
   post<T>(path: string, body?: unknown): Promise<T>;
   remove(path: string, query?: Query): Promise<void>;
+  /** The full address of a path, for a page the browser opens itself. */
+  url(path: string): string;
 }
 
 const requireBaseUrl = (key: string): string => {
@@ -118,6 +120,7 @@ export const createApiClient = (baseUrlKey: string): ApiClient => ({
       body: JSON.stringify(body ?? {}),
     }),
   remove: async (path, query) => send(buildUrl(requireBaseUrl(baseUrlKey), path, query), { method: METHOD_DELETE }),
+  url: (path) => buildUrl(requireBaseUrl(baseUrlKey), path),
 });
 
 /** The text to show for a failed call. */

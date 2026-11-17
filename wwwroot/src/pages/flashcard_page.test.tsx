@@ -186,6 +186,14 @@ test('F6 the reinforcement button is named and F7 its tooltip shows on hover and
   expect(screen.getByRole('tooltip')).toHaveTextContent('Is reinforcement');
 });
 
+test('6b review SRS-9 clicking the reinforcement button does not show its tooltip', async () => {
+  await toBack();
+
+  fireEvent.click(button('Is reinforcement'));
+
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+});
+
 test('F8 the reinforcement button sends true and F9 shows the next front side', async () => {
   const api = await toBack();
 

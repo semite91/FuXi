@@ -14,6 +14,14 @@ public sealed record NowApiSettings
 
     public string? VapidPrivateKey { get; init; }
 
+    public string? NotionClientId { get; init; }
+
+    public string? NotionClientSecret { get; init; }
+
+    public string? NotionRedirectUri { get; init; }
+
+    public string? AppUrl { get; init; }
+
     /// <summary>False keeps the API's own TimeProvider and INotificationTimer.</summary>
     public bool ReplacesServices { get; init; } = true;
 }

@@ -12,7 +12,11 @@ REPO_ROOT = RAG_DIR.parent
 ROOT_ENV_PATH = REPO_ROOT / ".env"
 TEST_ENV_PATH = REPO_ROOT / ".env.test"
 
-NOTION_TOKEN_KEY = "RAG_NOTION_TOKEN"
+DB_HOST_KEY = "FUXI_DB_HOST"
+DB_PORT_KEY = "FUXI_DB_PORT"
+DB_NAME_KEY = "FUXI_DB_NAME"
+DB_USER_KEY = "FUXI_DB_USER"
+DB_PASSWORD_KEY = "FUXI_DB_PASSWORD"
 GEMINI_API_KEY_KEY = "RAG_GEMINI_API_KEY"
 GOOGLE_SERVICE_ACCOUNT_FILE_KEY = "RAG_GOOGLE_SERVICE_ACCOUNT_FILE"
 TMDB_TOKEN_KEY = "RAG_TMDB_TOKEN"
@@ -24,6 +28,7 @@ BATCH_SIZE_KEY = "RAG_BATCH_SIZE"
 LIVE_TESTS_KEY = "RAG_LIVE_TESTS"
 CORS_ORIGINS_KEY = "FUXI_CORS_ORIGINS"
 REBUILD_COOLDOWN_MINUTES_KEY = "RAG_REBUILD_COOLDOWN_MINUTES"
+DB_KEYS = (DB_HOST_KEY, DB_PORT_KEY, DB_NAME_KEY, DB_USER_KEY, DB_PASSWORD_KEY)
 
 DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 DEFAULT_TEXT_THRESHOLD = 0.5
@@ -49,6 +54,17 @@ class MissingSettingError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class DatabaseSettings:
+    """Where the FuXi PostgreSQL database is, from the same FUXI_DB_* keys the API reads."""
+
+    host: str
+    port: int
+    name: str
+    user: str
+    password: str = field(repr=False)
+
+
+@dataclass(frozen=True)
 class Settings:
     gemini_model: str = DEFAULT_GEMINI_MODEL
     text_threshold: float = DEFAULT_TEXT_THRESHOLD
@@ -58,14 +74,23 @@ class Settings:
     cors_origins: tuple[str, ...] = ()
     # After a failed or empty build, Init_RAG answers empty for this long before it builds again.
     rebuild_cooldown_minutes: float = DEFAULT_REBUILD_COOLDOWN_MINUTES
-    notion_token: str | None = field(default=None, repr=False)
+    # The FUXI_DB_* values as written; require_database checks them when they are used.
+    # hash=False: a dict cannot be hashed; equal Settings still compare these values.
+    database_values: Mapping[str, str | None] = field(default_factory=dict, repr=False, hash=False)
     gemini_api_key: str | None = field(default=None, repr=False)
     google_service_account_file: str | None = field(default=None, repr=False)
     tmdb_token: str | None = field(default=None, repr=False)
     letterboxd_watched_file: str | None = field(default=None, repr=False)
 
-    def require_notion_token(self) -> str:
-        return _require(self.notion_token, NOTION_TOKEN_KEY)
+    def require_database(self) -> DatabaseSettings:
+        """The FuXi database; it holds the Settings table with the Notion token."""
+        # Checked in .env order, so the first missing key is the one named.
+        host, raw_port, name, user, password = (_require(self.database_values.get(key), key) for key in DB_KEYS)
+        try:
+            port = int(raw_port)
+        except ValueError as error:
+            raise SettingsError(f"{DB_PORT_KEY} must be a whole number") from error
+        return DatabaseSettings(host=host, port=port, name=name, user=user, password=password)
 
     def require_gemini_api_key(self) -> str:
         return _require(self.gemini_api_key, GEMINI_API_KEY_KEY)
@@ -88,7 +113,7 @@ def load_settings(
     """Read settings; process environment values win over the .env file."""
     values = {**read_env_file(env_path), **(os.environ if environ is None else environ)}
     return Settings(
-        notion_token=_text(values, NOTION_TOKEN_KEY),
+        database_values={key: _text(values, key) for key in DB_KEYS},
         gemini_api_key=_text(values, GEMINI_API_KEY_KEY),
         google_service_account_file=_text(values, GOOGLE_SERVICE_ACCOUNT_FILE_KEY),
         tmdb_token=_text(values, TMDB_TOKEN_KEY),

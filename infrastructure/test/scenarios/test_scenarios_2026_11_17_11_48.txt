@@ -1,0 +1,152 @@
+FuXi - Phase 6b - Notion (Notion button, OAuth sign-in, token in the Settings table)
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-17 11:48 UTC
+Status: CONFIRMED BY THE LEARNER (2026-11-17)
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 6b is the second part of Phase 6 (ToDos.txt #41 to #44). It moves the Notion source from .env to the Settings
+table (#39 for Notion only). Google Drive, Letterboxd and Spotify follow in 6c to 6e.
+
+Decisions taken by the Learner on 2026-11-17 (grilling rounds 1 and 2):
+- Q1 The .NET API owns the sign-in: it sends the browser to Notion, takes the callback, exchanges the code and saves the
+  token. The RAG engine only reads the token.
+- Q2 Each sign-in carries a random state value, kept by the API for 10 minutes; a callback without the matching state is
+  refused (RFC 6749 10.12).
+- Q3 The Settings table holds three Notion rows: NotionAccessToken, NotionRefreshToken and NotionWorkspaceName. They are
+  plain text (OpenBao is version 2) and the tokens are never sent to the browser.
+- Q4 RAG_NOTION_TOKEN is removed (settings.py, .env.example, project.md); there is no fallback.
+- Q5 A build without a Notion token skips Notion and logs it; a connected Notion that fails still fails the build.
+- Q6 The Requests toggle shows a Notion icon button and the connection state. Clicking the button again reconnects. There
+  is no Disconnect button.
+- Q7 An i icon button at the right of the Notion button opens the tooltip "Connect Notion pages" on hover, keyboard
+  focus and tap; Escape closes it.
+- Q8 The Notion logo is an inline SVG in wwwroot/src/image/icons; no new npm package.
+- Q9 After connecting, the page only shows the connected state; no build is started.
+- Q10 The Notion read's summary line is kept with its calls and seconds; after 6b works, Claude asks before one live
+  build, reads the summary and proposes a speed-up as a separate decision.
+- Q11 The RAG engine reads the Settings table directly, read-only, with psycopg (vetted under the 3rd-party standard),
+  using the FUXI_DB_* keys already in the root .env.
+- Q12 When Notion answers 401, the Notion source fails and the log says to connect Notion again. The refresh token is
+  stored but not used yet; if the integration's tokens turn out to expire (checked in #43), this is asked again.
+- Q13 The client ID, client secret, callback address and app address do not change at run time, so they are .env keys:
+  NOTION_CLIENT_ID, NOTION_CLIENT_SECRET, NOTION_REDIRECT_URI and FUXI_APP_URL.
+- Q14 A cancelled or failed sign-in shows "Notion could not be connected." and keeps the old connection.
+- Q15 NOTION_REDIRECT_URI is http://localhost:<api port>/api/NotionCallback until the hosting is decided (#21).
+
+Proposed by Claude, to confirm with these scenarios:
+- The endpoints follow ApiRoutes: GET /api/NotionConnect, GET /api/NotionCallback and GET /api/GetNotionConnection.
+- The sign-in asks Notion for owner=user. The token is exchanged with HTTP Basic authentication (client ID and secret)
+  through an HttpClient made by IHttpClientFactory, so tests use a fake handler and never call Notion.
+- The callback's result reaches the page as ?notion=connected or ?notion=failed; the page reads it once and removes it
+  from the address bar, so a reload does not show it again.
+- The connection state text is "Not connected" or "Connected: <workspace>"; when Notion gives no workspace name, it is
+  "Connected".
+- New texts live in wwwroot/src/constants/texts.ts; the API call lives in a service, not in a component.
+- A new component (the Notion request row and the tooltip) is asked before it is created (frontend standards).
+
+Marks:
+[FE]  frontend scenario, verified by a Vitest test.
+[BE]  backend scenario, verified by an xUnit test (against the PostgreSQL test database where it writes rows).
+[PY]  RAG engine scenario, verified by a pytest test.
+[RV]  verified by reading the code, running a command, a preview or a browser check.
+[LV]  live check against the real Notion, run only after the Learner's go-ahead.
+
+==================================================
+A. SIGN-IN START (GET /api/NotionConnect)
+==================================================
+A1. [BE] Given the .env keys NOTION_CLIENT_ID and NOTION_REDIRECT_URI, when /api/NotionConnect is called, then it answers 302 to https://api.notion.com/v1/oauth/authorize with client_id, response_type=code, owner=user, redirect_uri and state.
+A2. [BE] Given two calls to /api/NotionConnect, when their redirect addresses are read, then each has its own random state value.
+A3. [BE] Given a state value made by /api/NotionConnect, when it is looked up within 10 minutes, then it is found; after 10 minutes (fake clock) it is not.
+A4. [BE] Given NOTION_CLIENT_ID, NOTION_CLIENT_SECRET, NOTION_REDIRECT_URI or FUXI_APP_URL is empty, when the API starts, then the error is logged and the API still starts; /api/NotionConnect then redirects to <FUXI_APP_URL>/settings?notion=failed, or answers 500 when FUXI_APP_URL itself is missing.
+
+==================================================
+B. SIGN-IN CALLBACK (GET /api/NotionCallback)
+==================================================
+B1. [BE] Given a callback with a code and a known state, when it is handled, then the code is sent to https://api.notion.com/v1/oauth/token with grant_type=authorization_code, the code and redirect_uri, and an HTTP Basic header made of the client ID and secret.
+B2. [BE] Given Notion answers the exchange with access_token, refresh_token and workspace_name, when the callback ends, then the Settings table has the rows NotionAccessToken, NotionRefreshToken and NotionWorkspaceName with these values.
+B3. [BE] Given the Notion rows already exist, when a new sign-in succeeds, then the three rows are updated in place (no second row with the same Code).
+B4. [BE] Given a successful sign-in, when the callback ends, then it answers 302 to <FUXI_APP_URL>/settings?notion=connected.
+B5. [BE] Given a callback whose state is unknown, expired or missing, when it is handled, then no call is sent to Notion, no Settings row changes, and it answers 302 to <FUXI_APP_URL>/settings?notion=failed.
+B6. [BE] Given a state that was already used once, when the same callback comes again, then it is refused like B5 (a state is used once).
+B7. [BE] Given a callback with error=access_denied (the Learner cancelled on Notion), when it is handled, then no Settings row changes and it answers 302 to ?notion=failed.
+B8. [BE] Given Notion answers the exchange with an error status or without access_token, when the callback ends, then no Settings row changes, the error is logged without the code or any token, and it answers 302 to ?notion=failed.
+B9. [BE] Given Notion answers without refresh_token or without workspace_name, when the callback ends, then the access token is saved, the missing row is saved empty, and it answers ?notion=connected.
+B10. [BE] Given a successful sign-in, when the three rows are written, then they are written in one transaction (all or none).
+
+==================================================
+C. CONNECTION STATE (GET /api/GetNotionConnection)
+==================================================
+C1. [BE] Given no NotionAccessToken row, when /api/GetNotionConnection is called, then it answers { isConnected: false, workspaceName: null }.
+C2. [BE] Given a NotionAccessToken row with a value and a NotionWorkspaceName row, when it is called, then it answers { isConnected: true, workspaceName: <name> }.
+C3. [BE] Given any Settings rows, when the answer of /api/GetNotionConnection is read, then it holds no access token and no refresh token.
+C4. [BE] Given a NotionAccessToken row with an empty value, when it is called, then it answers isConnected: false.
+
+==================================================
+D. RAG ENGINE READS THE TOKEN
+==================================================
+D1. [RV] Given psycopg, when it is added to rag/requirements, then it was vetted first (3rd-party standard) and its version is pinned.
+D2. [PY] Given a NotionAccessToken row in the Settings table, when a build reads Notion, then the Notion client is made with that token.
+D3. [PY] Given the engine, when it reads the Settings table, then it only runs SELECT (read-only) and uses the FUXI_DB_* keys from the root .env.
+D4. [PY] Given the token is changed in the Settings table while the engine runs, when the next build starts, then the new token is used (it is read at each build, not at start).
+D5. [PY] Given no NotionAccessToken row, or an empty one, when a build runs, then Notion is skipped, "resource notion: not connected, skipped" is written to the embedding log, and the other sources still build.
+D6. [PY] Given Notion is skipped and every other source succeeds, when the build ends, then the build is complete (the skip is not a failure).
+D7. [PY] Given Notion answers 401 to the token, when a build reads Notion, then the Notion source fails, the build is not complete, the old collections are kept, and the log says "Notion token rejected: connect Notion again on the Settings page".
+D8. [PY] Given the database cannot be reached, when a build reads the Notion token, then the Notion source fails (it is not skipped) and the error is logged without any secret.
+D9. [PY] Given settings.py, when it is read, then it has no RAG_NOTION_TOKEN key and no require_notion_token.
+D10. [PY] Given the RAG tests, when the related pytest files run, then the existing Notion read tests (search, blocks, parents, retries, summary line) still pass with the token from the Settings table.
+D11. [PY] Given a Notion read, when it ends, then its summary line still has pages, calls, rate limit waits, network retries and seconds (#44).
+
+==================================================
+E. SETTINGS PAGE - NOTION REQUEST ROW
+==================================================
+E1. [FE] Given the open Requests toggle, when it is shown, then it holds a Notion icon button named "Connect Notion" and no "No requests yet." text.
+E2. [FE] Given the Notion icon button, when it is drawn, then its icon is the inline Notion logo SVG from image/icons and it is hidden from screen readers (the button keeps its name).
+E3. [FE] Given the Settings page, when it opens, then /api/GetNotionConnection is called once by a service.
+E4. [FE] Given GetNotionConnection answers isConnected: false, when the row is shown, then it says "Not connected".
+E5. [FE] Given GetNotionConnection answers isConnected: true with a workspace name, when the row is shown, then it says "Connected: <workspace>".
+E6. [FE] Given GetNotionConnection answers isConnected: true without a workspace name, when the row is shown, then it says "Connected".
+E7. [FE] Given the Notion icon button, when it is clicked, then the browser goes to <VITE_FUXI_API_URL>/api/NotionConnect.
+E8. [FE] Given a connected Notion, when the Notion icon button is clicked, then it goes to /api/NotionConnect too (reconnect).
+E9. [FE] Given the row, when it is read, then there is no Disconnect button.
+E10. [FE] Given GetNotionConnection fails, when the row is shown, then it says "Not connected" and the button still works.
+E11. [FE] Given the Settings page opened with ?notion=connected, when it loads, then the Requests toggle is open and the row shows the connected state from GetNotionConnection; no build is started (Update_Collections is not called).
+E12. [FE] Given the Settings page opened with ?notion=failed, when it loads, then the Requests toggle is open and the row shows the error "Notion could not be connected." as an alert.
+E13. [FE] Given the Settings page opened with ?notion=..., when it has read the value, then the value is removed from the address bar without a reload.
+E14. [FE] Given the Settings page opened without ?notion, when it loads, then the Requests toggle is closed, as in 6a.
+
+==================================================
+F. SETTINGS PAGE - THE i TOOLTIP
+==================================================
+F1. [FE] Given the Notion row, when it is shown, then an i icon button named "About Notion" is at the right of the Notion button.
+F2. [FE] Given the i button, when the pointer moves over it, then the tooltip "Connect Notion pages" is shown.
+F3. [FE] Given the i button, when it gets keyboard focus, then the tooltip is shown.
+F4. [FE] Given the i button, when it is tapped or clicked, then the tooltip is shown.
+F5. [FE] Given the tooltip is shown, when Escape is pressed, the pointer leaves or the focus leaves, then it is hidden.
+F6. [FE] Given the tooltip is shown, when it is read, then it has role="tooltip" and the i button names it with aria-describedby.
+F7. [RV] Given the tooltip, when it is shown in a browser at phone width, then it does not overflow the screen or cover the Notion button.
+
+==================================================
+G. DOCUMENTATION, SETTINGS AND STRUCTURE
+==================================================
+G1. [RV] Given .env.example, when it is read, then it has NOTION_CLIENT_ID, NOTION_CLIENT_SECRET, NOTION_REDIRECT_URI and FUXI_APP_URL without values and no RAG_NOTION_TOKEN.
+G2. [RV] Given project.md, when it is read, then the Notion part says the token comes from the Settings table after the sign-in, the settings part describes the Notion row and tooltip, the API part lists the three Notion endpoints, and the Settings table part lists the three Notion codes.
+G3. [RV] Given the backend, when it is read, then the Notion client ID and secret are read only from .env and are never logged or sent to the browser.
+G4. [RV] Given the new and changed components, when they are read, then their styles are in their own .less file with tokens, texts are in texts.ts and no API call is inside a component.
+G5. [RV] Given a new component, when it is created, then the Learner was asked before (frontend standards).
+G6. [BE] Given the backend tests, when the related tests run, then they pass without calling Notion.
+
+==================================================
+H. LIVE CHECKS (after the Learner's go-ahead)
+==================================================
+H1. [RV] Given the public Notion integration (#43), when it is created by the Learner, then its client ID and secret are in .env and its redirect address equals NOTION_REDIRECT_URI; whether its tokens expire is read from Notion's answer and reported (Q12).
+H2. [LV] Given the running API and app, when the Learner clicks the Notion button and allows access, then the Settings page shows "Connected: <workspace>".
+H3. [LV] Given the connected Notion, when one build runs (asked first, it may take long), then Notion is read with the Settings token and its summary line is in logs/embedding/.
+H4. [RV] Given the summary line of H3, when it is read, then the time is explained (calls, waits, retries) and a speed-up is proposed to the Learner as a separate decision (#44).
+
+==================================================
+I. OUT OF SCOPE CHECKS
+==================================================
+I1. [RV] Given the Requests toggle, when it is read, then it holds no Google Drive, Letterboxd or Spotify button (6c to 6e).
+I2. [RV] Given the RAG engine, when it is read, then Google Drive, Letterboxd and Spotify still read their .env keys.
+I3. [RV] Given the Settings table, when it is read, then it has no UserId column (#40 is LATER) and its tokens are not encrypted (#20 is version 2).
+I4. [RV] Given the engine, when it reads the Settings table, then it never writes to it; no refresh token is used (Q12).

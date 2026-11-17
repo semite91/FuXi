@@ -1,0 +1,109 @@
+FuXi - Phase 6b - Notion (Notion button, OAuth sign-in, token in the Settings table)
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_17_11_48.txt (confirmed by the Learner, 2026-11-17)
+Run: 2026-11-17 15:35 UTC, branch claude/phase-6b-notion, base commit 7307177 (work not yet committed)
+
+Totals (related tests only, the Learner's rule of 2026-11-16)
+- Backend (dotnet test, run from /backend): the Notion tests (NotionConnectTests, NotionCallbackTests,
+  GetNotionConnectionTests) and RouteTests: 56 passed. The fake Notion server answers every call; no test reaches Notion.
+- RAG engine (pytest, run from /rag, test_live.py left out): test_settings.py, test_settings_store.py,
+  test_notion_resource.py, test_embedding_pipeline.py, test_engine.py: 196 passed. test_settings_store.py uses the
+  .env.test database, one schema per test.
+- Frontend (vitest, run from /wwwroot): settings_page.test.tsx, the service tests, app.test.tsx and main.test.tsx:
+  6 files, 118 passed; flashcard_page.test.tsx (also uses the changed Tooltip): 37 passed. "npx tsc --noEmit": exit 0.
+  There is no lint script.
+- Mutation checks (TDD skill's mutate.sh):
+  - Backend: 26 mutations, 25 failed a test. Survivor: the pruning of expired states in NotionStateStore.Create (it only
+    frees memory; no answer of the API shows it).
+  - RAG engine: 17 of 17 failed a test.
+  - Frontend: 23 mutations, 22 failed a test at first. The survivor (showing "Not connected" while GetNotionConnection is
+    pending) got the test "6b E4-E6 while GetNotionConnection is pending ..." and then failed it.
+- Scenarios: 64. PASS 59. NOT RUN 5 (F7, H1 to H4: need a browser or the real Notion, after the Learner's go-ahead).
+
+Status words: PASS, NOT RUN. FE scenarios are proven by wwwroot tests named "6b <id>"; BE scenarios by
+backend/fuxi_api_tests/api/notion; PY scenarios by the rag/tests files named above.
+
+A. SIGN-IN START (GET /api/NotionConnect)
+A1-A2 PASS   NotionConnectTests: 302 to https://api.notion.com/v1/oauth/authorize with client_id, response_type=code,
+             owner=user, redirect_uri and state; two calls get two different states.
+A3  PASS     NotionCallbackTests with FakeTimeProvider: a state is accepted within 10 minutes and refused after.
+A4  PASS     One error is logged naming only the empty keys; the API starts; NotionConnect redirects to
+             <FUXI_APP_URL>/settings?notion=failed, or answers 500 when FUXI_APP_URL is missing. A closing "/" is trimmed.
+
+B. SIGN-IN CALLBACK (GET /api/NotionCallback)
+B1  PASS     The exchange is a POST to https://api.notion.com/v1/oauth/token with grant_type, code and redirect_uri and a
+             Basic header of the client ID and secret.
+B2-B4 PASS   The three rows are saved; a second sign-in updates them in place; 302 to ?notion=connected.
+B5-B6 PASS   Unknown, expired, missing or reused state: no call to Notion, no row changes, ?notion=failed.
+B7  PASS     error=access_denied, also with a code: no call, no row changes, ?notion=failed.
+B8  PASS     An error status, a missing access_token, a timeout, an unreachable or unreadable answer: no row changes, the
+             log names only the status or error type, ?notion=failed.
+B9  PASS     Without refresh_token or workspace_name the row is saved empty and the answer is ?notion=connected.
+B10 PASS     A PostgreSQL trigger fails the NotionWorkspaceName insert; no row is saved (one SaveChanges).
+
+C. CONNECTION STATE (GET /api/GetNotionConnection)
+C1-C4 PASS   GetNotionConnectionTests; an empty workspace name answers null; the answer has no token field.
+
+D. RAG ENGINE READS THE TOKEN
+D1  PASS     psycopg and psycopg-binary 3.3.9 vetted against psycopg.org's install page (PyPI publisher matches the
+             upstream project; the files carry no PEP 740 attestation) and pinned in rag/requirements.txt.
+D2-D4 PASS   settings_store.read_notion_token reads with a SELECT on a read-only connection made from the FUXI_DB_* keys; a
+             write through it fails with ReadOnlySqlTransaction; the token is read at each build.
+D5-D6 PASS   No or an empty token: "resource notion: not connected, skipped", the other sources build, the build is complete.
+D7  PASS     A 401 on search or on a parent page fails Notion with "Notion token rejected: connect Notion again on the
+             Settings page"; the build is not complete and the old collections are kept.
+D8  PASS     An unreachable database fails Notion (not skipped); the error names only the error type, not the host,
+             user or password.
+D9  PASS     settings.py has no RAG_NOTION_TOKEN and no require_notion_token (test_notion_token_is_no_env_setting).
+D10-D11 PASS The existing Notion read tests pass; the summary line keeps pages, calls, waits, retries and seconds.
+             C12 of Phase 5a now covers 500 and 429 only; a 401 is covered by D7.
+
+E. SETTINGS PAGE - NOTION REQUEST ROW
+E1-E14 PASS  settings_page.test.tsx "6b E1" to "6b E14". The state shows only once GetNotionConnection answered. The
+             6a tests that expected "No requests yet." or no call at all were updated (6a E10 removed: the note is gone).
+
+F. SETTINGS PAGE - THE i TOOLTIP
+F1-F6 PASS   "6b F1" to "6b F6"; the Tooltip now also opens on a click or tap and closes on Escape.
+F7  NOT RUN  The Notion tip opens to the right (placement start, test "6b F7"), so at 360 px it ends about 270 px from
+             the left and sits under the row. Not yet seen in a browser.
+
+G. DOCUMENTATION, SETTINGS AND STRUCTURE
+G1  PASS     .env.example and .env.test.example: the four Notion keys without values, no RAG_NOTION_TOKEN.
+             infrastructure/setup/setup_environment.sh adds the four keys and no longer adds RAG_NOTION_TOKEN.
+G2  PASS     project.md: the Notion resource, the Notion row and tooltip, the three endpoints, the three Settings codes.
+G3  PASS     The client ID and secret come only from .env; the startup log names keys, not values; no answer holds them.
+G4  PASS     notion_connect.less and info_tooltip.less use tokens; texts in NOTION_TEXTS; the calls are in
+             notion_service.ts.
+G5  PASS     The Learner approved notion_connect/ and info_tooltip/ before they were created.
+G6  PASS     The backend tests use FakeNotionServer; none calls Notion.
+
+H. LIVE CHECKS
+H1-H4 NOT RUN Waiting for the public integration (#43) and the Learner's go-ahead.
+
+I. OUT OF SCOPE CHECKS
+I1  PASS     The Requests toggle holds only the Notion row.
+I2  PASS     Google Drive, Letterboxd - TMDB and Spotify still read their .env keys.
+I3  PASS     The Settings table has no UserId column; the tokens are plain text.
+I4  PASS     The engine's connection is read-only and runs one SELECT; the refresh token is not used.
+
+J. CODE REVIEW FIXES (/code-review at medium, 2026-11-17; the Learner chose SRS-9 to SRS-13, skipped SRS-6 to SRS-8,
+   SRS-14 and SRS-15)
+SRS-9  PASS  The Tooltip opens on a click only with opensOnClick, which only InfoTooltip sets. Tests: "6b review SRS-9"
+             (flashcard: a click on the reinforcement button shows no tip; settings: a first tap shows the tip, a
+             second hides it; Enter after that shows it again). F4 still passes.
+SRS-10 PASS  The .env.example example is http://localhost:5000/api/NotionCallback, as setup_environment.sh writes.
+SRS-11 PASS  test_settings_store.py skips when the FUXI_DB_* keys are empty or the database cannot be reached (checked
+             with a one-off script: "FUXI_DB_HOST is not set" and "cannot be reached (ConnectionTimeout)"); the skip
+             names the error type only.
+SRS-12 PASS  NotionTokenRejected sits under PageCache, so the PageCache comment is above PageCache again.
+SRS-13 PASS  Settings.database_values has hash=False; test_settings_with_database_values_can_be_hashed.
+Runs after the fixes: frontend settings_page.test.tsx and flashcard_page.test.tsx 116 passed, "npx tsc --noEmit" exit
+0; RAG test_settings.py, test_settings_store.py, test_notion_resource.py, test_embedding_pipeline.py and
+test_engine.py 155 passed, which is every test these five files hold (155 collected, none skipped). The earlier
+count of 196 for the same file list was not reproduced; it likely came from a wider file list.
+Mutations: frontend 7, 6 failed a test at first; the survivor (the tap memory not cleared after a click) got the
+Enter test and then failed it. RAG 1 of 1 failed a test.
+
+Notes
+- One run of test_live.py started by mistake (.env.test has RAG_LIVE_TESTS=true) and was stopped after about 5 minutes;
+  it is not counted. test_live.py is left out until H3.
+- .env.test still holds the unused RAG_NOTION_TOKEN line; the Learner removes it (the file holds a real token).

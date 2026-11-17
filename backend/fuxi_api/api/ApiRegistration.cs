@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using FuXi.Api.Configs;
+using FuXi.Api.Notion;
 using FuXi.Api.Push;
 using FuXi.Api.Schedules;
 using FuXi.Api.Words;
@@ -20,7 +21,12 @@ public static class ApiRegistration
             .AddScoped<WordService>()
             .AddScoped<ConfigService>()
             .AddScoped<ScheduleService>()
-            .AddScoped<PushService>();
+            .AddScoped<PushService>()
+            .AddSingleton<NotionStateStore>()
+            .AddScoped<NotionService>()
+            .AddHttpClient<NotionOAuthClient>(
+                NotionOAuthClient.HTTP_CLIENT_NAME, client => client.Timeout = NotionOAuthClient.REQUEST_TIMEOUT)
+            .Services;
 
     /// <summary>Stops the startup when a required configuration value is missing.</summary>
     public static void ValidateFuXiConfiguration(this IConfiguration configuration)
@@ -34,7 +40,8 @@ public static class ApiRegistration
             .MapWordEndpoints()
             .MapConfigEndpoints()
             .MapScheduleEndpoints()
-            .MapPushEndpoints();
+            .MapPushEndpoints()
+            .MapNotionEndpoints();
 
     // One timer instance is both the INotificationTimer and the hosted service that starts and stops it.
     private static IServiceCollection AddFuXiNotifications(this IServiceCollection services)

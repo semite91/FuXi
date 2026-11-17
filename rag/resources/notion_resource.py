@@ -17,6 +17,7 @@ from base import (
     Document,
     Resource,
     ResourceKind,
+    ResourceSkipped,
 )
 from resources.http_retry import (
     RATE_LIMITED_STATUS,
@@ -31,6 +32,7 @@ from resources.http_retry import (
     timed_read,
 )
 from settings import Settings
+from settings_store import read_notion_token
 
 RESOURCE_NAME = "notion"
 CHUNK_SIZE = 2000
@@ -44,6 +46,10 @@ NETWORK_ERRORS = (*TRANSIENT_NETWORK_ERRORS, RequestTimeoutError)
 UNREADABLE_PAGE_STATUSES = frozenset({403, 404})
 UNREADABLE_PAGE_CODES = frozenset({"object_not_found", "restricted_resource"})
 
+UNAUTHORIZED_STATUS = 401
+TOKEN_REJECTED_MESSAGE = "Notion token rejected: connect Notion again on the Settings page"
+NOT_CONNECTED = "not connected"
+
 PAGE_FILTER = {"property": "object", "value": "page"}
 TITLE_PROPERTY_TYPE = "title"
 PAGE_PARENT_TYPE = "page_id"
@@ -55,8 +61,14 @@ TEXT_SEPARATOR = "\n"
 PATH_SEPARATOR = " / "
 
 NotionClientFactory = Callable[[], Any]
+
+
 # None marks a parent page the integration cannot read.
 PageCache = dict[str, dict[str, Any] | None]
+
+
+class NotionTokenRejected(RuntimeError):
+    """Notion answered 401: the saved token no longer works."""
 
 
 class NotionResource(Resource):
@@ -81,7 +93,12 @@ class NotionResource(Resource):
     def read_documents(self) -> list[Document]:
         self._pages = 0
         with timed_read(self._clock) as self._stats:
-            return self._read_documents()
+            try:
+                return self._read_documents()
+            except APIResponseError as error:
+                if error.status == UNAUTHORIZED_STATUS:
+                    raise NotionTokenRejected(TOKEN_REJECTED_MESSAGE) from None
+                raise
 
     def read_summary(self) -> str:
         return self._stats.summary(f"{self._pages} pages")
@@ -168,11 +185,23 @@ class NotionResource(Resource):
         return self._splitter.split_text(text)
 
 
-def create_notion_resource(settings: Settings) -> NotionResource:
-    """The token is read only when the resource reads, so a missing token fails only then."""
-    return NotionResource(
-        client_factory=lambda: Client(auth=settings.require_notion_token(), retry=False)
-    )
+def create_notion_resource(
+    settings: Settings,
+    read_token: Callable[[Settings], str | None] = read_notion_token,
+    make_client: Callable[..., Any] = Client,
+) -> NotionResource:
+    """The token is read from the Settings table at each read, so a new sign-in needs no restart.
+
+    Without a token the resource is skipped; a database error fails it.
+    """
+
+    def client_factory() -> Any:
+        token = read_token(settings)
+        if not token:
+            raise ResourceSkipped(NOT_CONNECTED)
+        return make_client(auth=token, retry=False)
+
+    return NotionResource(client_factory=client_factory)
 
 
 def _block_text(block: dict[str, Any]) -> str:

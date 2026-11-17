@@ -286,14 +286,14 @@ def test_failed_update_hides_details_and_frees_the_build(tmp_path):
 
 
 def test_engine_starts_without_secrets_and_names_the_missing_key(tmp_path):
-    # B5
+    # B5; since Phase 6b the Notion token comes from the database, so its key is the one named
     harness = Harness(tmp_path, settings=Settings(), resource_factory=lambda settings: [create_notion_resource(settings)])
 
     assert harness.client.post("/Init_RAG").status_code == 202
     harness.wait_for_build()
 
     log = "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "logs").iterdir())
-    assert "RAG_NOTION_TOKEN is not set" in log
+    assert "resource notion failed: MissingSettingError: FUXI_DB_HOST is not set" in log
 
 
 def test_failed_update_keeps_the_old_collections_and_answers_an_error(tmp_path):

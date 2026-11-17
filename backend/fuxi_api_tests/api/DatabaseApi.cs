@@ -30,6 +30,8 @@ public sealed class DatabaseApi(bool startsNotificationTimer = false) : IDisposa
 
     public RecordingLoggerProvider Logs => host.Logs;
 
+    public Tests.Api.Notion.FakeNotionServer Notion => host.Notion;
+
     /// <summary>Configuration values that win over .env.test. Set them before the first call.</summary>
     public Dictionary<string, string?> Settings => host.Settings;
 

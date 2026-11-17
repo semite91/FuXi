@@ -103,6 +103,8 @@ platformdirs==4.14.5
 pluggy==1.7.0
 propcache==0.5.4
 protobuf==7.36.2
+psycopg==3.3.9
+psycopg-binary==3.3.9
 py-serializable==2.2.0
 pyasn1==0.6.5
 pyasn1_modules==0.4.2

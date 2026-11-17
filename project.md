@@ -46,7 +46,7 @@ This file is initializer instructor of my project.
   - RAG technologies will be defined at next parts.
   - Phase 5 is split: 5a builds the engine core with Notion; Google Drive (5b), letterboxd - TMDB (5c) and Spotify (5d) follow one by one.
   - The engine runs on the Learner's Windows laptop with Python 3.13 and CPU-only PyTorch. It is started from /rag with: uvicorn engine:app --port 8000
-  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_NOTION_TOKEN, RAG_GEMINI_API_KEY, RAG_GOOGLE_SERVICE_ACCOUNT_FILE, RAG_TMDB_TOKEN, RAG_LETTERBOXD_WATCHED_FILE, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
+  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_GEMINI_API_KEY, RAG_GOOGLE_SERVICE_ACCOUNT_FILE, RAG_TMDB_TOKEN, RAG_LETTERBOXD_WATCHED_FILE, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
 
   -- Words --
   - Words will be added to database manually by the Learner. There is no add word page or api.
@@ -111,7 +111,10 @@ This file is initializer instructor of my project.
     - When user clicks "Update embeddings" and confirms with Yes, Update_Collections api of the RAG engine is called. The result is shown in a dialog.
     - Settings page has "Enable notifications" button under the "Update embeddings" row. Browser asks notification permission only after this button is clicked. Permission state is visible at Settings page.
     - The "Update embeddings" confirm pop-up shows a big amber i icon above its title and the text "Your info will be synced". The result dialog does not.
-    - Settings page has a "Requests" toggle after the "Enable notifications" row and before the Credits block. It is closed every time the page opens. Until the request buttons come (Phase 6b), it shows "No requests yet.".
+    - Settings page has a "Requests" toggle after the "Enable notifications" row and before the Credits block. It is closed every time the page opens.
+    - The Requests toggle holds the Notion row: a Notion logo button named "Connect Notion" and the state "Not connected", "Connected: <workspace>" or "Connected", read with GetNotionConnection when the page opens. The button goes to the API's NotionConnect, also when Notion is connected (to reconnect, for example to share more pages). There is no Disconnect button yet.
+    - An "About Notion" i button at the right of the Notion button shows the tooltip "Connect Notion pages" on hover, keyboard focus and tap; a second tap, Escape, the pointer leaving or the focus leaving hides it. Only i buttons open their tip on a tap; other tooltips (such as the reinforcement button's) show on hover and focus.
+    - After the sign-in the API sends the browser back to /settings?notion=connected or ?notion=failed. The page then opens the Requests toggle, shows "Notion could not be connected." as an alert on a failure, starts no build, and removes the value from the address without a reload.
 
     -- schedule --
     - When user opens schedule page, data should be loaded by GetSchedule api with current month's start and end date-times.
@@ -185,7 +188,8 @@ This file is initializer instructor of my project.
   CreatedDate: timestamptz
 
   -- Settings --
-  One set of values for the whole app (no UserId column yet). It is created empty. There is no Settings API yet.
+  One set of values for the whole app (no UserId column yet). It is created empty. There is no general Settings API; the Notion sign-in writes its rows.
+  Codes: NotionAccessToken, NotionRefreshToken (stored, not used yet) and NotionWorkspaceName. The RAG engine reads NotionAccessToken read-only.
   Id: Guid, primary_key
   Code: text, unique
   Value: text
@@ -247,6 +251,12 @@ This file is initializer instructor of my project.
     Quartz.NET's timed task is stopped. Started with new interval. New interval should be value parameter in minutes.
   - GetVapidPublicKey
     It returns VAPID public key.
+  - NotionConnect
+    It redirects the browser to Notion's sign-in page with the client ID, the redirect URI and a one-time state that lasts 10 minutes. Without the Notion keys it redirects to <FUXI_APP_URL>/settings?notion=failed.
+  - NotionCallback
+    Notion sends the browser here with code and state. A known, unused state lets the API swap the code for the tokens (with the client secret, never sent to the browser or logged) and save them in the Settings table. It redirects to <FUXI_APP_URL>/settings?notion=connected, or ?notion=failed on any error.
+  - GetNotionConnection
+    It returns isConnected and workspaceName. The token is never returned.
   - SavePushSubscription
     It takes Endpoint, P256dh and Auth. It adds a PushSubscription entry. If endpoint already exists, it is not added again.
 
@@ -289,6 +299,8 @@ This file is initializer instructor of my project.
 
       # NOTION
       - Notion API will be used
+      - The token comes from the Settings table (NotionAccessToken), saved by the sign-in on the Settings page. It is read with a read-only connection from the FUXI_DB_* keys at each build, so a new sign-in needs no restart. RAG_NOTION_TOKEN is no longer used.
+      - Without a token Notion is skipped and the build can still be complete. A 401 answer fails the source with "connect Notion again on the Settings page", so the old collections are kept.
       - All data will be taken
       - A parent page that is not shared with the integration (403 or 404) ends the page's path; the page is still read. Other Notion errors make the source fail.
       - A dropped connection or a timeout is tried again after 1, 2, 4 and 8 seconds (at most 5 attempts), like the 429 answer.

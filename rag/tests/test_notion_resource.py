@@ -6,14 +6,18 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from notion_client import APIResponseError
 from notion_client.errors import RequestTimeoutError
 
-from base import Document, Resource, ResourceKind
+from base import Document, Resource, ResourceKind, ResourceSkipped
 from fakes import FakeNotionClient, load_fixture
 from resources.http_retry import MAX_ATTEMPTS, NETWORK_RETRY_SECONDS
 from resources.notion_resource import (
     CHUNK_OVERLAP,
     CHUNK_SIZE,
     NotionResource,
+    NotionTokenRejected,
+    create_notion_resource,
 )
+from settings import Settings
+from settings_store import SettingsStoreError
 
 PAGE_A = "1a2b3c4d-0001-4000-8000-00000000000a"
 PAGE_C = "1a2b3c4d-0003-4000-8000-00000000000c"
@@ -227,10 +231,10 @@ def test_path_stops_at_the_first_unreadable_parent():
 
 @pytest.mark.parametrize(
     ("status", "code"),
-    [(500, "internal_server_error"), (401, "unauthorized"), (RATE_LIMITED_STATUS, "rate_limited")],
+    [(500, "internal_server_error"), (RATE_LIMITED_STATUS, "rate_limited")],
 )
-def test_parent_page_server_or_auth_error_fails_the_resource(status, code):
-    # C12
+def test_parent_page_server_error_fails_the_resource(status, code):
+    # C12; a 401 is Phase 6b D7 below
     errors = [api_error(status, code)] * (MAX_ATTEMPTS if status == RATE_LIMITED_STATUS else 1)
     client = FakeNotionClient(recorded(), page_errors={PAGE_D: errors})
 
@@ -238,6 +242,96 @@ def test_parent_page_server_or_auth_error_fails_the_resource(status, code):
         make_resource(client).read_documents()
 
     assert raised.value.status == status
+
+
+UNAUTHORIZED = 401
+TOKEN_REJECTED_MESSAGE = "Notion token rejected: connect Notion again on the Settings page"
+
+
+@pytest.mark.parametrize("where", ["search", "parent page"])
+def test_rejected_token_fails_with_a_reconnect_message(where):
+    # Phase 6b D7
+    error = api_error(UNAUTHORIZED, "unauthorized")
+    client = (
+        FakeNotionClient(recorded(), errors=[error])
+        if where == "search"
+        else FakeNotionClient(recorded(), page_errors={PAGE_D: error})
+    )
+
+    with pytest.raises(NotionTokenRejected) as raised:
+        make_resource(client).read_documents()
+
+    assert str(raised.value) == TOKEN_REJECTED_MESSAGE
+
+
+class RecordingClients:
+    """Stands in for notion_client.Client: records the token of every client and hands out one fake."""
+
+    def __init__(self, client: FakeNotionClient):
+        self.client = client
+        self.tokens: list[str] = []
+
+    def __call__(self, *, auth: str, **kwargs) -> FakeNotionClient:
+        self.tokens.append(auth)
+        return self.client
+
+
+class TokenSource:
+    """Answers each read with the next value, or raises it when it is an exception."""
+
+    def __init__(self, *answers):
+        self.answers = list(answers)
+        self.calls = 0
+
+    def __call__(self, _settings) -> str | None:
+        self.calls += 1
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+def test_client_is_made_with_the_token_of_the_settings_table():
+    # Phase 6b D2
+    clients = RecordingClients(FakeNotionClient(recorded()))
+    resource = create_notion_resource(Settings(), read_token=TokenSource("secret_table-token"), make_client=clients)
+
+    assert resource.read_documents()
+    assert clients.tokens == ["secret_table-token"]
+
+
+def test_token_is_read_again_at_each_read():
+    # Phase 6b D4
+    clients = RecordingClients(FakeNotionClient(recorded()))
+    tokens = TokenSource("secret_first-token", "secret_new-token")
+    resource = create_notion_resource(Settings(), read_token=tokens, make_client=clients)
+
+    resource.read_documents()
+    resource.read_documents()
+
+    assert clients.tokens == ["secret_first-token", "secret_new-token"]
+
+
+def test_no_token_skips_the_resource():
+    # Phase 6b D5
+    clients = RecordingClients(FakeNotionClient(recorded()))
+    resource = create_notion_resource(Settings(), read_token=TokenSource(None), make_client=clients)
+
+    with pytest.raises(ResourceSkipped, match="^not connected$"):
+        resource.read_documents()
+
+    assert clients.tokens == []
+
+
+def test_unreadable_settings_table_fails_the_resource():
+    # Phase 6b D8: a database error is a failure, not a skip
+    failure = SettingsStoreError("the Settings table could not be read: OperationalError")
+    resource = create_notion_resource(
+        Settings(), read_token=TokenSource(failure), make_client=RecordingClients(FakeNotionClient(recorded()))
+    )
+
+    with pytest.raises(SettingsStoreError):
+        resource.read_documents()
 
 
 def test_not_found_code_with_another_status_still_ends_the_path():

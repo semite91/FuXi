@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from chromadb.api import ClientAPI
 
-from base import METADATA_NAME, Document, Resource, ResourceKind
+from base import METADATA_NAME, Document, Resource, ResourceKind, ResourceSkipped
 from chroma_store import (
     COLLECTION_BY_KIND,
     OLD_COLLECTION_BY_KIND,
@@ -187,6 +187,8 @@ def _embed_all(
             result.added_documents += _embed_resource(
                 resource, embedders, chroma_client, batch_size, log, collection_names[resource.kind]
             )
+        except ResourceSkipped as skipped:
+            log.write(f"resource {resource.name}: {skipped}, skipped")
         except Exception as error:
             result.failed_resources.append(resource.name)
             log.write(f"resource {resource.name} failed: {type(error).__name__}: {error}")
