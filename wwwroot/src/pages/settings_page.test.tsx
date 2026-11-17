@@ -621,6 +621,17 @@ test('6b E2 the Notion button draws the inline Notion logo hidden from screen re
   expect(button(CONNECT_NOTION)).toHaveAccessibleName(CONNECT_NOTION);
 });
 
+test('6b E2b the Notion button shows the text "Notion" at the right of its logo', () => {
+  openRequests();
+
+  const notion = button(CONNECT_NOTION);
+  const label = within(notion).getByText('Notion');
+  const logo = notion.querySelector('svg')!;
+  expect(logo.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // The visible text is part of the button's name, so a voice command "click Notion" finds it.
+  expect(notion).toHaveAccessibleName(expect.stringContaining('Notion'));
+});
+
 test('6b E3 opening the Settings page calls GetNotionConnection once', async () => {
   const api = openSettings();
 

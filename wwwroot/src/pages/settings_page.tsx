@@ -80,6 +80,7 @@ const SettingsPage = () => {
       >
         <NotionConnect
           connectLabel={NOTION_TEXTS.connect}
+          text={NOTION_TEXTS.label}
           aboutLabel={NOTION_TEXTS.about}
           tipText={NOTION_TEXTS.tip}
           stateText={notionStateText(notion.connection)}

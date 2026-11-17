@@ -103,6 +103,11 @@ count of 196 for the same file list was not reproduced; it likely came from a wi
 Mutations: frontend 7, 6 failed a test at first; the survivor (the tap memory not cleared after a click) got the
 Enter test and then failed it. RAG 1 of 1 failed a test.
 
+K. NOTION BUTTON TEXT (the Learner's request after PR #26)
+E2b PASS     The Notion button shows the text "Notion" at the right of its logo; its name stays "Connect Notion".
+             settings_page.test.tsx 79 passed, "npx tsc --noEmit" exit 0. Mutations: 2 of 2 failed the test (text
+             before the logo, text missing). project.md: every source button shows its name at the right of its logo.
+
 Notes
 - One run of test_live.py started by mistake (.env.test has RAG_LIVE_TESTS=true) and was stopped after about 5 minutes;
   it is not counted. test_live.py is left out until H3.

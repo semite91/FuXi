@@ -121,6 +121,7 @@ export const REQUESTS_TEXTS = {
 
 export const NOTION_TEXTS = {
   connect: 'Connect Notion',
+  label: 'Notion',
   notConnected: 'Not connected',
   connected: 'Connected',
   workspaceSeparator: ': ',
