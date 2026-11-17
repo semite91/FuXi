@@ -4,7 +4,6 @@ export const APP_TEXTS = {
   name: 'FuXi',
   openMenu: 'Open menu',
   loading: 'Loading',
-  close: 'Close',
   closeDialog: 'Close dialog',
   yes: 'Yes',
   no: 'No',
@@ -111,8 +110,14 @@ export const SETTINGS_TEXTS = {
   about: 'About updating embeddings',
   tip: 'It will update to your current data.',
   confirm: 'Are you sure?',
+  syncNotice: 'Your info will be synced',
   updated: 'Embeddings updated',
   failed: 'Embeddings could not be updated.',
+} as const;
+
+export const REQUESTS_TEXTS = {
+  title: 'Requests',
+  empty: 'No requests yet.',
 } as const;
 
 export const CREDITS_TEXTS = {

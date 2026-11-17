@@ -15,7 +15,6 @@ public sealed class DatabaseTests : IDisposable
     private const string FOREIGN_KEY_VIOLATION = "23503";
     private const string UNIQUE_VIOLATION = "23505";
     private const string CHECK_VIOLATION = "23514";
-    private const string INITIAL_MIGRATION_SUFFIX = "_Initial";
     private const string WORD_NAME = "apple";
     private const string WORD_TRANSLATION = "elma";
     private const string SEEDED_CODE = "RotationCount";
@@ -80,7 +79,7 @@ public sealed class DatabaseTests : IDisposable
 
         using var context = database.CreateContext();
         context.Database.GetPendingMigrations().Should().BeEmpty();
-        context.Database.GetAppliedMigrations().Should().ContainSingle();
+        context.Database.GetAppliedMigrations().Should().Equal(context.Database.GetMigrations());
     }
 
     [Fact]
@@ -95,18 +94,19 @@ public sealed class DatabaseTests : IDisposable
 
         applyAgain.Should().NotThrow();
         using var context = database.CreateContext();
-        context.Database.GetAppliedMigrations().Should().ContainSingle();
+        context.Database.GetPendingMigrations().Should().BeEmpty();
+        context.Database.GetAppliedMigrations().Should().Equal(context.Database.GetMigrations());
     }
 
     [Fact]
-    public void MigrationHistoryListsInitialMigration()
+    public void MigrationHistoryListsInitialThenAddSettings()
     {
         // B5
         using var context = database.RecreateMigrated();
 
         var migrationIds = context.Database.SqlQueryRaw<string>(MIGRATION_HISTORY_SQL).ToList();
 
-        migrationIds.Should().ContainSingle().Which.Should().EndWith(INITIAL_MIGRATION_SUFFIX);
+        ExpectedSchema.ShouldMatchMigrationSuffixes(migrationIds);
     }
 
     [Fact]

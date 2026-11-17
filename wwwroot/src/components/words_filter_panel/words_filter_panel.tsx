@@ -1,6 +1,5 @@
 import { useId, useState } from 'react';
 import Dialog from '../dialog/dialog';
-import IconButton from '../icon_button/icon_button';
 import './words_filter_panel.less';
 
 export interface FilterChoice {
@@ -46,10 +45,6 @@ const WordsFilterPanel = <Name extends string>({
 
   return (
     <Dialog variant="panel" label={title} closeLabel={closeLabel} onClose={onClose}>
-      <div className="dialog__head">
-        <h2>{title}</h2>
-        <IconButton icon="close" shape="small" label={closeLabel} onClick={onClose} />
-      </div>
       {fields.map((field) => (
         <div key={field.name} className="words-filter-panel__field">
           <label htmlFor={idPrefix + field.name}>{field.label}</label>

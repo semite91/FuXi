@@ -109,14 +109,12 @@ const WordsPage = () => {
       )}
 
       {history && (
-        <Dialog label={history.wordName} closeLabel={APP_TEXTS.closeDialog} onClose={words.closeHistory}>
-          <div className="dialog__head">
-            <div>
-              <h2>{history.wordName}</h2>
-              <p className="dialog__subtitle">{HISTORY_TEXTS.title}</p>
-            </div>
-            <IconButton icon="close" shape="small" label={APP_TEXTS.close} onClick={words.closeHistory} />
-          </div>
+        <Dialog
+          label={history.wordName}
+          subtitle={HISTORY_TEXTS.title}
+          closeLabel={APP_TEXTS.closeDialog}
+          onClose={words.closeHistory}
+        >
           {renderWordHistory(history)}
         </Dialog>
       )}

@@ -1,24 +1,30 @@
 // Border, border-radius and box-shadow values used across components,
-// taken from the FuXi Claude Design canvas.
+// the Soft Clay template (Phase 6a): 2px card borders, pill buttons and double shadows.
 
 @border-width: 1px;
 @border-width-strong: 2px;
 @border-default: @border-width solid var(--color-border);
 @border-soft: @border-width solid var(--color-border-soft);
 @border-input: @border-width solid var(--color-border-input);
-@focus-outline: 3px solid var(--color-accent);
+@focus-outline-width: 3px;
+@focus-outline: @focus-outline-width solid var(--color-accent);
 @focus-outline-offset: 3px;
+// The room a focus ring takes outside its control, kept free inside scrolling areas.
+@focus-outline-room: (@focus-outline-width + @focus-outline-offset);
 
 @border-radius-xsmall: 6px;
 @border-radius-small: 10px;
 @border-radius-medium: 12px;
 @border-radius-control: 14px;
 @border-radius-large: 18px;
-@border-radius-dialog: 24px;
-@border-radius-card: 32px;
+@border-radius-dialog: 28px;
+@border-radius-card: 28px;
 @border-radius-round: 50%;
+@border-radius-pill: 999px;
 
-@box-shadow-card: 0 1px 2px var(--color-shadow-soft), 0 20px 40px var(--color-shadow);
+@border-card: @border-width-strong solid var(--color-border);
+
+@box-shadow-card: 0 6px 0 var(--color-shadow-soft), 0 18px 36px var(--color-shadow);
 @box-shadow-menu: 0 16px 32px var(--color-shadow-menu);
 @box-shadow-panel: -16px 0 32px var(--color-shadow-menu);
 @box-shadow-dialog: 0 24px 48px var(--color-shadow-dialog);

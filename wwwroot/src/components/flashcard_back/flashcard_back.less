@@ -38,6 +38,7 @@
 
 .flashcard-back__translation {
   margin: 0;
+  font-family: @font-family-display;
   font-size: var(--font-size-translation);
   line-height: 1.12;
   font-weight: @font-weight-bold;
@@ -91,36 +92,4 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-}
-
-.flashcard-back__history-toggle {
-  .control-reset();
-  .focus-ring();
-  align-self: flex-start;
-  height: @size-control;
-  padding: 0 @space-medium;
-  display: flex;
-  align-items: center;
-  gap: @space-xsmall;
-  font-size: var(--font-size-base);
-  font-weight: @font-weight-medium;
-  color: var(--color-text-soft);
-
-  &:hover {
-    color: var(--color-text);
-  }
-}
-
-.flashcard-back__history-icon {
-  transition: transform 0.25s ease;
-
-  &--open {
-    transition: transform 0.25s ease;
-    transform: rotate(180deg);
-  }
-}
-
-.flashcard-back__history-list {
-  margin-top: @space-small;
-  padding: 0 @space-small;
 }

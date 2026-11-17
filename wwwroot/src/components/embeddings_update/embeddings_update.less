@@ -32,7 +32,24 @@
   cursor: help;
 }
 
-.embeddings-update__title {
+// The big amber i of the confirm pop-up, above its title.
+.embeddings-update__warning {
+  width: @size-icon-large;
+  height: @size-icon-large;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: @border-width-strong solid var(--color-warning);
+  border-radius: @border-radius-round;
+  color: var(--color-warning);
+}
+
+.embeddings-update__notice {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: @font-weight-medium;
+  color: var(--color-text-muted);
   text-align: center;
 }
 

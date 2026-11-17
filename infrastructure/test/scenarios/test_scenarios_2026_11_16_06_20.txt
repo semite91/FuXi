@@ -1,0 +1,182 @@
+FuXi - Phase 6a - General (template, Update Embeddings pop-up, dialogs, Requests toggle, Settings table)
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-16 06:20 UTC
+Status: CONFIRMED BY THE LEARNER ON 2026-11-16, with the proposals by Claude (Code is unique; one shared toggle
+component for the Requests and History toggles)
+
+Amended on 2026-11-16 for the Learner's choices after the confirmation: Q13 the template is option 3, Soft Clay
+(indigo accent, Baloo 2 headings, Nunito body, pill buttons, 2 px borders, double shadows). The FuXi logo is not changed.
+The app keeps showing light mode; color.less holds the Soft Clay dark values too (parametric), but nothing switches the
+app to dark. Q15 (D1) ui-ux-pro-max had no full alternative; the only change taken is an amber (warning) i icon instead
+of a red one. B7, D2, D5, D7 and D8 changed.
+Amended on 2026-11-16 for the Learner's answers during the build: Q17 the Words filter panel and the Word History
+dialog lose their own X, so every dialog has exactly one X (C7, C8 changed). Q18 the fonts are made offline by a
+cache-first rule for the app's own .woff2 files in public/service_worker.js; a font is cached when it is first loaded
+(B5 changed). Q19 the X is named by the dialog's existing close text ("Close dialog"; the filter panel's is "Close
+filters") (C1 changed). Q20 the older Phase 1 tests that expected one migration and six tables are updated (F7).
+Amended on 2026-11-16 for the code review (SRS-1 to SRS-9), approved by the Learner (Q21, Q22): the shared Dialog draws
+a fixed header row with the title and the X, the X first in the focus order, and only the content below it scrolls;
+dialogs pass their title to Dialog and draw no title of their own (C11 to C13 added). The backdrop is a plain element
+that closes on click (C3 changed). A failed font cache write never fails the font, and older copies of the same font
+file are deleted (B5 changed). The toggle arrow adds a modifier class. The backend tests share one list of migrations
+and tables (F8 added). The unused APP_TEXTS.close text is removed (G5 added).
+Amended on 2026-11-16 for the second code review (SRS-10 to SRS-19), approved by the Learner (Q23, Q24): the fonts are
+precached at build: the build writes the list of font files into the service worker, which caches them on install
+under a cache name made for that build and deletes older font caches on activate; the fetch rule only reads the cache
+(B5 changed, replaces the Q18 rule). Where the browser supports Static Routing, only font requests reach the worker
+(B10 added). Only the Baloo 2 weight in use is bundled (B11 added). A dialog with empty content draws no body (C14
+added). "No requests yet." is a plain note, not a status (E10 added). wwwroot/tsconfig.tsbuildinfo is git-ignored (G6
+added). SRS-18 (repeated backend test constants) is left as it is.
+Amended on 2026-11-16 for the third code review (SRS-20 to SRS-29), approved by the Learner (Q26): a font missed by the
+cache is fetched and stored, so a failed precache heals (B5 changed); the build step skips a failed build, fills the
+font list again on every build (watch mode) and resolves the output folder correctly (B12 added); the placeholders live in
+one shared module (B12); a dialog with only empty children draws no body (C14 changed); the migration test sorts by id
+(F8). Known limits: a tab left open during a deploy may miss old-build fonts (SRS-26); without Static Routing every
+request passes the worker (SRS-27); all latin-ext font files are precached, which the Turkish translations need
+(SRS-28). SRS-29 (merge Settings into Config) is not taken: Config rows are shown and edited on the Configs page, and
+Settings will hold tokens.
+Amended on 2026-11-16 for the fourth code review (SRS-30 to SRS-37), approved by the Learner (Q27): the install
+precache has a time limit, so a slow download never holds the worker back (B13 added); the dev server's worker caches no
+font (B14 added); the font list is written literally, also when it holds a $ (B12 changed); the toggle links its button
+to its content (E11 added); the migration order check is one shared test helper (F8 changed). Known limits: SRS-32
+(as SRS-27), SRS-33 (as SRS-28), SRS-35 (as SRS-18).
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 6a is the first part of Phase 6 (project_review.md, GENERAL; ToDos.txt #35 to #40). Phase 6b to 6e add the
+Notion, Google Drive, Letterboxd and Spotify buttons and their Settings rows.
+
+Decisions taken by the Learner on 2026-11-16 (grilling rounds 1 to 3):
+- Q1 The whole-app template (#36) is chosen and applied first; the Update Embeddings pop-up (#35) is redesigned after it.
+- Q2 ui-ux-pro-max makes 3 template options, shown on one private HTML preview page (the Settings page and a flashcard
+  in each). The chosen one is written into color.less, typography.less, border.less and spaces.less. Claude Design is
+  not changed.
+- Q3 The RAG engine keeps reading .env in 6a. Each of 6b to 6e moves its own source to the Settings table (#39).
+- Q4, Q7 The Requests toggle is built in 6a; while it has no button it shows "No requests yet.".
+- Q5 6a builds only the Settings table (entity, migration, tests); no API.
+- Q6 The Requests toggle is placed after "Enable notifications" and before the Credits block.
+- Q8 Every dialog in the app gets a close (X) icon button at the top right.
+- Q9 Every template option keeps the #FCFAEE page background and the FuXi lettering.
+- Q10 Every template option has a light and a dark mode.
+- Q11 Template options may use web fonts. The chosen font is vetted (3rd-party standards) and bundled in wwwroot, so it
+  works offline; no font is loaded from another site at run time.
+- Q12 Only the confirm pop-up gets the new text and the amber i icon (Q15); the result dialog gets only the X.
+- The confirm button already uses the app's primary color (the accent); it keeps the primary color of the chosen template.
+- The Settings table is one set of values for the whole app; a UserId column is LATER (#40).
+
+Proposed by Claude, to confirm with these scenarios:
+- Before the pop-up is built, ui-ux-pro-max is asked for other ideas for it. If it has some, they are presented to the
+  Learner and the chosen one replaces scenarios D2 to D5 (this file is then amended). If not, D2 to D5 are built.
+- The Settings table: Settings, with Id (uuid, primary key), Code (text, required, unique) and Value (text, required).
+  It is created empty; no seed row.
+- The X button is part of the shared Dialog, so no dialog repeats it. Its accessible name is "Close".
+- A new amber (warning) color token (light and dark) is added to color.less for the big i icon; no hardcoded color.
+- The Requests toggle reuses the History toggle's look: the same text button, down-arrow icon and aria-expanded, through
+  one shared toggle component (asked before it is created, frontend standards).
+- New texts live in wwwroot/src/constants/texts.ts.
+
+Marks:
+[FE]  frontend scenario, verified by a Vitest test.
+[BE]  backend scenario, verified by an xUnit test against the PostgreSQL test database.
+[RV]  verified by reading the code, running a command, a preview or a browser check.
+
+==================================================
+A. TEMPLATE OPTIONS (#36)
+==================================================
+A1. [RV] Given the ui-ux-pro-max skill, when the template options are made, then there are 3 options, each with its accent colors, fonts, font sizes, borders, radii, shadows and spacing.
+A2. [RV] Given the preview page, when it is opened, then each option shows the Settings page and a flashcard (front and back).
+A3. [RV] Given the preview page, when each option is shown, then it has a light mode and a dark mode.
+A4. [RV] Given every option, when it is read, then its page background is #FCFAEE in light mode and the FuXi lettering is as tall as the menu button.
+A5. [RV] Given an option with a web font, when it is presented, then the font's name, license and size are listed.
+A6. [RV] Given the preview page, when it is published, then it is private and the Learner chooses one option.
+
+==================================================
+B. APPLYING THE CHOSEN TEMPLATE
+==================================================
+B1. [RV] Given the chosen option, when it is applied, then its colors are only in color.less, with the light and dark modes.
+B2. [RV] Given the chosen option, when it is applied, then its fonts and font sizes are only in typography.less, with the big-font and small-font modes kept.
+B3. [RV] Given the chosen option, when it is applied, then its borders, radii and shadows are only in border.less and its spacing only in spaces.less.
+B4. [RV] Given a chosen web font, when it is added, then it is vetted before install, its files are in wwwroot, and the built app loads no font from another site.
+B5. [FE] Given a build, when it ends, then the service worker holds the list of the built font files and a cache name made for that build; on install it caches every listed font, on activate it deletes the older font caches, and a font request is answered from the cache, also offline after the first visit, and a font missed by the cache is fetched and stored; fonts from another site, other files and non-GET requests are left to the browser.
+B6. [RV] Given the components' .less files, when they are read, then no new color, font, border or spacing value is hardcoded; they use the tokens.
+B7. [RV] Given every page (Words, Flashcard, Active Words, Schedule, Configs, Settings), when it is opened in a browser (light mode), then it shows the chosen template, the logo is unchanged, and nothing overlaps or overflows at phone width.
+B8. [RV] Given the light mode, when the page background is read, then it is still #FCFAEE.
+B9. [FE] Given the frontend tests, when "npm test" runs, then the existing tests still pass.
+B10. [FE] Given a browser with Static Routing (InstallEvent.addRoutes), when the worker installs, then only the app's font requests are routed to the worker and other requests go to the network; without it the worker still works.
+B11. [RV] Given the bundled fonts, when they are listed, then only the Baloo 2 weight used by the display font (800) is imported.
+B12. [FE] Given the build step that fills the worker's font list, when a build failed, when the build runs again in watch mode, or when the output folder is an absolute path, then it skips the failed build, fills the list again and finds the worker; the placeholders are defined in one shared module, and the cache name and the list are written literally, also when they hold a $.
+B13. [FE] Given a font precache slower than its time limit, when the worker installs, then the install ends at the limit, the worker becomes active and push keeps working; fonts not stored yet are stored by the fetch rule.
+B14. [FE] Given the dev server's worker (no font list), when a font is asked, then nothing is cached and the request is left to the browser.
+
+==================================================
+C. DIALOG CLOSE BUTTON (all dialogs)
+==================================================
+C1. [FE] Given an open Dialog, when it is shown, then it has a close icon button named by the dialog's close text ("Close dialog") at the top right of its box.
+C2. [FE] Given an open Dialog, when its close button is clicked, then onClose is called once.
+C3. [FE] Given an open Dialog, when Escape is pressed or the backdrop is clicked, then onClose is still called; the backdrop is a plain element, not a button, and is hidden from screen readers.
+C4. [FE] Given an open Dialog, when the Tab key moves the focus, then the close button can be reached with the keyboard.
+C5. [FE] Given the Config edit dialog, when it is open, then it shows the close button.
+C6. [FE] Given the Schedule entry dialog, when it is open, then it shows the close button.
+C7. [FE] Given the Word History dialog on the Words page, when it is open, then it shows exactly one close button, the shared one.
+C8. [FE] Given the Words filter panel, when it is open, then it shows exactly one close button, the shared one named "Close filters".
+C9. [FE] Given the Update Embeddings confirm and result dialogs, when they are open, then each shows the close button.
+C10. [RV] Given a dialog with a title, when it is shown in a browser at phone width, then the close button does not cover the title.
+C11. [FE] Given an open Dialog with a title, when it is shown, then its header row holds the title and the X, and the X is the first control in the focus order.
+C12. [RV] Given a Dialog whose content is longer than the screen, when the content is scrolled in a browser, then the header row with the X stays visible and only the content scrolls.
+C13. [FE] Given every dialog in the app (Config edit, Schedule entry, Word History, Words filter panel, Update Embeddings confirm and result), when it is open, then its title comes from Dialog and it draws no title of its own.
+C14. [FE] Given a Dialog whose content is empty (none, null, false, or only empty conditional children), when it is shown, then no body is drawn under the header.
+
+==================================================
+D. UPDATE EMBEDDINGS CONFIRM POP-UP (#35)
+==================================================
+D1. [RV] Given the ui-ux-pro-max skill, when it is asked for ideas for this pop-up, then its ideas (or "none") are presented to the Learner before D2 to D5 are built.
+D2. [FE] Given the confirm pop-up, when it is open, then a big amber i icon with a round border is shown above the title.
+D3. [FE] Given the confirm pop-up, when it is open, then it shows the text "Your info will be synced".
+D4. [FE] Given the confirm pop-up, when it is open, then the confirm button uses the primary button style (the template's primary color).
+D5. [RV] Given the amber i icon, when its style is read, then its color comes from a color.less token with a light and a dark value.
+D6. [FE] Given the confirm pop-up, when the confirm button is clicked, then Update_Collections is called, as before.
+D7. [FE] Given the result dialog ("updated" or "failed"), when it is open, then it has no amber i icon and no "Your info will be synced" text.
+D8. [FE] Given the confirm pop-up, when the amber i icon is shown, then it is hidden from screen readers and the dialog keeps its title as its name.
+
+==================================================
+E. REQUESTS TOGGLE (#37)
+==================================================
+E1. [FE] Given the Settings page, when it is opened, then a "Requests" toggle is shown after the "Enable notifications" row and before the Credits block.
+E2. [FE] Given the Settings page, when it is opened, then the Requests toggle is closed (aria-expanded is false) and its content is not shown.
+E3. [FE] Given the closed Requests toggle, when its text or arrow is clicked, then it opens and aria-expanded is true.
+E4. [FE] Given the open Requests toggle, when it is clicked again, then it closes.
+E5. [FE] Given the open Requests toggle with no request button, when it is shown, then it says "No requests yet.".
+E6. [FE] Given the Settings page opened again after the toggle was open, when it loads, then the toggle is closed.
+E7. [FE] Given the toggle, when it is opened, then its arrow icon turns like the History toggle's arrow.
+E8. [FE] Given the flashcard's History toggle, when it is used after the shared toggle is introduced, then it behaves as before (its tests pass unchanged).
+E9. [RV] Given the toggle component, when it is read, then it holds no business logic and no hardcoded text; its open state is kept by the page.
+E10. [FE] Given the open Requests toggle, when "No requests yet." is shown, then it is a plain note with no status or live region role.
+E11. [FE] Given a toggle (Requests or History), when it is open, then its button names its content with aria-controls and the content has that id.
+
+==================================================
+F. SETTINGS TABLE (#38)
+==================================================
+F1. [BE] Given the migrations, when the test database is created, then a Settings table exists with Id (uuid, primary key), Code (text, not null) and Value (text, not null).
+F2. [BE] Given the Settings table, when a row is added, then it can be read back by its Code.
+F3. [BE] Given a row with a Code, when a second row with the same Code is added, then the database refuses it.
+F4. [BE] Given a new database, when the migrations run, then the Settings table has no row.
+F5. [BE] Given the existing tables, when the migration runs, then Words, RotatedWords, Config, WordHistory, Schedule and PushSubscription keep their data and columns.
+F6. [RV] Given the backend, when it is read, then no Settings API (no controller, no endpoint) is added in 6a.
+F7. [BE] Given the backend tests, when "dotnet test" runs, then the existing tests still pass.
+F8. [RV] Given the backend tests, when they are read, then the list of migrations and the list of tables are kept in one shared place, and the migration order is checked by one shared helper.
+
+==================================================
+G. DOCUMENTATION AND STRUCTURE
+==================================================
+G1. [RV] Given project.md, when it is read, then the Database part has the Settings table, the settings part has the Requests toggle, and the design part says every dialog has a close button at the top right.
+G2. [RV] Given project.md, when it is read, then it says the template is kept in the LESS token files and Claude Design was not changed for it.
+G3. [RV] Given the new and changed components, when they are read, then their styles are in their own .less file, texts are in texts.ts and no API call is inside a component.
+G4. [RV] Given a new component, when it is created, then the Learner was asked before (frontend standards).
+G5. [RV] Given texts.ts, when it is read, then it holds no unused text (APP_TEXTS.close is removed).
+G6. [RV] Given .gitignore, when it is read, then wwwroot/tsconfig.tsbuildinfo is ignored.
+
+==================================================
+H. OUT OF SCOPE CHECKS
+==================================================
+H1. [RV] Given /rag, when it is compared with main, then nothing is changed (#39 is in 6b to 6e).
+H2. [RV] Given the Requests toggle, when it is read, then it holds no Notion, Google Drive, Letterboxd or Spotify button.
+H3. [RV] Given the Settings table, when it is read, then it has no UserId column (#40 is LATER).

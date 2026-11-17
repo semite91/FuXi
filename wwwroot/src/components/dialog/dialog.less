@@ -23,13 +23,12 @@
 }
 
 .dialog__backdrop {
-  .control-reset();
   position: absolute;
   inset: 0;
   border-radius: @border-radius-card;
-  cursor: default;
 }
 
+// The box does not scroll: its header row stays, and only the body scrolls.
 .dialog__box {
   position: relative;
   z-index: 1;
@@ -37,38 +36,92 @@
   display: flex;
   flex-direction: column;
   gap: @space-large;
+  overflow: hidden;
   background: var(--color-surface);
 
   &:focus {
     outline: none;
   }
 
-  h2 {
-    margin: 0;
-    font-size: var(--font-size-heading);
-    line-height: @line-height-heading;
-    font-weight: @font-weight-bold;
-    overflow-wrap: anywhere;
-  }
-
   .dialog--center & {
     width: 100%;
     max-height: 100%;
-    overflow-y: auto;
-    padding: @space-xxlarge @space-xlarge @space-xlarge;
+    padding: @space-xlarge;
     border-radius: @border-radius-dialog;
     box-shadow: @box-shadow-dialog;
   }
 
   .dialog--panel & {
     width: 60%;
-    overflow-y: auto;
     padding: @space-xlarge @space-medium @space-large;
     gap: @space-medium;
     border-radius: @border-radius-card 0 0 @border-radius-card;
     box-shadow: @box-shadow-panel;
     animation: dialog-slide @transition-slide;
   }
+}
+
+// The header row: the title on the left and the X at the top right. The X comes first in
+// the markup, so it is first in the focus order. A centered title keeps an empty column on
+// its left as wide as the X, so it stays in the middle.
+.dialog__header {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) @size-control-small;
+  align-items: start;
+  gap: @space-small;
+
+  &--center {
+    grid-template-columns: @size-control-small minmax(0, 1fr) @size-control-small;
+    text-align: center;
+  }
+}
+
+.dialog__close {
+  grid-row: 1;
+  grid-column: -2;
+}
+
+.dialog__heading {
+  grid-row: 1;
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+
+  .dialog__header--center & {
+    grid-column: 2;
+    align-items: center;
+    gap: @space-large;
+  }
+}
+
+.dialog__title {
+  margin: 0;
+  font-family: @font-family-display;
+  font-size: var(--font-size-heading);
+  line-height: @line-height-heading;
+  font-weight: @font-weight-bold;
+  overflow-wrap: anywhere;
+}
+
+// A small line under the title.
+.dialog__subtitle {
+  margin: @space-xsmall 0 0;
+  font-size: var(--font-size-small);
+  font-weight: @font-weight-medium;
+  color: var(--color-text-muted);
+}
+
+// The content. Its small inset keeps the focus rings of its controls inside the scrolling area.
+.dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+  margin: -@focus-outline-room;
+  padding: @focus-outline-room;
 }
 
 @keyframes dialog-fade {
@@ -89,19 +142,4 @@
   to {
     transform: none;
   }
-}
-
-// A title row with a close button, and a small line under the title.
-.dialog__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: @space-small;
-}
-
-.dialog__subtitle {
-  margin: @space-xsmall 0 0;
-  font-size: var(--font-size-small);
-  font-weight: @font-weight-medium;
-  color: var(--color-text-muted);
 }

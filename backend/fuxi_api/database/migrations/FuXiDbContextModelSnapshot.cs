@@ -161,6 +161,29 @@ namespace FuXi.Api.Database.Migrations
                         });
                 });
 
+            modelBuilder.Entity("FuXi.Api.Database.Entities.Setting", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Settings", (string)null);
+                });
+
             modelBuilder.Entity("FuXi.Api.Database.Entities.Word", b =>
                 {
                     b.Property<Guid>("Id")

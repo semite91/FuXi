@@ -1,4 +1,5 @@
-// FuXi service worker: shows the push notifications and opens the Flashcard page on a click.
+// FuXi service worker: shows the push notifications, opens the Flashcard page on a click, and keeps the
+// app's fonts offline (cached on install, answered cache first, a missed font stored when it is loaded).
 // It is plain JavaScript, served unbundled at /service_worker.js, so it cannot import app code.
 
 const NOTIFICATION_ICON = '/fuxi_192.png';
@@ -10,14 +11,149 @@ const WINDOW_CLIENT_TYPE = 'window';
 // The same message type is read by src/services/service_worker_message_service.ts.
 const NAVIGATE_MESSAGE_TYPE = 'fuxi-navigate';
 
-self.addEventListener('install', () => {
+// The fonts of the build are cached on install and answered from that cache, so they work offline.
+// The build (fontPrecache in src/service_worker_font_list.ts) writes the font files of that build and a cache
+// name made from their list after the two markers below; the markers stay, so every build fills them again.
+// The dev server keeps the values below: the list is empty, so no font is cached and fonts are left to the browser.
+const FONT_CACHE = /* fuxi:font-cache */ 'fuxi-fonts-dev';
+const FONT_FILES = /* fuxi:font-files */ [];
+const FONT_CACHE_PREFIX = 'fuxi-fonts-';
+const FONT_EXTENSION = '.woff2';
+const GET_METHOD = 'GET';
+// Without a font list (the dev server) the worker caches no font.
+const HAS_FONT_LIST = FONT_FILES.length > 0;
+// The install waits this long for the precache at most, well under the 10 s that push_service.ts waits
+// for the worker to be ready. Fonts not stored by then are stored by the fetch rule when they are loaded.
+const FONT_PRECACHE_LIMIT_MS = 4_000;
+// Static Routing: only the app's font requests reach this worker; every other request goes to the network.
+const FONT_ROUTE_CONDITION = { urlPattern: `/*${FONT_EXTENSION}`, requestMethod: GET_METHOD };
+const ROUTES = [
+  { condition: FONT_ROUTE_CONDITION, source: 'fetch-event' },
+  { condition: { not: FONT_ROUTE_CONDITION }, source: 'network' },
+];
+
+/** Caches the fonts of the build. A failure leaves the fonts to the network and never fails the install. */
+const precacheFonts = async () => {
+  try {
+    const cache = await self.caches.open(FONT_CACHE);
+    await cache.addAll(FONT_FILES);
+  } catch {
+    // Push still works; the fetch rule stores each missed font when it is first loaded.
+  }
+};
+
+/** Waits for the precache, or for its time limit when that comes first; the timer is cleared either way. */
+const precacheFontsInTime = async () => {
+  if (!HAS_FONT_LIST) {
+    return;
+  }
+
+  let timer;
+  const limit = new Promise((resolve) => {
+    timer = setTimeout(resolve, FONT_PRECACHE_LIMIT_MS);
+  });
+
+  try {
+    await Promise.race([precacheFonts(), limit]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+/** Adds the static routes where the browser has them. An unsupported rule never fails the install. */
+const addFontRoutes = async (event) => {
+  if (typeof event.addRoutes !== 'function') {
+    return;
+  }
+
+  try {
+    await event.addRoutes(ROUTES);
+  } catch {
+    // Without routes every request still reaches the fetch handler, which leaves non-fonts alone.
+  }
+};
+
+self.addEventListener('install', (event) => {
   self.skipWaiting();
+  event.waitUntil(Promise.all([precacheFontsInTime(), addFontRoutes(event)]));
 });
+
+/** Deletes the font caches of older builds; other caches are left alone. */
+const deleteOldFontCaches = async () => {
+  const names = await self.caches.keys();
+  const oldNames = names.filter((name) => name.startsWith(FONT_CACHE_PREFIX) && name !== FONT_CACHE);
+
+  await Promise.all(oldNames.map((name) => self.caches.delete(name)));
+};
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(Promise.all([self.clients.claim(), deleteOldFontCaches()]));
 });
 
+const isOwnFont = (request) => {
+  const url = new URL(request.url);
+
+  return HAS_FONT_LIST && request.method === GET_METHOD && url.origin === self.location.origin && url.pathname.endsWith(FONT_EXTENSION);
+};
+
+const NOTHING_TO_STORE = Promise.resolve();
+
+/** Stores a downloaded font in the cache of this build. A failure is ignored: the font was already answered. */
+const storeFont = async (cache, request, response) => {
+  try {
+    await cache.put(request, response);
+  } catch {
+    // The font is stored on a later load.
+  }
+};
+
+/** The font cache of this build, or null when it cannot be opened. */
+const openFontCache = async () => {
+  try {
+    return await self.caches.open(FONT_CACHE);
+  } catch {
+    return null;
+  }
+};
+
+/** A cached copy of the request, or undefined when there is none or the cache cannot be read. */
+const matchFont = async (cache, request) => {
+  try {
+    return cache === null ? undefined : await cache.match(request);
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Answers a font from the cache of this build. A missed font (also one a failed precache left out) is
+ * downloaded and answered at once, and its storing is handed back as a separate promise.
+ */
+const answerFont = async (request) => {
+  const cache = await openFontCache();
+  const cached = await matchFont(cache, request);
+
+  if (cached) {
+    return { response: cached, stored: NOTHING_TO_STORE };
+  }
+
+  const response = await self.fetch(request);
+  const stored = response.ok && cache !== null ? storeFont(cache, request, response.clone()) : NOTHING_TO_STORE;
+
+  return { response, stored };
+};
+
+self.addEventListener('fetch', (event) => {
+  if (!isOwnFont(event.request)) {
+    return;
+  }
+
+  const answer = answerFont(event.request);
+  event.respondWith(answer.then(({ response }) => response));
+  // Called at once, while the event is still dispatching, so the store outlives the response.
+  // A failed download fails the response only; the background work then has nothing left to do.
+  event.waitUntil(answer.then(({ stored }) => stored, () => undefined));
+});
 const isFilledText = (value) => typeof value === 'string' && value !== '';
 
 /** The payload {title, wordIds} of a push, or null when it is missing or not valid. */

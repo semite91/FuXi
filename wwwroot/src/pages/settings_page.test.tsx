@@ -1,5 +1,5 @@
 // Section P: the Settings page.
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { expect, onTestFinished, test, vi } from 'vitest';
 import { deferred, mockApi, networkFailure, problem } from '../test/api_mock';
 import { renderApp } from '../test/render_app';
@@ -425,6 +425,169 @@ test('I14 the timeout is cleared when the service worker is ready', async () => 
 
   expect(screen.getByText('Notifications: allowed')).toBeInTheDocument();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+// Phase 6a section C and D: the Update Embeddings confirm pop-up and its result dialog.
+const SYNC_TEXT = 'Your info will be synced';
+const warningIcon = (dialog: HTMLElement) => dialog.querySelector('.embeddings-update__warning');
+
+test('6a C9 the confirm and the result dialogs each show the close button', async () => {
+  openSettings();
+  fireEvent.click(button('Update embeddings'));
+  const confirm = screen.getByRole('dialog', { name: 'Are you sure?' });
+  expect(within(confirm).getByRole('button', { name: 'Close dialog' })).toHaveClass('dialog__close');
+
+  await act(async () => fireEvent.click(button('Yes')));
+
+  const result = screen.getByRole('dialog', { name: 'Embeddings updated' });
+  expect(within(result).getByRole('button', { name: 'Close dialog' })).toHaveClass('dialog__close');
+});
+
+test('6a D2 the confirm pop-up shows a big round-bordered amber i icon above its title', () => {
+  openSettings();
+  fireEvent.click(button('Update embeddings'));
+
+  const dialog = screen.getByRole('dialog', { name: 'Are you sure?' });
+  const icon = warningIcon(dialog);
+  expect(icon).not.toBeNull();
+  expect(icon?.querySelector('svg')).not.toBeNull();
+  const title = within(dialog).getByRole('heading', { name: 'Are you sure?' });
+  expect((icon as Element).compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test('6a D3 the confirm pop-up shows "Your info will be synced"', () => {
+  openSettings();
+  fireEvent.click(button('Update embeddings'));
+
+  expect(within(screen.getByRole('dialog')).getByText(SYNC_TEXT)).toBeInTheDocument();
+});
+
+test('6a D4 the confirm button keeps the primary button style', () => {
+  openSettings();
+  fireEvent.click(button('Update embeddings'));
+
+  expect(button('Yes')).toHaveClass('embeddings-update__confirm');
+});
+
+test('6a D6 the confirm button still calls Update_Collections', async () => {
+  const api = openSettings();
+  fireEvent.click(button('Update embeddings'));
+
+  await act(async () => fireEvent.click(button('Yes')));
+
+  expect(api.callsTo('Update_Collections')).toHaveLength(1);
+});
+
+test.each([
+  ['updated', { status: 204 }, 'Embeddings updated'],
+  ['failed', networkFailure, 'Embeddings could not be updated.'],
+] as const)('6a D7 the %s result dialog has no amber icon and no sync text', async (_, answer, title) => {
+  openSettings({ 'POST /Update_Collections': answer });
+  fireEvent.click(button('Update embeddings'));
+
+  await act(async () => fireEvent.click(button('Yes')));
+
+  const result = await screen.findByRole('dialog', { name: title });
+  expect(warningIcon(result)).toBeNull();
+  expect(within(result).queryByText(SYNC_TEXT)).not.toBeInTheDocument();
+});
+
+test('6a D8 the amber icon is hidden from screen readers and the dialog keeps its title as its name', () => {
+  openSettings();
+  fireEvent.click(button('Update embeddings'));
+
+  const dialog = screen.getByRole('dialog', { name: 'Are you sure?' });
+  expect(warningIcon(dialog)).toHaveAttribute('aria-hidden', 'true');
+  expect(dialog).toHaveAccessibleName('Are you sure?');
+});
+
+test('6a C13 the confirm and the result dialog titles come from Dialog and they draw no title of their own', async () => {
+  openSettings();
+  fireEvent.click(button('Update embeddings'));
+  const confirmTitles = screen.getByRole('dialog', { name: 'Are you sure?' }).querySelectorAll('h2');
+  expect(confirmTitles).toHaveLength(1);
+  expect(confirmTitles[0]).toHaveClass('dialog__title');
+
+  await act(async () => fireEvent.click(button('Yes')));
+
+  const result = screen.getByRole('dialog', { name: 'Embeddings updated' });
+  const resultTitles = result.querySelectorAll('h2');
+  expect(resultTitles).toHaveLength(1);
+  expect(resultTitles[0]).toHaveClass('dialog__title');
+  expect(resultTitles[0]).toHaveAttribute('role', 'status');
+});
+
+// Phase 6a section E: the Requests toggle.
+const requestsToggle = () => button('Requests');
+const NO_REQUESTS = 'No requests yet.';
+
+test('6a E1 the Requests toggle is after "Enable notifications" and before the Credits block', () => {
+  openSettings();
+
+  const toggle = requestsToggle();
+  expect(button('Enable notifications').compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const credits = screen.getByRole('heading', { level: 2, name: 'Credits' });
+  expect(toggle.compareDocumentPosition(credits) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test('6a E2 the Requests toggle starts closed without its content', () => {
+  openSettings();
+
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByText(NO_REQUESTS)).not.toBeInTheDocument();
+});
+
+test('6a E3 a click opens the toggle, E5 it says "No requests yet." and E4 a second click closes it', () => {
+  openSettings();
+
+  fireEvent.click(requestsToggle());
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByText(NO_REQUESTS)).toBeInTheDocument();
+
+  fireEvent.click(requestsToggle());
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByText(NO_REQUESTS)).not.toBeInTheDocument();
+});
+
+test('6a E3 a click on the arrow opens the toggle', () => {
+  openSettings();
+
+  fireEvent.click(requestsToggle().querySelector('svg') as Element);
+
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('6a E6 the Settings page opened again shows the toggle closed', () => {
+  openSettings();
+  fireEvent.click(requestsToggle());
+  cleanup();
+
+  openSettings();
+
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('6a E7 the arrow turns when the toggle opens', () => {
+  openSettings();
+  const arrow = () => requestsToggle().querySelector('svg');
+  expect(arrow()).toHaveClass('disclosure-toggle__icon');
+  expect(arrow()).not.toHaveClass('disclosure-toggle__icon--open');
+
+  fireEvent.click(requestsToggle());
+
+  expect(arrow()).toHaveClass('disclosure-toggle__icon', 'disclosure-toggle__icon--open');
+});
+
+test('6a E10 "No requests yet." is a plain note with no status or live region role', () => {
+  openSettings();
+
+  fireEvent.click(requestsToggle());
+
+  const note = screen.getByText(NO_REQUESTS);
+  expect(note).not.toHaveAttribute('role');
+  expect(note).not.toHaveAttribute('aria-live');
+  expect(note.closest('[role="status"], [role="alert"], [aria-live]')).toBeNull();
+  expect(note).toHaveClass('status-message--note');
 });
 
 const TMDB_NOTICE = 'This product uses the TMDB API but is not endorsed or certified by TMDB.';

@@ -44,6 +44,27 @@ test('L1 the page calls GetConfigs once and L2 shows Name, Value and the edit bu
   expect(valueOf('Rotation Count')).toBe('20');
 });
 
+test('6a C5 the Config edit dialog shows the close button', async () => {
+  stubNotification('default');
+  openConfigs();
+
+  const dialog = await editRow('Rotation Count');
+
+  expect(within(dialog).getByRole('button', { name: 'Close dialog' })).toHaveClass('dialog__close');
+});
+
+test('6a C13 the Config edit dialog title comes from Dialog and it draws no title of its own', async () => {
+  stubNotification('default');
+  openConfigs();
+
+  const dialog = await editRow('Rotation Count');
+
+  const titles = dialog.querySelectorAll('h2');
+  expect(titles).toHaveLength(1);
+  expect(titles[0]).toHaveClass('dialog__title');
+  expect(titles[0]).toHaveTextContent('Rotation Count');
+});
+
 test('L3 the edit dialog shows the Name and Value; L4 Number, L5 Date and L6 other types', async () => {
   stubNotification('default');
   openConfigs();

@@ -47,7 +47,6 @@ const ScheduleEntryDialog = ({
 
   return (
     <Dialog label={title} closeLabel={closeLabel} onClose={onCancel}>
-      <h2>{title}</h2>
       <div className="schedule-entry-dialog__field">
         <label htmlFor={`${idPrefix}title`}>{titleLabel}</label>
         <input id={`${idPrefix}title`} type="text" value={titleValue} disabled readOnly />
