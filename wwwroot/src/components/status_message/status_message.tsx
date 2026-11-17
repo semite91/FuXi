@@ -11,16 +11,23 @@ interface StatusMessageProps {
   text: string;
   /** message: large centered text. note: small text. error: an alert. hidden: only for screen readers. */
   kind?: keyof typeof KIND_CLASSES;
-  /** False for a plain note that is not news: no status or alert role, so screen readers do not announce it. */
+  /** False for a plain note that is not news: no status role, so screen readers do not announce it. An error is always an alert. */
   isAnnounced?: boolean;
 }
 
 const ERROR_KIND = 'error';
 
-const announcedRole = (kind: keyof typeof KIND_CLASSES) => (kind === ERROR_KIND ? 'alert' : 'status');
+/** An error is always an alert; any other kind is a status only when it is announced. */
+const messageRole = (kind: keyof typeof KIND_CLASSES, isAnnounced: boolean) => {
+  if (kind === ERROR_KIND) {
+    return 'alert';
+  }
+
+  return isAnnounced ? 'status' : undefined;
+};
 
 const StatusMessage = ({ text, kind = 'note', isAnnounced = true }: StatusMessageProps) => (
-  <p className={KIND_CLASSES[kind]} role={isAnnounced ? announcedRole(kind) : undefined}>
+  <p className={KIND_CLASSES[kind]} role={messageRole(kind, isAnnounced)}>
     {text}
   </p>
 );

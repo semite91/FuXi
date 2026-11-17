@@ -64,33 +64,47 @@ test('6a B12 the cache name changes with the font list', async () => {
   expect(await fontCacheName(SECOND_FONTS)).not.toBe(first);
 });
 
-/** Runs the plugin's hooks as Vite does, over a fake output folder that holds one worker file. */
-const runPlugin = () => {
+const WORKER_PATH = 'B:/app/wwwroot/dist/service_worker.js';
+
+const missingFileError = () => Object.assign(new Error('no such file'), { code: 'ENOENT' });
+
+/** Runs the plugin's hooks as Vite does, over a fake output folder that holds one worker file (or none). */
+const runPlugin = (hasWorker = true) => {
   const plugin = fontPrecache();
-  const files = new Map<string, string>([['B:/app/wwwroot/dist/service_worker.js', serviceWorkerCode]]);
+  const files = new Map<string, string>(hasWorker ? [[WORKER_PATH, serviceWorkerCode]] : []);
   const fs = {
-    readFile: vi.fn(async (path: string) => files.get(path) ?? ''),
+    readFile: vi.fn(async (path: string) => {
+      const file = files.get(path);
+      if (file === undefined) {
+        throw missingFileError();
+      }
+      return file;
+    }),
     writeFile: vi.fn(async (path: string, data: string) => {
       files.set(path, data);
     }),
   };
+  const warn = vi.fn();
   type Hook = (this: unknown, ...args: unknown[]) => unknown;
-  const call = (name: 'configResolved' | 'generateBundle' | 'closeBundle', ...args: unknown[]) =>
-    (plugin[name] as unknown as Hook).call({ fs }, ...args);
+  const call = (name: 'configResolved' | 'buildStart' | 'generateBundle' | 'closeBundle', ...args: unknown[]) =>
+    (plugin[name] as unknown as Hook).call({ fs, warn }, ...args);
 
   call('configResolved', { base: '/', root: 'B:/app/wwwroot', build: { outDir: 'dist' } });
-  const build = async (fontFiles: string[], error?: Error) => {
-    call('generateBundle', {}, Object.fromEntries(fontFiles.map((file) => [file.slice(1), {}])));
+  const bundleOf = (fontFiles: string[]) => Object.fromEntries(fontFiles.map((file) => [file.slice(1), {}]));
+  /** One build; each list of fonts is one output of it. */
+  const build = async (outputs: string[][], error?: Error) => {
+    call('buildStart');
+    outputs.forEach((fontFiles) => call('generateBundle', {}, bundleOf(fontFiles)));
     await call('closeBundle', error);
   };
 
-  return { files, fs, build };
+  return { files, fs, warn, build };
 };
 
 test('6a B12 a failed build is left alone', async () => {
   const { fs, build } = runPlugin();
 
-  await build(FIRST_FONTS, new Error('Build failed'));
+  await build([FIRST_FONTS], new Error('Build failed'));
 
   expect(fs.readFile).not.toHaveBeenCalled();
   expect(fs.writeFile).not.toHaveBeenCalled();
@@ -99,11 +113,29 @@ test('6a B12 a failed build is left alone', async () => {
 test('6a B12 each build writes its own font list into the built worker', async () => {
   const { files, build } = runPlugin();
 
-  await build(FIRST_FONTS);
-  await build(SECOND_FONTS);
+  await build([FIRST_FONTS]);
+  await build([SECOND_FONTS]);
 
-  const worker = files.get('B:/app/wwwroot/dist/service_worker.js') ?? '';
+  const worker = files.get(WORKER_PATH) ?? '';
   expect(worker).toContain(JSON.stringify([...SECOND_FONTS].sort()));
   expect(worker).toContain(JSON.stringify(await fontCacheName([...SECOND_FONTS].sort())));
   expect(worker).not.toContain(FIRST_FONTS[0]);
+});
+
+test('6a B12 a build with several outputs writes the fonts of every output', async () => {
+  const { files, build } = runPlugin();
+
+  await build([FIRST_FONTS, SECOND_FONTS]);
+
+  const allFonts = [...FIRST_FONTS, ...SECOND_FONTS].sort();
+  expect(files.get(WORKER_PATH)).toContain(JSON.stringify(allFonts));
+});
+
+test('6a B12 a build without the worker in its output folder warns and does not fail', async () => {
+  const { fs, warn, build } = runPlugin(false);
+
+  await expect(build([FIRST_FONTS])).resolves.toBeUndefined();
+
+  expect(warn).toHaveBeenCalledTimes(1);
+  expect(fs.writeFile).not.toHaveBeenCalled();
 });

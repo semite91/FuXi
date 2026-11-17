@@ -514,7 +514,9 @@ test('6a C13 the confirm and the result dialog titles come from Dialog and they 
   const resultTitles = result.querySelectorAll('h2');
   expect(resultTitles).toHaveLength(1);
   expect(resultTitles[0]).toHaveClass('dialog__title');
-  expect(resultTitles[0]).toHaveAttribute('role', 'status');
+  // The title keeps its heading role and is announced through the status block around it.
+  expect(resultTitles[0]).not.toHaveAttribute('role');
+  expect(resultTitles[0].closest('[role="status"]')).not.toBeNull();
 });
 
 // Phase 6a section E: the Requests toggle.

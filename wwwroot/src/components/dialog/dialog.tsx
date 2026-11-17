@@ -87,9 +87,10 @@ const Dialog = ({
         <div className={isTitleCentered ? HEADER_CLASSES.center : HEADER_CLASSES.start}>
           {/* First in the focus order; the stylesheet places it at the top right. */}
           <IconButton icon="close" shape="small" label={closeLabel} className="dialog__close" onClick={onClose} />
-          <div className="dialog__heading">
+          {/* The status role sits on the heading block, so the title keeps its heading role. */}
+          <div className="dialog__heading" role={isTitleStatus ? STATUS_ROLE : undefined}>
             {icon}
-            <h2 id={titleId} className="dialog__title" role={isTitleStatus ? STATUS_ROLE : undefined}>
+            <h2 id={titleId} className="dialog__title">
               {label}
             </h2>
             {subtitle !== undefined && <p className="dialog__subtitle">{subtitle}</p>}

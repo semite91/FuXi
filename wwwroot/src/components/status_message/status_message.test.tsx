@@ -15,6 +15,12 @@ test('6a E10 an error is still an alert', () => {
   expect(screen.getByRole('alert')).toHaveTextContent('Failed');
 });
 
+test('6a E10 an error stays an alert even when isAnnounced is false', () => {
+  render(<StatusMessage kind="error" text="Failed" isAnnounced={false} />);
+
+  expect(screen.getByRole('alert')).toHaveTextContent('Failed');
+});
+
 test('6a E10 a message that is not announced has no role and the same note style', () => {
   render(<StatusMessage text="No requests yet." isAnnounced={false} />);
 

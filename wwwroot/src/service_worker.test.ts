@@ -64,7 +64,6 @@ const loadServiceWorker = (openWindows: FakeWindow[] = [], cacheNames: string[] 
   const cache = {
     match: vi.fn(async (_request: unknown): Promise<unknown> => undefined),
     put: vi.fn(async (_request: unknown, _response: unknown): Promise<undefined> => undefined),
-    addAll: vi.fn(async (_urls: string[]): Promise<undefined> => undefined),
   };
   const self = {
     addEventListener: (type: string, listener: Listener) => listeners.set(type, listener),
@@ -75,6 +74,8 @@ const loadServiceWorker = (openWindows: FakeWindow[] = [], cacheNames: string[] 
       open: vi.fn(async (_name: string) => cache),
       keys: vi.fn(async () => cacheNames),
       delete: vi.fn(async (_name: string) => true),
+      // Searches every cache, also the kept cache of the build before.
+      match: vi.fn(async (_request: unknown): Promise<unknown> => undefined),
     },
     registration: { showNotification: vi.fn(async () => undefined) },
     clients: {
@@ -275,8 +276,34 @@ test('6a B5 install caches every font of the build under the cache name of that 
   await Promise.all(kept);
 
   expect(self.caches.open).toHaveBeenCalledWith(BUILD_FONT_CACHE);
-  expect(cache.addAll).toHaveBeenCalledWith([FONT_PATH, OTHER_FONT_PATH]);
+  expect(self.fetch.mock.calls.map(([url]) => url)).toEqual([FONT_PATH, OTHER_FONT_PATH]);
+  expect(cache.put.mock.calls.map(([url]) => url)).toEqual([FONT_PATH, OTHER_FONT_PATH]);
   expect(self.skipWaiting).toHaveBeenCalledTimes(1);
+});
+
+test('6a B5 one font that fails to precache does not stop the other fonts from being cached', async () => {
+  const { self, cache, dispatch } = loadServiceWorker([], [], BUILD);
+  self.fetch.mockImplementation(async (url: unknown) => {
+    if (url === FONT_PATH) {
+      throw new TypeError('Failed to fetch');
+    }
+    return fakeResponse();
+  });
+
+  const { kept } = dispatch('install', {});
+  await Promise.all(kept);
+
+  expect(cache.put.mock.calls.map(([url]) => url)).toEqual([OTHER_FONT_PATH]);
+});
+
+test('6a B5 a font that is cached already is not downloaded again on install', async () => {
+  const { self, cache, dispatch } = loadServiceWorker([], [], BUILD);
+  cache.match.mockImplementation(async (url: unknown) => (url === FONT_PATH ? fakeResponse() : undefined));
+
+  const { kept } = dispatch('install', {});
+  await Promise.all(kept);
+
+  expect(self.fetch.mock.calls.map(([url]) => url)).toEqual([OTHER_FONT_PATH]);
 });
 
 test('6a B14 the worker of the dev server (no font list) installs without opening a font cache', async () => {
@@ -313,8 +340,8 @@ test('6a B13 the precache time limit is a few seconds, well under the push ready
 
 test('6a B13 a precache slower than its limit ends the install at the limit', async () => {
   vi.useFakeTimers();
-  const { cache, dispatch } = loadServiceWorker([], [], BUILD);
-  cache.addAll.mockImplementation(() => new Promise<undefined>(() => undefined));
+  const { self, dispatch } = loadServiceWorker([], [], BUILD);
+  self.fetch.mockImplementation(() => new Promise<unknown>(() => undefined));
   let isInstalled = false;
 
   const { kept } = dispatch('install', {});
@@ -341,23 +368,35 @@ test('6a B13 a precache that ends in time clears its time limit', async () => {
 });
 
 test('6a B5 a failed font precache does not fail the install, so push keeps working', async () => {
-  const { cache, dispatch } = loadServiceWorker([], [], BUILD);
-  cache.addAll.mockRejectedValue(new TypeError('Failed to fetch'));
+  const { self, dispatch } = loadServiceWorker([], [], BUILD);
+  self.fetch.mockRejectedValue(new TypeError('Failed to fetch'));
 
   const { kept } = dispatch('install', {});
 
   await expect(Promise.all(kept)).resolves.toBeDefined();
 });
 
-test('6a B5 activate deletes the older font caches and keeps the current one and other caches', async () => {
-  const { self, dispatch } = loadServiceWorker([], ['fuxi-fonts-0f0f0f0f', BUILD_FONT_CACHE, 'other-cache'], BUILD);
+test('6a B5 activate deletes the older font caches but keeps the build before, the current one and other caches', async () => {
+  const cacheNames = ['fuxi-fonts-00000000', 'fuxi-fonts-0f0f0f0f', BUILD_FONT_CACHE, 'other-cache'];
+  const { self, dispatch } = loadServiceWorker([], cacheNames, BUILD);
 
   const { kept } = dispatch('activate', {});
   await Promise.all(kept);
 
   expect(self.caches.delete).toHaveBeenCalledTimes(1);
-  expect(self.caches.delete).toHaveBeenCalledWith('fuxi-fonts-0f0f0f0f');
+  expect(self.caches.delete).toHaveBeenCalledWith('fuxi-fonts-00000000');
   expect(self.clients.claim).toHaveBeenCalledTimes(1);
+});
+
+test('6a B5 an open tab of the build before gets its font from the kept cache, not the network', async () => {
+  const { self, dispatch } = loadServiceWorker([], [], BUILD);
+  const previousFont = fakeResponse();
+  self.caches.match.mockResolvedValue(previousFont);
+
+  const { response } = await dispatchFetch(dispatch, FONT_URL);
+
+  expect(response).toBe(previousFont);
+  expect(self.fetch).not.toHaveBeenCalled();
 });
 
 test('6a B5 a cached font is answered from the cache without the network', async () => {
@@ -488,7 +527,7 @@ test.each([
   const { kept } = dispatch('install', { addRoutes: vi.fn(failure) });
 
   await expect(Promise.all(kept)).resolves.toBeDefined();
-  expect(cache.addAll).toHaveBeenCalledTimes(1);
+  expect(cache.put).toHaveBeenCalledTimes(BUILD.files.length);
 });
 test('a click on a notification without wordIds opens /flashcard and throws nothing', async () => {
   const { self, dispatch } = loadServiceWorker();

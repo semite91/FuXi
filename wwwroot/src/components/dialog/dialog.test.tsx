@@ -111,6 +111,7 @@ test('6a C11 a title can be a status, and the dialog keeps it as its name', () =
   );
 
   expect(screen.getByRole('status')).toHaveTextContent('Embeddings updated');
+  expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Embeddings updated');
   expect(screen.getByRole('dialog')).toHaveAccessibleName('Embeddings updated');
   expect(screen.getByRole('dialog').querySelector('.dialog__header')).toHaveClass('dialog__header--center');
 });

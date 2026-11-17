@@ -65,14 +65,21 @@ const shortHash = async (text: string): Promise<string> => {
 export const fontCacheName = async (fontUrls: readonly string[]): Promise<string> =>
   `${FONT_CACHE_PREFIX}${await shortHash(fontUrls.join('\n'))}`;
 
+const MISSING_FILE_CODE = 'ENOENT';
+
+const isMissingFile = (error: unknown) =>
+  typeof error === 'object' && error !== null && (error as { code?: unknown }).code === MISSING_FILE_CODE;
+
 /**
  * Writes the built font files and the cache name of the build into the built service worker,
- * so it caches every font on install. A failed build is left alone.
+ * so it caches every font on install. A failed build is left alone, and a build without the
+ * worker in its output folder (no public files copied) is only warned about.
  */
 export const fontPrecache = (): Plugin => {
   let base = '/';
   let workerPath = '';
-  let fontUrls: string[] = [];
+  // Collected over every output of one build, so a second output adds its fonts instead of replacing them.
+  const fontFiles = new Set<string>();
 
   return {
     name: 'fuxi-font-precache',
@@ -81,11 +88,14 @@ export const fontPrecache = (): Plugin => {
       base = config.base;
       workerPath = builtWorkerPath(config.root, config.build.outDir);
     },
+    // Each build (also each rebuild in watch mode) starts with an empty list.
+    buildStart() {
+      fontFiles.clear();
+    },
     generateBundle(_options, bundle) {
-      fontUrls = Object.keys(bundle)
+      Object.keys(bundle)
         .filter((fileName) => BUILT_FONT_FILE.test(fileName))
-        .sort()
-        .map((fileName) => `${base}${fileName}`);
+        .forEach((fileName) => fontFiles.add(fileName));
     },
     // After the bundle and the public files are written, so the copied worker is there.
     async closeBundle(error) {
@@ -93,7 +103,18 @@ export const fontPrecache = (): Plugin => {
         return;
       }
 
-      const worker = await this.fs.readFile(workerPath, { encoding: TEXT_ENCODING });
+      let worker: string;
+      try {
+        worker = await this.fs.readFile(workerPath, { encoding: TEXT_ENCODING });
+      } catch (readError) {
+        if (!isMissingFile(readError)) {
+          throw readError;
+        }
+        this.warn(`${SERVICE_WORKER_FILE} is not in the output folder, so its font list is not written.`);
+        return;
+      }
+
+      const fontUrls = [...fontFiles].sort().map((fileName) => `${base}${fileName}`);
       const filled = fillFontList(worker, await fontCacheName(fontUrls), fontUrls);
       await this.fs.writeFile(workerPath, filled, { encoding: TEXT_ENCODING });
     },
