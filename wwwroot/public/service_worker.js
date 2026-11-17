@@ -32,14 +32,38 @@ const ROUTES = [
   { condition: { not: FONT_ROUTE_CONDITION }, source: 'network' },
 ];
 
-/** Caches the fonts of the build. A failure leaves the fonts to the network and never fails the install. */
-const precacheFonts = async () => {
+/**
+ * Caches one font, unless it is cached already. A failure leaves only this font to the fetch rule,
+ * which stores it when it is first loaded; the other fonts are not affected.
+ */
+const precacheFont = async (cache, url) => {
   try {
-    const cache = await self.caches.open(FONT_CACHE);
-    await cache.addAll(FONT_FILES);
+    if (await cache.match(url)) {
+      return;
+    }
+
+    const response = await self.fetch(url);
+    if (response.ok) {
+      await cache.put(url, response);
+    }
   } catch {
-    // Push still works; the fetch rule stores each missed font when it is first loaded.
+    // Push still works; the fetch rule stores this font when it is first loaded.
   }
+};
+
+/**
+ * Caches the fonts of the build one by one, so each stored font stays stored even when another fails
+ * or the install stops waiting at its time limit. A failure never fails the install.
+ */
+const precacheFonts = async () => {
+  let cache;
+  try {
+    cache = await self.caches.open(FONT_CACHE);
+  } catch {
+    return;
+  }
+
+  await Promise.all(FONT_FILES.map((url) => precacheFont(cache, url)));
 };
 
 /** Waits for the precache, or for its time limit when that comes first; the timer is cleared either way. */
@@ -78,12 +102,17 @@ self.addEventListener('install', (event) => {
   event.waitUntil(Promise.all([precacheFontsInTime(), addFontRoutes(event)]));
 });
 
-/** Deletes the font caches of older builds; other caches are left alone. */
+/**
+ * Deletes the font caches of older builds except the newest of them: a tab opened on the build before
+ * may still load its own font files, which this build's server no longer has. Other caches are left alone.
+ */
 const deleteOldFontCaches = async () => {
   const names = await self.caches.keys();
-  const oldNames = names.filter((name) => name.startsWith(FONT_CACHE_PREFIX) && name !== FONT_CACHE);
+  const olderNames = names.filter((name) => name.startsWith(FONT_CACHE_PREFIX) && name !== FONT_CACHE);
+  // caches.keys() lists the caches in the order they were made, so the last one is the build before.
+  const staleNames = olderNames.slice(0, -1);
 
-  await Promise.all(oldNames.map((name) => self.caches.delete(name)));
+  await Promise.all(staleNames.map((name) => self.caches.delete(name)));
 };
 
 self.addEventListener('activate', (event) => {
@@ -116,10 +145,15 @@ const openFontCache = async () => {
   }
 };
 
-/** A cached copy of the request, or undefined when there is none or the cache cannot be read. */
+/**
+ * A cached copy of the request, or undefined when there is none or the caches cannot be read.
+ * The cache of this build comes first; a font of the build before (an open old tab) is found in its kept cache.
+ */
 const matchFont = async (cache, request) => {
   try {
-    return cache === null ? undefined : await cache.match(request);
+    const cached = cache === null ? undefined : await cache.match(request);
+
+    return cached ?? (await self.caches.match(request));
   } catch {
     return undefined;
   }
