@@ -34,6 +34,8 @@ public sealed class DatabaseApi(bool startsNotificationTimer = false) : IDisposa
 
     public Tests.Api.GoogleDrive.FakeGoogleServer Google => host.Google;
 
+    public Tests.Api.Spotify.FakeSpotifyServer Spotify => host.Spotify;
+
     /// <summary>Configuration values that win over .env.test. Set them before the first call.</summary>
     public Dictionary<string, string?> Settings => host.Settings;
 

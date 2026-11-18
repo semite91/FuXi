@@ -251,3 +251,41 @@ def test_printed_settings_hide_the_tmdb_token(tmp_path):
 
     assert "tmdb-test-token" not in repr(settings)
     assert "tmdb-test-token" not in str(settings)
+
+
+SPOTIFY_ENV = "SPOTIFY_CLIENT_ID=spotify-test-client\nSPOTIFY_CLIENT_SECRET=spotify-test-secret\n"
+
+
+def test_spotify_client_keys_are_read(tmp_path):
+    # Phase 6e D1: the same keys the API reads
+    settings = load_settings(write_env(tmp_path, SPOTIFY_ENV), environ={})
+
+    assert settings.require_spotify_client() == ("spotify-test-client", "spotify-test-secret")
+
+
+@pytest.mark.parametrize(("content", "key"), [
+    ("SPOTIFY_CLIENT_SECRET=spotify-test-secret\n", "SPOTIFY_CLIENT_ID"),
+    ("SPOTIFY_CLIENT_ID=spotify-test-client\nSPOTIFY_CLIENT_SECRET=\n", "SPOTIFY_CLIENT_SECRET"),
+])
+def test_missing_spotify_client_key_fails_only_when_used_and_names_the_key(tmp_path, content, key):
+    # Phase 6e D9
+    settings = load_settings(write_env(tmp_path, content), environ={})
+
+    with pytest.raises(MissingSettingError, match=key):
+        settings.require_spotify_client()
+
+
+def test_printed_settings_hide_the_spotify_client(tmp_path):
+    # Phase 6e J5
+    settings = load_settings(write_env(tmp_path, SPOTIFY_ENV), environ={})
+
+    for secret in ("spotify-test-secret", "spotify-test-client"):
+        assert secret not in repr(settings)
+        assert secret not in str(settings)
+
+
+def test_the_old_spotify_phase_5d_keys_are_no_settings(tmp_path):
+    # Phase 6e J1: the helper script and its token file are gone
+    settings = load_settings(write_env(tmp_path, "RAG_SPOTIFY_TOKEN_FILE=x\n"), environ={})
+
+    assert not hasattr(settings, "spotify_token_file")

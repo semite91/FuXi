@@ -13,6 +13,9 @@ public static class SettingRows
             .Where(setting => codes.Contains(setting.Code))
             .ToDictionaryAsync(setting => setting.Code, setting => setting.Value, cancellationToken);
 
+    /// <summary>A saved value as the API answers it: an empty value is null.</summary>
+    public static string? NullWhenEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
     /// <summary>
     /// Updates each row in place, or adds it. One SaveChanges is one transaction: the rows are written together or
     /// not at all. When another request adds the same row first, the unique code stops the save, and the save is

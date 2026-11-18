@@ -9,5 +9,9 @@ public static class SettingCodes
     public const string GOOGLE_DRIVE_REFRESH_TOKEN = "GoogleDriveRefreshToken";
     public const string GOOGLE_DRIVE_EMAIL = "GoogleDriveEmail";
     public const string GOOGLE_DRIVE_FOLDER_ID = "GoogleDriveFolderId";
+    public const string SPOTIFY_REFRESH_TOKEN = "SpotifyRefreshToken";
+    public const string SPOTIFY_USER_ID = "SpotifyUserId";
+    public const string SPOTIFY_NAME = "SpotifyName";
+    public const string SPOTIFY_PLAYLIST_ID = "SpotifyPlaylistId";
     public const string LETTERBOXD_LIKED_FILMS_CSV = "LetterboxdLikedFilmsCsv";
 }

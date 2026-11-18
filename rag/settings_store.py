@@ -1,4 +1,4 @@
-"""Reads app-wide values the FuXi API saved in the Settings table. The engine never writes there."""
+"""Reads app-wide values the FuXi API saved in the Settings table. The only write is a rotated Spotify refresh token."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -10,10 +10,14 @@ from settings import DatabaseSettings, Settings
 NOTION_ACCESS_TOKEN_CODE = "NotionAccessToken"
 GOOGLE_DRIVE_REFRESH_TOKEN_CODE = "GoogleDriveRefreshToken"
 GOOGLE_DRIVE_FOLDER_ID_CODE = "GoogleDriveFolderId"
+SPOTIFY_REFRESH_TOKEN_CODE = "SpotifyRefreshToken"
+SPOTIFY_PLAYLIST_ID_CODE = "SpotifyPlaylistId"
 LETTERBOXD_LIKED_FILMS_CSV_CODE = "LetterboxdLikedFilmsCsv"
+UPDATE_SETTING = 'UPDATE "Settings" SET "Value" = %s WHERE "Code" = %s'
 SELECT_SETTINGS = 'SELECT "Code", "Value" FROM "Settings" WHERE "Code" = ANY(%s)'
 CONNECT_TIMEOUT_SECONDS = 10
 READ_FAILED_MESSAGE = "the Settings table could not be read"
+WRITE_FAILED_MESSAGE = "the Settings table could not be written"
 
 
 class SettingsStoreError(RuntimeError):
@@ -26,6 +30,14 @@ class GoogleDriveRows:
 
     refresh_token: str | None = field(repr=False)
     folder_id: str | None
+
+
+@dataclass(frozen=True)
+class SpotifyRows:
+    """What the Settings page saved for Spotify; an empty or missing row is None."""
+
+    refresh_token: str | None = field(repr=False)
+    playlist_id: str | None
 
 
 def connect_read_only(database: DatabaseSettings) -> psycopg.Connection:
@@ -68,6 +80,32 @@ def read_google_drive_rows(settings: Settings) -> GoogleDriveRows:
         refresh_token=values.get(GOOGLE_DRIVE_REFRESH_TOKEN_CODE),
         folder_id=values.get(GOOGLE_DRIVE_FOLDER_ID_CODE),
     )
+
+
+def read_spotify_rows(settings: Settings) -> SpotifyRows:
+    """The Spotify refresh token and the chosen playlist the Learner saved on the Settings page."""
+    values = read_settings(settings, [SPOTIFY_REFRESH_TOKEN_CODE, SPOTIFY_PLAYLIST_ID_CODE])
+    return SpotifyRows(
+        refresh_token=values.get(SPOTIFY_REFRESH_TOKEN_CODE),
+        playlist_id=values.get(SPOTIFY_PLAYLIST_ID_CODE),
+    )
+
+
+def save_spotify_refresh_token(settings: Settings, refresh_token: str) -> None:
+    """Replaces the saved Spotify refresh token with a new one Spotify returned on a refresh. The row exists, because
+    the sign-in made it; no row is ever added here. Raises SettingsStoreError without a password or a token."""
+    try:
+        with psycopg.connect(
+            host=(database := settings.require_database()).host,
+            port=database.port,
+            dbname=database.name,
+            user=database.user,
+            password=database.password,
+            connect_timeout=CONNECT_TIMEOUT_SECONDS,
+        ) as connection:
+            connection.execute(UPDATE_SETTING, (refresh_token, SPOTIFY_REFRESH_TOKEN_CODE))
+    except psycopg.Error as error:
+        raise SettingsStoreError(f"{WRITE_FAILED_MESSAGE}: {type(error).__name__}") from None
 
 
 def read_liked_films_csv(settings: Settings) -> str | None:

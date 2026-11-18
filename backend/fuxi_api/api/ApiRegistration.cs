@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using FuXi.Api.Configs;
 using FuXi.Api.GoogleDrive;
+using FuXi.Api.Spotify;
 using FuXi.Api.Letterboxd;
 using FuXi.Api.Notion;
 using FuXi.Api.OAuth;
@@ -31,6 +32,10 @@ public static class ApiRegistration
                 NotionOAuthClient.HTTP_CLIENT_NAME, client => client.Timeout = NotionOAuthClient.REQUEST_TIMEOUT)
             .Services
             .AddScoped<LetterboxdService>()
+            .AddScoped<SpotifyService>()
+            .AddHttpClient<SpotifyOAuthClient>(
+                SpotifyOAuthClient.HTTP_CLIENT_NAME, client => client.Timeout = SpotifyOAuthClient.REQUEST_TIMEOUT)
+            .Services
             .AddScoped<GoogleDriveService>()
             .AddHttpClient<GoogleOAuthClient>(
                 GoogleOAuthClient.HTTP_CLIENT_NAME, client => client.Timeout = GoogleOAuthClient.REQUEST_TIMEOUT)
@@ -51,6 +56,7 @@ public static class ApiRegistration
             .MapPushEndpoints()
             .MapNotionEndpoints()
             .MapGoogleDriveEndpoints()
+            .MapSpotifyEndpoints()
             .MapLetterboxdEndpoints();
 
     // One timer instance is both the INotificationTimer and the hosted service that starts and stops it.

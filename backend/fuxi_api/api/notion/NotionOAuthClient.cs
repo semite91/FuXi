@@ -1,6 +1,5 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Text;
 using System.Text.Json.Serialization;
 using FuXi.Api.OAuth;
 
@@ -26,7 +25,7 @@ public sealed class NotionOAuthClient(HttpClient httpClient)
         {
             Content = JsonContent.Create(new TokenRequest(AUTHORIZATION_CODE_GRANT, code, options.RedirectUri)),
         };
-        request.Headers.Authorization = new AuthenticationHeaderValue(BASIC_SCHEME, BasicCredentials(options));
+        request.Headers.Authorization = new AuthenticationHeaderValue(BASIC_SCHEME, OAuthCredentials.Basic(options));
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -42,9 +41,6 @@ public sealed class NotionOAuthClient(HttpClient httpClient)
 
         return new NotionTokens(answer.AccessToken, answer.RefreshToken ?? string.Empty, answer.WorkspaceName ?? string.Empty);
     }
-
-    private static string BasicCredentials(OAuthClientOptions options) =>
-        Convert.ToBase64String(Encoding.UTF8.GetBytes($"{options.ClientId}:{options.ClientSecret}"));
 
     private sealed record TokenRequest(
         [property: JsonPropertyName("grant_type")] string GrantType,

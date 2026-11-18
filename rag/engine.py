@@ -23,6 +23,7 @@ from llm_client import LlmClient
 from rag_client import RagClient, Word
 from resources.google_drive_resource import create_google_drive_resource
 from resources.letterboxd_tmdb_resource import create_letterboxd_tmdb_resource
+from resources.spotify_resource import create_spotify_resource
 from resources.notion_resource import create_notion_resource
 from settings import Settings, load_settings
 
@@ -118,6 +119,7 @@ def default_resources(settings: Settings) -> list[Resource]:
         create_notion_resource(settings),
         create_google_drive_resource(settings),
         create_letterboxd_tmdb_resource(settings),
+        create_spotify_resource(settings),
     ]
 
 

@@ -1,6 +1,7 @@
 using FuXi.Api.Database;
 using FuXi.Api.GoogleDrive;
 using FuXi.Api.Notion;
+using FuXi.Api.Spotify;
 using FuXi.Api.Push;
 
 namespace FuXi.Api.Tests.Api;
@@ -38,6 +39,9 @@ public sealed class NowApi(NowApiSettings? settings = null) : IDisposable
         GoogleDriveSettings.CLIENT_ID_KEY,
         GoogleDriveSettings.CLIENT_SECRET_KEY,
         GoogleDriveSettings.REDIRECT_URI_KEY,
+        SpotifySettings.CLIENT_ID_KEY,
+        SpotifySettings.CLIENT_SECRET_KEY,
+        SpotifySettings.REDIRECT_URI_KEY,
     ];
 
     private readonly NowApiSettings settings = settings ?? new NowApiSettings();
@@ -114,5 +118,8 @@ public sealed class NowApi(NowApiSettings? settings = null) : IDisposable
         [GoogleDriveSettings.CLIENT_ID_KEY] = settings.GoogleClientId,
         [GoogleDriveSettings.CLIENT_SECRET_KEY] = settings.GoogleClientSecret,
         [GoogleDriveSettings.REDIRECT_URI_KEY] = settings.GoogleRedirectUri,
+        [SpotifySettings.CLIENT_ID_KEY] = settings.SpotifyClientId,
+        [SpotifySettings.CLIENT_SECRET_KEY] = settings.SpotifyClientSecret,
+        [SpotifySettings.REDIRECT_URI_KEY] = settings.SpotifyRedirectUri,
     };
 }

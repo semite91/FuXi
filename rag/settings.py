@@ -21,6 +21,9 @@ GEMINI_API_KEY_KEY = "RAG_GEMINI_API_KEY"
 # The Google sign-in client, the same keys the API reads; the engine uses them to refresh the Drive token.
 GOOGLE_CLIENT_ID_KEY = "GOOGLE_CLIENT_ID"
 GOOGLE_CLIENT_SECRET_KEY = "GOOGLE_CLIENT_SECRET"
+# The Spotify sign-in client, the same keys the API reads; the engine uses them to refresh the Spotify token.
+SPOTIFY_CLIENT_ID_KEY = "SPOTIFY_CLIENT_ID"
+SPOTIFY_CLIENT_SECRET_KEY = "SPOTIFY_CLIENT_SECRET"
 TMDB_TOKEN_KEY = "RAG_TMDB_TOKEN"
 GEMINI_MODEL_KEY = "RAG_GEMINI_MODEL"
 TEXT_THRESHOLD_KEY = "RAG_TEXT_THRESHOLD"
@@ -81,10 +84,12 @@ class Settings:
     gemini_api_key: str | None = field(default=None, repr=False)
     google_client_id: str | None = field(default=None, repr=False)
     google_client_secret: str | None = field(default=None, repr=False)
+    spotify_client_id: str | None = field(default=None, repr=False)
+    spotify_client_secret: str | None = field(default=None, repr=False)
     tmdb_token: str | None = field(default=None, repr=False)
 
     def require_database(self) -> DatabaseSettings:
-        """The FuXi database; it holds the Settings table with the Notion and Google Drive rows."""
+        """The FuXi database; it holds the Settings table with the Notion, Google Drive, Spotify and Letterboxd rows."""
         # Checked in .env order, so the first missing key is the one named.
         host, raw_port, name, user, password = (_require(self.database_values.get(key), key) for key in DB_KEYS)
         try:
@@ -100,6 +105,13 @@ class Settings:
         """The Google client ID and secret, in .env order, so the first missing key is the one named."""
         return _require(self.google_client_id, GOOGLE_CLIENT_ID_KEY), _require(self.google_client_secret, GOOGLE_CLIENT_SECRET_KEY)
 
+    def require_spotify_client(self) -> tuple[str, str]:
+        """The Spotify client ID and secret, in .env order, so the first missing key is the one named."""
+        return (
+            _require(self.spotify_client_id, SPOTIFY_CLIENT_ID_KEY),
+            _require(self.spotify_client_secret, SPOTIFY_CLIENT_SECRET_KEY),
+        )
+
     def require_tmdb_token(self) -> str:
         return _require(self.tmdb_token, TMDB_TOKEN_KEY)
 
@@ -114,6 +126,8 @@ def load_settings(
         gemini_api_key=_text(values, GEMINI_API_KEY_KEY),
         google_client_id=_text(values, GOOGLE_CLIENT_ID_KEY),
         google_client_secret=_text(values, GOOGLE_CLIENT_SECRET_KEY),
+        spotify_client_id=_text(values, SPOTIFY_CLIENT_ID_KEY),
+        spotify_client_secret=_text(values, SPOTIFY_CLIENT_SECRET_KEY),
         tmdb_token=_text(values, TMDB_TOKEN_KEY),
         gemini_model=_text(values, GEMINI_MODEL_KEY) or DEFAULT_GEMINI_MODEL,
         text_threshold=_threshold(values, TEXT_THRESHOLD_KEY, DEFAULT_TEXT_THRESHOLD),

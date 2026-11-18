@@ -12,9 +12,11 @@ from resources.http_retry import (
     ReadStats,
     Wait,
     backoff_seconds,
+    basic_header,
     call_with_retry,
     create_http_client,
     http_retry_wait,
+    rate_limit_retry_wait,
     retry_after_seconds,
     timed_read,
 )
@@ -224,3 +226,25 @@ def test_resources_share_the_http_client_and_the_timed_read():
         assert not hasattr(module, "REQUEST_TIMEOUT_SECONDS") and not hasattr(module, "_create_http_client")
     for module in (google_drive_resource, letterboxd_tmdb_resource, notion_resource):
         assert module.timed_read is http_retry.timed_read
+
+
+def test_basic_header_holds_the_base64_of_user_and_password():
+    # Phase 6e D1
+    assert basic_header("user", "pass:word") == {"Authorization": "Basic dXNlcjpwYXNzOndvcmQ="}
+
+
+def status_error(status: int, headers: dict[str, str] | None = None) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://example.test/token")
+    return httpx.HTTPStatusError("failed", request=request, response=httpx.Response(status, headers=headers, request=request))
+
+
+def test_single_use_rule_waits_only_after_a_429():
+    # Phase 6e D12
+    assert rate_limit_retry_wait(status_error(429, {"Retry-After": "3"}), 0) == Wait(3.0, rate_limited=True)
+    assert rate_limit_retry_wait(status_error(429), 1) == Wait(backoff_seconds(1), rate_limited=True)
+
+
+@pytest.mark.parametrize("error", [status_error(500), status_error(400), httpx.ReadTimeout("slow"), httpx.RemoteProtocolError("dropped")])
+def test_single_use_rule_raises_any_other_error_at_once(error):
+    # Phase 6e D12: Spotify may have used the token of a call whose answer was lost
+    assert rate_limit_retry_wait(error, 0) is None

@@ -29,6 +29,10 @@ readonly DEFAULT_NOTION_REDIRECT_URI="${DEFAULT_API_URL}/api/NotionCallback"
 readonly GOOGLE_SECRET_KEYS=("GOOGLE_CLIENT_ID" "GOOGLE_CLIENT_SECRET")
 readonly GOOGLE_REDIRECT_URI_KEY="GOOGLE_REDIRECT_URI"
 readonly DEFAULT_GOOGLE_REDIRECT_URI="${DEFAULT_API_URL}/api/GoogleDriveCallback"
+readonly SPOTIFY_SECRET_KEYS=("SPOTIFY_CLIENT_ID" "SPOTIFY_CLIENT_SECRET")
+readonly SPOTIFY_REDIRECT_URI_KEY="SPOTIFY_REDIRECT_URI"
+# Spotify accepts http only for a loopback address written as 127.0.0.1, not localhost.
+readonly DEFAULT_SPOTIFY_REDIRECT_URI="http://127.0.0.1:5000/api/SpotifyCallback"
 readonly APP_URL_KEY="FUXI_APP_URL"
 readonly DEFAULT_APP_URL="${DEFAULT_CORS_ORIGINS}"
 readonly VAPID_PUBLIC_KEY_KEY="VAPID_PUBLIC_KEY"
@@ -117,6 +121,7 @@ create_env_files() {
     ensure_rag_keys "${file}"
     ensure_sign_in_keys "${file}" "${NOTION_REDIRECT_URI_KEY}" "${DEFAULT_NOTION_REDIRECT_URI}" "${NOTION_SECRET_KEYS[@]}"
     ensure_sign_in_keys "${file}" "${GOOGLE_REDIRECT_URI_KEY}" "${DEFAULT_GOOGLE_REDIRECT_URI}" "${GOOGLE_SECRET_KEYS[@]}"
+    ensure_sign_in_keys "${file}" "${SPOTIFY_REDIRECT_URI_KEY}" "${DEFAULT_SPOTIFY_REDIRECT_URI}" "${SPOTIFY_SECRET_KEYS[@]}"
   done
   give_to_invoking_user "${env_file}" "${test_env_file}"
 }

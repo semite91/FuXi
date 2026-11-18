@@ -14,12 +14,13 @@ public sealed class GoogleOAuthClient(HttpClient httpClient)
     /// <summary>How long each Google request may take.</summary>
     public static readonly TimeSpan REQUEST_TIMEOUT = TimeSpan.FromSeconds(30);
 
+    private const string SOURCE = "Google";
     private const string TOKEN_ADDRESS = "https://oauth2.googleapis.com/token";
     private const string ABOUT_ADDRESS = "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)";
     private const string BEARER_SCHEME = "Bearer";
     private const string AUTHORIZATION_CODE_GRANT = "authorization_code";
 
-    /// <summary>Sends the code to Google. Throws <see cref="GoogleRequestException"/> on an error status.</summary>
+    /// <summary>Sends the code to Google. Throws <see cref="OAuthRequestException"/> on an error status.</summary>
     public async Task<GoogleTokens> ExchangeAsync(OAuthClientOptions options, string code, CancellationToken cancellationToken)
     {
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -31,7 +32,7 @@ public sealed class GoogleOAuthClient(HttpClient httpClient)
             ["client_secret"] = options.ClientSecret,
         });
         using var response = await httpClient.PostAsync(TOKEN_ADDRESS, form, cancellationToken);
-        EnsureSuccess(response, "token");
+        OAuthRequestException.ThrowIfFailed(response, SOURCE, "token");
 
         var answer = await response.Content.ReadFromJsonAsync<TokenAnswer>(cancellationToken);
 
@@ -44,19 +45,11 @@ public sealed class GoogleOAuthClient(HttpClient httpClient)
         using var request = new HttpRequestMessage(HttpMethod.Get, ABOUT_ADDRESS);
         request.Headers.Authorization = new AuthenticationHeaderValue(BEARER_SCHEME, accessToken);
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        EnsureSuccess(response, "about");
+        OAuthRequestException.ThrowIfFailed(response, SOURCE, "about");
 
         var answer = await response.Content.ReadFromJsonAsync<AboutAnswer>(cancellationToken);
 
         return answer?.User?.EmailAddress;
-    }
-
-    private static void EnsureSuccess(HttpResponseMessage response, string requestName)
-    {
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new GoogleRequestException(requestName, (int)response.StatusCode);
-        }
     }
 
     private sealed record TokenAnswer(
@@ -71,10 +64,3 @@ public sealed class GoogleOAuthClient(HttpClient httpClient)
 
 /// <summary>What Google gives after a code exchange. A missing value is empty.</summary>
 public sealed record GoogleTokens(string AccessToken, string RefreshToken, string Scope);
-
-/// <summary>Google answered a request with an error status. It carries no code and no token.</summary>
-public sealed class GoogleRequestException(string requestName, int statusCode)
-    : Exception($"Google answered the {requestName} request with status {statusCode}.")
-{
-    public int StatusCode { get; } = statusCode;
-}

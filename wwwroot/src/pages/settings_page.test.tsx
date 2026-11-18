@@ -11,6 +11,7 @@ vi.mock('../services/page_location', () => ({ moveTo: vi.fn() }));
 const NOT_CONNECTED_ANSWER = { body: { isConnected: false, workspaceName: null } };
 const DRIVE_NOT_CONNECTED_ANSWER = { body: { isConnected: false, email: null, folderId: null } };
 const LETTERBOXD_NO_UPLOAD_ANSWER = { body: { hasUpload: false, movieCount: 0 } };
+const SPOTIFY_NOT_CONNECTED_ANSWER = { body: { isConnected: false, name: null, playlistId: null } };
 
 const openSettings = (route = {}, path = '/settings') => {
   const api = mockApi({
@@ -18,6 +19,7 @@ const openSettings = (route = {}, path = '/settings') => {
     'GET /api/GetNotionConnection': NOT_CONNECTED_ANSWER,
     'GET /api/GetGoogleDriveConnection': DRIVE_NOT_CONNECTED_ANSWER,
     'GET /api/GetLetterboxdLikes': LETTERBOXD_NO_UPLOAD_ANSWER,
+    'GET /api/GetSpotifyConnection': SPOTIFY_NOT_CONNECTED_ANSWER,
     ...route,
   });
   renderApp(path);
@@ -30,9 +32,15 @@ const button = (name: string) => screen.getByRole('button', { name });
 // Each source of the Requests toggle is a group named after it, so a test reads one source's row.
 const rowOf = (source: string) => screen.getByRole('group', { name: source });
 
-// Since 6b the page reads the Notion state, since 6c the Google Drive state, since 6d the Letterboxd state, when it opens;
+// Since 6b the page reads the Notion state, since 6c the Google Drive state, since 6d the Letterboxd state, since 6e the
+// Spotify state, when it opens;
 // "no call" means no other.
-const CONNECTION_STATE_CALLS = ['/GetNotionConnection', '/GetGoogleDriveConnection', '/GetLetterboxdLikes'];
+const CONNECTION_STATE_CALLS = [
+  '/GetNotionConnection',
+  '/GetGoogleDriveConnection',
+  '/GetLetterboxdLikes',
+  '/GetSpotifyConnection',
+];
 const callsBesidesConnectionStates = (api: ApiMock) =>
   api.calls.filter((call) => !CONNECTION_STATE_CALLS.some((path) => call.path.endsWith(path)));
 
@@ -1371,4 +1379,293 @@ test('5c H2 the Credits block shows the TMDB logo from a local file with the alt
   expect(source).toMatch(/tmdb_logo\.svg|^data:image\/svg\+xml/);
   expect(source).not.toMatch(/^(https?:)?\/\//);
   expect(screen.getByRole('heading', { level: 2, name: 'Credits' }).parentElement).toContainElement(logo);
+});
+
+// Phase 6e sections H and I: the Spotify row, the playlist pop-up and the i tooltip.
+const CONNECT_SPOTIFY = 'Connect Spotify';
+const SPOTIFY = 'Spotify';
+const SPOTIFY_NAME = 'The Learner';
+const PLAYLIST_ID = '37i9dQZF1DXcBWIGoYBM5M';
+const OTHER_PLAYLIST_ID = '0vvXsWCC9xrXsKd4FyS8kM';
+const playlistAddress = (playlistId: string) => `https://open.spotify.com/playlist/${playlistId}`;
+const SPOTIFY_CONNECT_URL = `${API_URL}/api/SpotifyConnect`;
+const PLAYLIST_SAVE_ROUTE = 'POST /api/UpdateSpotifyPlaylist';
+
+const spotifyAnswer = (isConnected: boolean, name: string | null = null, playlistId: string | null = null) => ({
+  'GET /api/GetSpotifyConnection': { body: { isConnected, name, playlistId } },
+});
+
+const spotifyRow = () => rowOf(SPOTIFY);
+
+test('6e H1 the Spotify row is under the Letterboxd row, its button shows the text "Spotify" at the right of its logo', () => {
+  openRequests();
+
+  expect(rowOf('Letterboxd').compareDocumentPosition(spotifyRow()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const spotify = within(spotifyRow()).getByRole('button', { name: CONNECT_SPOTIFY });
+  const label = within(spotify).getByText(SPOTIFY);
+  expect(spotify.querySelector('svg')!.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(spotify).toHaveAccessibleName(expect.stringContaining(SPOTIFY));
+});
+
+test('6e H2 the Spotify button draws the inline Spotify logo hidden from screen readers', () => {
+  openRequests();
+
+  const logo = button(CONNECT_SPOTIFY).querySelector('svg');
+  expect(logo).toHaveClass('spotify-logo');
+  expect(logo?.querySelector('path')).not.toBeNull();
+  expect(logo).toHaveAttribute('aria-hidden', 'true');
+});
+
+test('6e H3 opening the Settings page calls GetSpotifyConnection once', async () => {
+  const api = openSettings();
+
+  await act(async () => Promise.resolve());
+
+  const calls = api.callsTo('GetSpotifyConnection');
+  expect(calls).toHaveLength(1);
+  expect(calls[0].method).toBe('GET');
+  expect(calls[0].url.origin).toBe(API_URL);
+});
+
+test.each([
+  ['H4', spotifyAnswer(false), 'Not connected'],
+  ['H5', spotifyAnswer(true, SPOTIFY_NAME), `Connected: ${SPOTIFY_NAME}`],
+  ['H5 without a name', spotifyAnswer(true), 'Connected'],
+  ['H6 when GetSpotifyConnection fails', { 'GET /api/GetSpotifyConnection': networkFailure }, 'Not connected'],
+])('6e %s the Spotify row reads "%s"', async (_, route, text) => {
+  openRequests(route);
+
+  expect(await within(spotifyRow()).findByText(text)).toBeInTheDocument();
+});
+
+test('6e H4 not connected, the row has no "Connect again" button and no playlist line', async () => {
+  openRequests(spotifyAnswer(false));
+  await within(spotifyRow()).findByText('Not connected');
+
+  expect(within(spotifyRow()).queryByRole('button', { name: 'Connect again' })).not.toBeInTheDocument();
+  expect(within(spotifyRow()).queryByText('No playlist chosen')).not.toBeInTheDocument();
+});
+
+test('6e H6 while GetSpotifyConnection is pending the row shows no state', async () => {
+  const pending = deferred();
+  openRequests({ 'GET /api/GetSpotifyConnection': () => pending.promise });
+
+  expect(within(spotifyRow()).queryByRole('status')).not.toBeInTheDocument();
+  await act(async () => pending.resolve(spotifyAnswer(true, SPOTIFY_NAME)['GET /api/GetSpotifyConnection']));
+
+  expect(within(spotifyRow()).getByText(`Connected: ${SPOTIFY_NAME}`)).toBeInTheDocument();
+});
+
+test.each([
+  ['H7', spotifyAnswer(false), 'Not connected'],
+  ['H6 after a failed read', { 'GET /api/GetSpotifyConnection': networkFailure }, 'Not connected'],
+])('6e %s not connected (%s), the Spotify button moves the browser to the API sign-in start', async (_, route, text) => {
+  openRequests(route);
+  await within(spotifyRow()).findByText(text);
+  vi.mocked(moveTo).mockClear();
+
+  fireEvent.click(button(CONNECT_SPOTIFY));
+
+  expect(moveTo).toHaveBeenCalledExactlyOnceWith(SPOTIFY_CONNECT_URL);
+});
+
+const openPlaylistDialog = async (route = {}, answer = spotifyAnswer(true, SPOTIFY_NAME)) => {
+  const api = openRequests({ ...answer, ...route });
+  await within(spotifyRow()).findByText(`Connected: ${SPOTIFY_NAME}`);
+  vi.mocked(moveTo).mockClear();
+  fireEvent.click(button(CONNECT_SPOTIFY));
+
+  return api;
+};
+
+test('6e H8 connected, the Spotify button opens the playlist pop-up and does not start the sign-in', async () => {
+  await openPlaylistDialog();
+
+  expect(screen.getByRole('dialog', { name: 'Choose playlist' })).toBeInTheDocument();
+  expect(moveTo).not.toHaveBeenCalled();
+});
+
+test('6e H8 connected, "Connect again" moves the browser to the API sign-in start', async () => {
+  openRequests(spotifyAnswer(true, SPOTIFY_NAME));
+  await within(spotifyRow()).findByText(`Connected: ${SPOTIFY_NAME}`);
+  vi.mocked(moveTo).mockClear();
+
+  fireEvent.click(within(spotifyRow()).getByRole('button', { name: 'Connect again' }));
+
+  expect(moveTo).toHaveBeenCalledExactlyOnceWith(SPOTIFY_CONNECT_URL);
+});
+
+test('6e H9 connected without a playlist, the row says "No playlist chosen"', async () => {
+  openRequests(spotifyAnswer(true, SPOTIFY_NAME));
+
+  expect(await within(spotifyRow()).findByText('No playlist chosen')).toBeInTheDocument();
+  expect(within(spotifyRow()).queryByRole('link')).not.toBeInTheDocument();
+});
+
+test('6e H10 with a playlist, the row says "Playlist chosen" with a link that opens it in a new tab', async () => {
+  openRequests(spotifyAnswer(true, SPOTIFY_NAME, PLAYLIST_ID));
+
+  expect(await within(spotifyRow()).findByText('Playlist chosen')).toBeInTheDocument();
+  const link = within(spotifyRow()).getByRole('link', { name: 'Open in Spotify' });
+  expect(link).toHaveAttribute('href', playlistAddress(PLAYLIST_ID));
+  expect(link).toHaveAttribute('target', '_blank');
+  expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+});
+
+test('6e H11 ?spotify=failed opens the Requests toggle with the alert "Spotify could not be connected." and starts no build', async () => {
+  const api = openSettings({}, '/settings?spotify=failed');
+
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'true');
+  expect(within(spotifyRow()).getByRole('alert')).toHaveTextContent('Spotify could not be connected.');
+  await waitFor(() => expect(screen.getByTestId(LOCATION_TEST_ID)).toHaveTextContent(/^\/settings$/));
+  expect(api.callsTo('Update_Collections')).toHaveLength(0);
+});
+
+test('6e H11 ?spotify=connected opens the Requests toggle without an alert and is removed from the address', async () => {
+  openSettings(spotifyAnswer(true, SPOTIFY_NAME), '/settings?spotify=connected');
+
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'true');
+  expect(await within(spotifyRow()).findByText(`Connected: ${SPOTIFY_NAME}`)).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByTestId(LOCATION_TEST_ID)).toHaveTextContent(/^\/settings$/));
+});
+
+test.each([
+  ['notion', 'Notion'],
+  ['drive', DRIVE],
+  ['spotify', SPOTIFY],
+])('6e H12 ?%s=failed shows the alert only in the %s row', (parameter, failedSource) => {
+  openSettings({}, `/settings?${parameter}=failed`);
+
+  expect(within(rowOf(failedSource)).getByRole('alert')).toBeInTheDocument();
+  ['Notion', DRIVE, SPOTIFY]
+    .filter((source) => source !== failedSource)
+    .forEach((source) => expect(within(rowOf(source)).queryByRole('alert')).not.toBeInTheDocument());
+});
+
+test('6e H13 the Spotify row has no Disconnect button', async () => {
+  openRequests(spotifyAnswer(true, SPOTIFY_NAME, PLAYLIST_ID));
+  await within(spotifyRow()).findByText('Playlist chosen');
+
+  expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
+});
+
+const playlistDialog = () => screen.getByRole('dialog', { name: 'Choose playlist' });
+const playlistBox = () => within(playlistDialog()).getByRole('textbox', { name: 'Playlist link' });
+const playlistSaveButton = () => within(playlistDialog()).getByRole('button', { name: 'Save' });
+const typePlaylistLink = (text: string) => fireEvent.change(playlistBox(), { target: { value: text } });
+
+test('6e I1 the pop-up is titled "Choose playlist" with the box "Playlist link" and a Save button with a save icon', async () => {
+  await openPlaylistDialog();
+
+  expect(playlistBox()).toHaveValue('');
+  expect(playlistSaveButton().querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  expect(within(playlistSaveButton()).getByText('Save')).toBeInTheDocument();
+  // The LinkDialog of 6c, reused.
+  expect(playlistDialog().querySelector('.link-dialog')).not.toBeNull();
+});
+
+test('6e I2 with a saved playlist, the box starts with the playlist\'s link', async () => {
+  await openPlaylistDialog({}, spotifyAnswer(true, SPOTIFY_NAME, PLAYLIST_ID));
+
+  expect(playlistBox()).toHaveValue(playlistAddress(PLAYLIST_ID));
+});
+
+test('6e I3 Save calls UpdateSpotifyPlaylist once with the link and is disabled while it waits', async () => {
+  const pending = deferred();
+  const api = await openPlaylistDialog({ [PLAYLIST_SAVE_ROUTE]: () => pending.promise });
+  typePlaylistLink(playlistAddress(OTHER_PLAYLIST_ID));
+
+  fireEvent.click(playlistSaveButton());
+  fireEvent.click(playlistSaveButton());
+
+  expect(playlistSaveButton()).toBeDisabled();
+  const calls = api.callsTo('UpdateSpotifyPlaylist');
+  expect(calls).toHaveLength(1);
+  expect(calls[0].body).toEqual({ playlistLink: playlistAddress(OTHER_PLAYLIST_ID) });
+  await act(async () => pending.resolve({ body: { playlistId: OTHER_PLAYLIST_ID } }));
+});
+
+test('6e I4 a saved playlist closes the pop-up and the row shows "Playlist chosen" with the new playlist\'s link', async () => {
+  await openPlaylistDialog({ [PLAYLIST_SAVE_ROUTE]: { body: { playlistId: OTHER_PLAYLIST_ID } } });
+  typePlaylistLink(playlistAddress(OTHER_PLAYLIST_ID));
+
+  await act(async () => fireEvent.click(playlistSaveButton()));
+
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(within(spotifyRow()).getByText('Playlist chosen')).toBeInTheDocument();
+  expect(within(spotifyRow()).getByRole('link', { name: 'Open in Spotify' })).toHaveAttribute(
+    'href',
+    playlistAddress(OTHER_PLAYLIST_ID),
+  );
+});
+
+test.each([
+  ['I5 a 400', problem(400, 'This is not a Spotify playlist link.'), 'This is not a Spotify playlist link.'],
+  ['I5 a 400 with another detail', problem(400, 'Bad request'), 'This is not a Spotify playlist link.'],
+  [
+    'I5 a 422',
+    problem(422, 'Spotify does not let FuXi read this playlist. Choose one you own or collaborate on.'),
+    'Spotify does not let FuXi read this playlist. Choose one you own or collaborate on.',
+  ],
+  ['I6 a 409', problem(409, 'Connect Spotify before choosing a playlist.'), 'The playlist could not be saved.'],
+  ['I6 a 500', problem(500, 'Server error'), 'The playlist could not be saved.'],
+  ['I6 no answer', networkFailure, 'The playlist could not be saved.'],
+])('6e %s keeps the pop-up open with the alert "%s" and the row unchanged', async (_, answer, text) => {
+  await openPlaylistDialog({ [PLAYLIST_SAVE_ROUTE]: answer });
+  typePlaylistLink('https://example.com/not-a-playlist');
+
+  await act(async () => fireEvent.click(playlistSaveButton()));
+
+  expect(within(playlistDialog()).getByRole('alert')).toHaveTextContent(text);
+  expect(playlistSaveButton()).toBeEnabled();
+  expect(within(spotifyRow()).getByText('No playlist chosen')).toBeInTheDocument();
+});
+
+test('6e I7 Enter in the box saves, an empty box saves nothing and Escape closes without saving', async () => {
+  const api = await openPlaylistDialog({ [PLAYLIST_SAVE_ROUTE]: { body: { playlistId: PLAYLIST_ID } } });
+
+  expect(playlistSaveButton()).toBeDisabled();
+  fireEvent.submit(playlistBox());
+  expect(api.callsTo('UpdateSpotifyPlaylist')).toHaveLength(0);
+
+  fireEvent.keyDown(playlistDialog(), { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(api.callsTo('UpdateSpotifyPlaylist')).toHaveLength(0);
+});
+
+const ABOUT_SPOTIFY = 'About Spotify';
+const SPOTIFY_TIP = 'Connect your Spotify list';
+
+test('6e I8 an i button named "About Spotify" is at the right of the Spotify button, in the same row', () => {
+  openRequests();
+
+  const spotify = button(CONNECT_SPOTIFY);
+  const about = button(ABOUT_SPOTIFY);
+  expect(spotify.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(spotify.closest('.request-row__row')).toContainElement(about);
+});
+
+test.each([
+  ['hovered', fireEvent.mouseEnter],
+  ['focused', fireEvent.focus],
+  ['tapped', tap],
+])('6e I9 the i button %s shows "Connect your Spotify list" opening to the right', (_, show) => {
+  openRequests();
+
+  show(button(ABOUT_SPOTIFY));
+
+  const tip = screen.getByRole('tooltip');
+  expect(tip).toHaveTextContent(SPOTIFY_TIP);
+  expect(tip).toHaveClass('tooltip__text--start');
+  expect(button(ABOUT_SPOTIFY)).toHaveAttribute('aria-describedby', tip.id);
+});
+
+test('6e I9 a second tap on the Spotify i button hides the tip', () => {
+  openRequests();
+
+  tap(button(ABOUT_SPOTIFY));
+  tap(button(ABOUT_SPOTIFY));
+
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
 });

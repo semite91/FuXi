@@ -1,0 +1,205 @@
+FuXi - Phase 6e - Spotify (Spotify button, sign-in, playlist link, refresh token in the Settings table)
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-18 18:30 UTC
+Status: CONFIRMED BY THE LEARNER (2026-11-18)
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 6e is the last part of Phase 6 (ToDos_review.txt #54 to #58). It replaces the Phase 5d design (PR #21, issue #20:
+liked songs, a helper script and a token file) with one Spotify playlist the Learner chooses on the Settings page, the
+same way as Google Drive in 6c. PR #21 is closed as superseded; its resource, fixtures and tests are brought over and
+reworked.
+
+Why the design changed (found 2026-11-18, Spotify's Web API changes of February 2026 for Development Mode apps):
+- GET /playlists/{id}/tracks is renamed GET /playlists/{id}/items.
+- Playlist items are returned only for playlists the signed-in user owns or collaborates on; for any other playlist
+  Spotify gives the metadata without the items.
+- A token from the Client ID and Secret alone has no user. It is expected to be unable to read the items, so the read
+  uses the Learner's own refresh token (Authorization Code flow). This is not stated in the docs; the live check (I3)
+  confirms the read works, and the field names of the recorded answers are checked against the docs when the code is built.
+- The Learner chose option A (Spotify sign-in) on 2026-11-18. ToDos_review #56's "only the Client ID and Secret" and
+  "only public playlists" no longer hold; the Learner's own playlists (public or private) are read.
+
+Decisions taken by the Learner (2026-11-18):
+- The sign-in belongs to the API like Notion and Google Drive; the refresh token and the playlist link are kept in the
+  Settings table; the engine's connection stays read-only (same as 6c Q2).
+- The playlist link is saved through the pop-up of 6c (LinkDialog), reused.
+- The Spotify Developer Client ID and Secret are asked from the Learner when the live check starts (#57).
+
+Proposed by Claude, to confirm with these scenarios:
+- The endpoints follow ApiRoutes: GET /api/SpotifyConnect, GET /api/SpotifyCallback, GET /api/GetSpotifyConnection and
+  POST /api/UpdateSpotifyPlaylist.
+- The .env keys are SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET and SPOTIFY_REDIRECT_URI (FUXI_APP_URL is shared). They
+  replace RAG_SPOTIFY_CLIENT_ID, RAG_SPOTIFY_CLIENT_SECRET and RAG_SPOTIFY_TOKEN_FILE of PR #21 (never merged).
+  SPOTIFY_REDIRECT_URI is http://127.0.0.1:5000/api/SpotifyCallback until the hosting is decided (#21); Spotify allows
+  http only for a loopback address, written as 127.0.0.1, not localhost.
+- The sign-in goes to https://accounts.spotify.com/authorize with response_type=code, the scopes playlist-read-private
+  and playlist-read-collaborative, and a state. The code is exchanged at https://accounts.spotify.com/api/token with a
+  Basic Authorization header (client ID and secret).
+- The Settings table holds three Spotify rows: SpotifyRefreshToken, SpotifyName (the display name from GET /v1/me) and
+  SpotifyPlaylistId. The access token of the sign-in is used once for the /v1/me call and is not saved.
+- When a sign-in connects a different Spotify account than the saved one (by user id), the saved playlist is cleared.
+  SpotifyUserId is therefore a fourth row.
+- The engine gets an access token from the refresh token at each build (grant_type=refresh_token, Basic header), keeps
+  it in memory only, and ignores a new refresh token Spotify may return (the old one stays valid; the connection is
+  read-only). It reads GET /v1/playlists/{id}/items with limit=50 and follows Spotify's next link while it starts with
+  https://api.spotify.com/v1/playlists/{id}/items.
+- The song document and metadata are those of PR #21 (Song / Musician / Album / Link; name, path empty, musician, album,
+  type "song"); the timestamp is the time the song was added to the playlist. Skips and the same-track-once rule stay.
+- Connected without a saved playlist: Spotify is skipped and the build is still complete (as Google Drive, 6c Q6).
+- The row: "Connected: <name>"; with a playlist, "Playlist chosen" and a link that opens it in a new tab.
+- Clicking the Spotify button: not connected, it starts the sign-in; connected, it opens the pop-up. When connected, a
+  second small button "Connect again" starts the sign-in (for a refused token).
+- Item 58: the RAG workflow (pipeline, engine, prompts) does not change; only the resource's source changes.
+
+Marks:
+[FE]  frontend scenario, verified by a Vitest test.
+[BE]  backend scenario, verified by an xUnit test (against the PostgreSQL test database where it writes rows).
+[PY]  RAG engine scenario, verified by a pytest test.
+[RV]  verified by reading the code, running a command, a preview or a browser check.
+[LV]  live check against the real Spotify, run only after the Learner's go-ahead.
+
+==================================================
+A. SIGN-IN START (GET /api/SpotifyConnect)
+==================================================
+A1. [BE] Given SPOTIFY_CLIENT_ID and SPOTIFY_REDIRECT_URI, when /api/SpotifyConnect is called, then it answers 302 to https://accounts.spotify.com/authorize with client_id, response_type=code, redirect_uri, scope=playlist-read-private playlist-read-collaborative and state.
+A2. [BE] Given two calls, when their redirect addresses are read, then each has its own random state value.
+A3. [BE] Given a state made by /api/SpotifyConnect, when its callback comes within 10 minutes, then it is accepted; after 10 minutes (fake clock) it is refused.
+A4. [BE] Given a state made by Notion or Google Drive, when it comes back to /api/SpotifyCallback, then it is refused, and the other way round.
+A5. [BE] Given SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET or SPOTIFY_REDIRECT_URI is empty, when the API starts, then one error naming only the empty keys is logged and the API still starts; /api/SpotifyConnect then redirects to <FUXI_APP_URL>/settings?spotify=failed. Notion and Google Drive keep working.
+
+==================================================
+B. SIGN-IN CALLBACK (GET /api/SpotifyCallback)
+==================================================
+B1. [BE] Given a callback with a code and a known state, when it is handled, then the code is sent to https://accounts.spotify.com/api/token as a form with grant_type=authorization_code, code and redirect_uri, with the Basic Authorization header.
+B2. [BE] Given Spotify answers with access_token, refresh_token and a scope that holds playlist-read-private and playlist-read-collaborative, when the callback goes on, then it calls https://api.spotify.com/v1/me with that access token.
+B3. [BE] Given /v1/me answers an id and a display name, when the callback ends, then the Settings table has SpotifyRefreshToken, SpotifyUserId and SpotifyName with these values, written in one SaveChanges, and it answers 302 to <FUXI_APP_URL>/settings?spotify=connected.
+B4. [BE] Given /v1/me has no display name, when the callback ends, then SpotifyName is the user id.
+B5. [BE] Given the rows already exist, when a new sign-in with the same user id succeeds, then the rows are updated in place and SpotifyPlaylistId is kept.
+B6. [BE] Given a saved SpotifyPlaylistId and a new sign-in with a different user id, when the callback ends, then SpotifyPlaylistId is emptied in the same SaveChanges.
+B7. [BE] Given a callback whose state is unknown, expired, missing or already used, when it is handled, then no call is sent to Spotify, no Settings row changes, and it answers 302 to ?spotify=failed.
+B8. [BE] Given a callback with error=access_denied, also with a code, when it is handled, then no call is sent, no row changes, and it answers ?spotify=failed.
+B9. [BE] Given Spotify answers the exchange with an error status, without access_token, without refresh_token, or with a scope that lacks a playlist scope, when the callback ends, then no row changes and it answers ?spotify=failed.
+B10. [BE] Given the /v1/me call fails (error status, timeout, unreadable answer), when the callback ends, then no row changes and it answers ?spotify=failed.
+B11. [BE] Given any failure in B9 or B10, when it is logged, then the log names only the status or error type, never the code, a token or the client secret.
+
+==================================================
+C. CONNECTION STATE AND PLAYLIST (GET /api/GetSpotifyConnection, POST /api/UpdateSpotifyPlaylist)
+==================================================
+C1. [BE] Given no SpotifyRefreshToken row, or an empty one, when /api/GetSpotifyConnection is called, then it answers { isConnected: false, name: null, playlistId: null }.
+C2. [BE] Given a refresh token, a name and a playlist ID, when it is called, then it answers { isConnected: true, name: <name>, playlistId: <id> }; an empty name or playlist answers null for it.
+C3. [BE] Given any Settings rows, when the answer is read, then it holds no refresh token and no user id.
+C4. [BE] Given a connected Spotify, when /api/UpdateSpotifyPlaylist gets { playlistLink: "https://open.spotify.com/playlist/<id>" } (also with ?si=..., or an /intl-xx/ part), then SpotifyPlaylistId is saved as <id> and it answers 200 with { playlistId: <id> }.
+C5. [BE] Given the forms spotify:playlist:<id> and a bare ID (22 letters and digits), when they are saved, then SpotifyPlaylistId is <id>.
+C6. [BE] Given an empty text, an album, track or artist link, another site's link or an ID of another form, when it is saved, then it answers 400 with "This is not a Spotify playlist link." and no row changes.
+C7. [BE] Given Spotify is not connected, when /api/UpdateSpotifyPlaylist is called, then it answers 409 and no row changes.
+C8. [BE] Given a saved playlist, when another valid link is saved, then the row is updated in place.
+
+==================================================
+D. RAG ENGINE READS THE PLAYLIST WITH A FRESH TOKEN
+==================================================
+D1. [PY] Given SpotifyRefreshToken and SpotifyPlaylistId rows, when a build reads Spotify, then the engine posts grant_type=refresh_token with the refresh token to https://accounts.spotify.com/api/token with the Basic header (SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET) before any playlist call.
+D2. [PY] Given the access token, when a playlist call is sent, then it carries "Authorization: Bearer <token>" and the token is not in the URL.
+D3. [PY] Given the engine, when it gets an access token, or Spotify answers with a new refresh token, then both stay in memory and nothing is written to the Settings table.
+D4. [PY] Given no refresh token row, or an empty one, when a build runs, then Spotify is skipped with "resource spotify: not connected, skipped" and the other sources build.
+D5. [PY] Given a refresh token but no playlist, when a build runs, then Spotify is skipped with "resource spotify: no playlist chosen, skipped".
+D6. [PY] Given Spotify is skipped and every other source succeeds, when the build ends, then the build is complete.
+D7. [PY] Given the token endpoint answers 400 invalid_grant, when a build reads Spotify, then Spotify fails with "Spotify token rejected: connect Spotify again on the Settings page", the build is not complete and the old collections are kept. Given 400 or 401 invalid_client, the error says to check SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET. Another refusal names only the status and error.
+D8. [PY] Given a playlist call answers 401, when a build reads Spotify, then it fails like D7.
+D9. [PY] Given SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET is empty while a refresh token is saved, when a build reads Spotify, then Spotify fails naming only the empty key.
+D10. [PY] Given the playlist answers 403 or 404 (wrong ID, or a playlist of another account), when a build reads Spotify, then Spotify fails with "Spotify playlist not found: choose the playlist again on the Settings page".
+D11. [PY] Given the database cannot be reached, when a build reads the Spotify rows, then Spotify fails (it is not skipped) and the error names only the error type.
+D12. [PY] Given a refresh call that times out, drops its connection or gets a 5xx answer, when the resource reads, then it is not tried again (Spotify may have used the token) and the source fails; a 429 is waited for and tried again.
+D13. [PY] Given any failure of the sign-in, when its error is logged, then it holds no access token, no refresh token and no client secret.
+
+==================================================
+E. PLAYLIST SONGS READ
+==================================================
+E1. [PY] Given recorded answers over 3 pages, when the resource reads, then /v1/playlists/<id>/items is called first with limit=50, each page's next link is followed, and every song is read once.
+E2. [PY] Given a last page without a next page, when it is read, then no further page is asked.
+E3. [PY] Given a next link that does not start with the playlist's items address, a next link already followed, or one whose offset does not move forward, when it is read, then the Spotify resource fails with an error that holds the endpoint and not the link.
+E4. [PY] Given an empty playlist, when the resource reads, then it gives no document and no error.
+E5. [PY] Given an item without a track, a podcast episode, a local file or a song without a name, when it is read, then it is skipped, the others are read and the skip is counted.
+E6. [PY] Given the same track id in two items, when they are read, then one document is made and the second is counted as repeated.
+E7. [PY] Given a 429 answer with Retry-After, when the resource reads, then it waits as Retry-After says and tries again.
+E8. [PY] Given a 5xx answer, a timeout or a dropped connection on a playlist call, when the resource reads, then it waits 1, 2, 4 and 8 seconds and tries again, at most 5 attempts, then fails the source.
+E9. [PY] Given a 200 answer that is not a JSON object, or a page whose items are missing, null or not a list, when it is read, then the Spotify resource fails with an error that holds the endpoint; only an empty item list with no next page ends the read.
+E10. [PY] Given a failure, when the error is raised, then it holds the status or error kind and the endpoint, not a token and not a song's name.
+E11. [PY] Given a read, when it ends or fails, then its summary holds the songs, skipped items, repeated items, calls, rate limit waits, network retries and seconds.
+E12. [PY] Given the resource class, when it is read, then it implements the Resource base with kind TEXT, uses the shared http_retry helpers and the shared settings_store reads, and the other resources' tests pass unchanged.
+
+==================================================
+F. SONG DOCUMENT
+==================================================
+F1. [PY] Given a recorded song, when the document is built, then its text has the Song, Musician, Album and Link lines.
+F2. [PY] Given a song with 3 artists, when the document is built, then the Musician line and the musician metadata hold the 3 names joined with ", ".
+F3. [PY] Given a song without an album name, when the document is built, then the Album line is left out and the document is still made.
+F4. [PY] Given a link that does not start with https://open.spotify.com/, when the document is built, then the Link line is left out.
+F5. [PY] Given a song, when its metadata is built, then it has name, path (empty text), musician, album, type "song" and timestamp (the time it was added to the playlist), and every value is a string.
+
+==================================================
+G. PIPELINE AND ENGINE
+==================================================
+G1. [PY] Given the Notion, Drive, movie and song resources, when the engine builds, then all four are read and the song documents go to fuxi_text.
+G2. [PY] Given a song resource that fails, when the pipeline runs, then the other sources are still embedded, the build is not complete and the old collections are kept.
+G3. [PY] Given a song read, when it ends, then its read summary is written to the embedding log.
+G4. [PY] Given a Spotify failure, when POST /Update_Collections is called, then the answer is 502 with a generic message and the details are only in the log.
+G5. [PY] Given song documents (type "song") in fuxi_text, when retrieve runs, then results above RAG_TEXT_THRESHOLD are returned with their text and metadata, and sent to Gemini as text context.
+G6. [PY] Given the music method and Gemini's answer with a song_url that is a playlist song's https://open.spotify.com/ link, when it is read, then the content keeps that link.
+G7. [RV] Given the prompts folder and the pipeline, when they are compared with main, then nothing is changed (item 58: the workflow does not change).
+
+==================================================
+H. SETTINGS PAGE - SPOTIFY ROW
+==================================================
+H1. [FE] Given the open Requests toggle, when it is shown, then it holds a Spotify row under the Letterboxd row, with a button named "Connect Spotify" that shows the Spotify logo and the text "Spotify" at its right.
+H2. [FE] Given the Spotify logo, when it is drawn, then it is an inline SVG from image/icons hidden from screen readers.
+H3. [FE] Given the Settings page, when it opens, then /api/GetSpotifyConnection is called once by a service.
+H4. [FE] Given isConnected: false, when the row is shown, then it says "Not connected" and has no "Connect again" button.
+H5. [FE] Given isConnected: true with a name, when the row is shown, then it says "Connected: <name>"; without a name it says "Connected".
+H6. [FE] Given GetSpotifyConnection is still pending or fails, when the row is shown, then no state is shown while pending, "Not connected" after a failure, and the button still works.
+H7. [FE] Given Spotify is not connected, when the Spotify button is clicked, then the browser goes to <VITE_FUXI_API_URL>/api/SpotifyConnect.
+H8. [FE] Given Spotify is connected, when the Spotify button is clicked, then the playlist pop-up opens (no sign-in), and a button "Connect again" goes to /api/SpotifyConnect.
+H9. [FE] Given a connected Spotify without a playlist, when the row is shown, then it says "No playlist chosen".
+H10. [FE] Given a connected Spotify with a playlist, when the row is shown, then it says "Playlist chosen" with a link to https://open.spotify.com/playlist/<id> that opens in a new tab (target=_blank, rel=noopener noreferrer).
+H11. [FE] Given the Settings page opened with ?spotify=connected or ?spotify=failed, when it loads, then the Requests toggle is open, a failure shows "Spotify could not be connected." as an alert, no build is started, and the value is removed from the address without a reload.
+H12. [FE] Given ?notion, ?drive and ?spotify, when each is read, then each source shows only its own result.
+H13. [FE] Given the row, when it is read, then there is no Disconnect button.
+
+==================================================
+I. SETTINGS PAGE - PLAYLIST POP-UP AND TOOLTIP
+==================================================
+I1. [FE] Given the pop-up, when it opens, then it is titled "Choose playlist" with a text box labelled "Playlist link" and a save button named "Save" with a save icon (the LinkDialog of 6c, reused, not copied).
+I2. [FE] Given a saved playlist, when the pop-up opens, then the box holds https://open.spotify.com/playlist/<id>.
+I3. [FE] Given a link in the box, when Save is clicked, then /api/UpdateSpotifyPlaylist is called once with { playlistLink } and Save is disabled while it waits.
+I4. [FE] Given the API answers 200, when the pop-up closes, then the row shows "Playlist chosen" with the new playlist's link.
+I5. [FE] Given the API answers 400, when the answer comes, then the pop-up stays open and shows "This is not a Spotify playlist link." as an alert; the row does not change.
+I6. [FE] Given any other failure, when the answer comes, then the pop-up stays open and shows "The playlist could not be saved." as an alert.
+I7. [FE] Given an empty box, when the pop-up is shown, then Save is disabled; Enter saves like Save; Escape, the X button or the backdrop closes it without saving.
+I8. [FE] Given the Spotify row, when it is shown, then an i button named "About Spotify" is at the right of the Spotify button.
+I9. [FE] Given the i button, when it is hovered, focused or tapped, then the tooltip "Connect your Spotify list" is shown with role tooltip and aria-describedby; a second tap, Escape, the pointer or focus leaving hides it.
+
+==================================================
+J. REMOVALS, SHARED CODE, DOCUMENTATION
+==================================================
+J1. [RV] Given the repository, when it is read, then rag/spotify_authorize.py, its tests, RAG_SPOTIFY_TOKEN_FILE and the rag/secrets token file code do not exist.
+J2. [RV] Given the backend, when it is read, then the state store, the redirect back to the app, the key check and the token-exchange calls are shared by Notion, Google Drive and Spotify, not copied.
+J3. [RV] Given .env.example, .env.test.example and setup_environment.sh, when they are read, then they have SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET and SPOTIFY_REDIRECT_URI without values and no RAG_SPOTIFY_* key.
+J4. [RV] Given project.md, when it is read, then the Spotify part says the engine reads the chosen playlist with a refresh token from the Settings table, the settings part describes the Spotify row, the pop-up and the tooltip, the API part lists the four endpoints, and the Settings table part lists the four codes.
+J5. [RV] Given the client secret, when the code is read, then it is read only from .env (API and engine), never logged and never sent to the browser.
+J6. [RV] Given the new and changed components, when they are read, then styles use tokens in their own .less files, texts are in texts.ts, API calls are in services, and no new component is created without asking (the LinkDialog is reused).
+J7. [BE] [PY] [FE] Given the related tests, when they run, then they pass without calling Spotify (fake servers) and the Phase 6b and 6c tests pass unchanged in what they check.
+
+==================================================
+K. LIVE CHECKS (after the Learner's go-ahead)
+==================================================
+K1. [RV] Given the Spotify Developer Dashboard (#57), when the Learner creates the app (redirect address, Premium account as the owner), then SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET and SPOTIFY_REDIRECT_URI are in .env.
+K2. [LV] Given the running API and app, when the Learner clicks the Spotify button and allows access, then the row shows "Connected: <name>".
+K3. [LV] Given the connected account, when the Learner saves a playlist link, then the row shows "Playlist chosen" and its link opens the playlist; one items call is made to confirm Spotify returns the songs with the refresh token's access token, and the answer's field names are compared with the recorded fixture.
+K4. [LV] Given the chosen playlist, when the songs are counted and the time estimated (no embedding yet), and then, after the Learner's go-ahead, one build runs, then the playlist's songs are in fuxi_text and the summary line is in logs/embedding/.
+
+==================================================
+L. OUT OF SCOPE CHECKS
+==================================================
+L1. [RV] Given the Spotify resource, when it is read, then it reads only the one chosen playlist: no Liked Songs, no other playlist, no audio features, no play history, no lyrics and no call to another service.
+L2. [RV] Given the Settings table, when it is read, then it has no UserId column (#40) and the tokens are plain text (#20).
+L3. [RV] Given the database, when the migrations are listed, then no new migration exists.
+L4. [RV] Given /rag, when it is read, then no evaluation file exists (version 2).

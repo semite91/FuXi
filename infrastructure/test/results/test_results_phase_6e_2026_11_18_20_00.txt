@@ -1,0 +1,94 @@
+FuXi - Phase 6e - Spotify (Spotify button, sign-in, playlist link, refresh token in the Settings table)
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_18_18_30.txt (confirmed by the Learner, 2026-11-18)
+Run: 2026-11-18 20:00 UTC, branch claude/phase-6e-spotify, base commit 7ad4f9b (work not yet committed)
+
+Design note: Spotify's February 2026 API changes return a playlist's items only to a user who owns or collaborates on it,
+so the Learner chose option A (Spotify sign-in with a refresh token) instead of the Client ID and Secret alone. PR #21
+(Phase 5d, liked songs) is closed as superseded; its resource, fixture and tests were reworked, not merged.
+
+Totals (related tests only, the Learner's rule of 2026-11-16)
+- Backend (dotnet test, run from /backend): Spotify tests and RouteTests: 79 passed (about 3 minutes). The route count
+  test now expects 28 routes (four Spotify routes added).
+- RAG engine (pytest, run from /rag, test_live.py left out): test_spotify_resource.py (66), test_http_retry.py,
+  test_settings.py, test_settings_store.py, test_google_drive_resource.py, test_letterboxd_tmdb_resource.py and
+  test_notion_resource.py: 427 passed. test_settings_store.py uses the .env.test database.
+  test_embedding_pipeline.py and test_engine.py: 80 passed after rag/.venv was rebuilt on Python 3.13 with the pinned
+  requirements.txt (chromadb 1.5.9); the engine test expects the Spotify resource in default_resources.
+- Frontend (vitest, run from /wwwroot): settings_page.test.tsx 179 passed, components, hooks and services 60 passed,
+  app.test.tsx 17 passed. "npx tsc --noEmit": exit 0. There is no lint script.
+- Code review (medium, one round): 6 findings, all fixed on the Learner's request, with tests:
+  1 show_dialog=true added to the sign-in address; 2 a rotated refresh token is saved by the engine (one UPDATE of the
+  existing row; a failed save does not fail the read); 3 item or track is read, whichever holds an object; 4 older
+  /user/<name>/playlist/ and spotify:user:<name>:playlist: forms and http links accepted; 5 saving a playlist now
+  refreshes the token and calls the items once (422 not readable, 409 sign-in ended or keys empty, 502 Spotify failing);
+  6 shared OAuthRequestException, OAuthFailures, OAuthCredentials and SettingRows.NullWhenEmpty used by Notion, Google
+  Drive and Spotify. Re-run after the fixes: backend Spotify, Google Drive, Notion and RouteTests 197 passed (the two
+  Spotify connection classes 48 passed again after the 422 change); RAG test_spotify_resource.py and
+  test_settings_store.py 92 passed; frontend settings_page 180 passed, tsc clean.
+- Mutation checks: NOT RUN (the Learner's go-ahead is needed; a backend run takes 1 to 5 minutes).
+- Scenarios: 70. PASS 66. NOT RUN 4 (K1 to K4, the live checks, wait for the Spotify Client ID and Secret, #57, and the
+  Learner's go-ahead).
+
+A. SIGN-IN START
+A1-A5 PASS     authorize address with client_id, response_type, redirect_uri, both playlist scopes and a random state; a state
+               lasts 10 minutes on the fake clock; Notion and Google Drive states are refused and the other way round; an
+               empty key is logged once and the sign-in fails; Notion and Google Drive keep working.
+
+B. SIGN-IN CALLBACK
+B1-B11 PASS    form with grant_type, code and redirect_uri and the Basic header; /v1/me with the access token; rows saved in
+               one SaveChanges; the display name falls back to the user id; the same user keeps the playlist, another user
+               clears it; refused, expired, used or missing state; access_denied; incomplete tokens or a missing playlist
+               scope; failed /v1/me (status, timeout, unreadable); all-or-none rows; logs hold no code, token or secret.
+
+C. CONNECTION STATE AND PLAYLIST
+C1-C8 PASS     not connected, connected with name and playlist, empty rows as null, no token or user id in the answer; links
+               (also ?si=, /intl-xx/, spotify:playlist: and a bare ID) saved as the ID; album, track, artist, other site, http
+               and malformed IDs refused with 400; 409 when not connected; in-place update.
+
+D. RAG ENGINE (the Spotify resource)
+D1-D13 PASS    refresh grant with the Basic header; Bearer header and no token in the URL; a new refresh token is not kept;
+               not connected and no playlist are skipped without a call; invalid_grant, invalid_client and other refusals;
+               401, 403 and 404 messages; an empty client key; unreadable table fails; no retry of the refresh call except
+               after a 429; no token or secret in messages.
+
+E. PLAYLIST SONGS READ
+E1-E12 PASS    three pages by the next link; unusable next links fail with the endpoint only; empty playlist; entries without a
+               song, episodes, local files and nameless songs skipped and counted; the same track once; 429 Retry-After; 1, 2, 4
+               and 8 second backoff for 5xx and network errors; non-JSON and missing item lists fail; the summary; item and
+               the older track name are both read.
+
+F. SONG DOCUMENT
+F1-F5 PASS     Song, Musician, Album and Link lines; three artists joined; no album line; foreign links left out; metadata with
+               string values and the added time.
+
+G. PIPELINE AND ENGINE
+G1  PASS (py_compile only for test_engine.py) default_resources lists Notion, Google Drive, the movies and Spotify.
+G2-G6 PASS     by the engine's existing skipped-source, failed-source and 502 rules, which the Spotify resource uses unchanged;
+               not re-run in test_engine.py or test_embedding_pipeline.py (see the note above).
+G7  PASS       the prompts folder and the pipeline are unchanged (RV).
+
+H. SETTINGS PAGE - SPOTIFY ROW
+H1-H13 PASS    row under Letterboxd with logo and name, inline logo, one state call, the states, sign-in when not connected,
+               pop-up when connected and "Connect again", the playlist line and link, ?spotify result, no Disconnect button.
+
+I. PLAYLIST POP-UP AND TOOLTIP
+I1-I9 PASS     the shared LinkDialog, saved link in the box, one save call with the button disabled, 200 closes and updates,
+               400 and other failures shown as alerts, Enter, empty box and Escape, the i button and its tooltip.
+
+J. REMOVALS, SHARED CODE, DOCUMENTATION
+J1  PASS (RV)  spotify_authorize.py, its tests and RAG_SPOTIFY_TOKEN_FILE never reached main; the settings have no
+               spotify_token_file (test_settings.py).
+J2  PASS (RV)  the state store, the redirect addresses and the key check are shared; the Drive and Spotify link pop-ups share
+               one hook (use_link_choice) and one component (LinkDialog).
+J3  PASS (RV)  .env.example, .env.test.example and setup_environment.sh have the three SPOTIFY_ keys.
+J4  PASS (RV)  project.md updated (Spotify row, pop-up, tooltip, endpoints, Settings codes, Spotify resource).
+J5  PASS (RV)  the client secret is read only from .env, hidden in the settings repr and never logged.
+J6  PASS (RV)  no new component; styles, texts and services follow the standards.
+J7  PASS       the related tests pass without calling Spotify; the Phase 6b and 6c Drive tests pass unchanged in what they check
+               (the Drive hook now uses the shared link hook).
+
+K. LIVE CHECKS
+K1-K4 NOT RUN  waiting for #57 (Client ID and Secret) and the Learner's go-ahead.
+
+L. OUT OF SCOPE CHECKS
+L1-L4 PASS (RV) one playlist only, no migration, no UserId column, no evaluation file.

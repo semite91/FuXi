@@ -1,6 +1,8 @@
 using FuXi.Api.GoogleDrive;
 using FuXi.Api.Notion;
 using FuXi.Api.Push;
+using FuXi.Api.Spotify;
+using FuXi.Api.Tests.Api.Spotify;
 using FuXi.Api.Tests.Api.GoogleDrive;
 using FuXi.Api.Tests.Api.Notion;
 using Microsoft.AspNetCore.Hosting;
@@ -39,6 +41,9 @@ public sealed class ApiHost(bool replacesServices = true, bool startsNotificatio
     /// <summary>Answers every call the API makes to Google; nothing reaches Google.</summary>
     public FakeGoogleServer Google { get; } = new();
 
+    /// <summary>Answers every call the API makes to Spotify; nothing reaches Spotify.</summary>
+    public FakeSpotifyServer Spotify { get; } = new();
+
     /// <summary>Configuration values that win over the env file. Set them before the host starts.</summary>
     public Dictionary<string, string?> Settings { get; } = [];
 
@@ -63,6 +68,7 @@ public sealed class ApiHost(bool replacesServices = true, bool startsNotificatio
         services.AddSingleton<IPushMessageSender>(PushSender);
         services.AddHttpClient(NotionOAuthClient.HTTP_CLIENT_NAME).ConfigurePrimaryHttpMessageHandler(() => Notion);
         services.AddHttpClient(GoogleOAuthClient.HTTP_CLIENT_NAME).ConfigurePrimaryHttpMessageHandler(() => Google);
+        services.AddHttpClient(SpotifyOAuthClient.HTTP_CLIENT_NAME).ConfigurePrimaryHttpMessageHandler(() => Spotify);
         if (!startsNotificationTimer)
         {
             SkipNotificationTimerStart(services);

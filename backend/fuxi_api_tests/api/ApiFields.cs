@@ -27,6 +27,7 @@ public static class ApiFields
     public const string WORKSPACE_NAME = "workspaceName";
     public const string EMAIL = "email";
     public const string FOLDER_ID = "folderId";
+    public const string PLAYLIST_ID = "playlistId";
     public const string DETAIL = "detail";
     public const string HAS_UPLOAD = "hasUpload";
     public const string MOVIE_COUNT = "movieCount";
