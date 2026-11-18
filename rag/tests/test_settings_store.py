@@ -15,11 +15,14 @@ from psycopg import sql
 from settings import TEST_ENV_PATH, DatabaseSettings, MissingSettingError, Settings, SettingsError, load_settings
 from settings_store import (
     GoogleDriveRows,
+    SpotifyRows,
     SettingsStoreError,
     connect_read_only,
     read_google_drive_rows,
+    read_spotify_rows,
     read_liked_films_csv,
     read_notion_token,
+    save_spotify_refresh_token,
 )
 
 ACCESS_TOKEN = "secret_store-test-token"
@@ -203,3 +206,56 @@ def test_unreachable_database_fails_the_liked_films_without_secrets(settings):
         read_liked_films_csv(unreachable)
 
     assert database.password not in str(raised.value)
+
+
+def test_spotify_rows_are_read_together(settings, table):
+    # Phase 6e D1
+    table.execute(INSERT_SETTING, ("SpotifyRefreshToken", "AQD-refresh-token-of-a-test"))
+    table.execute(INSERT_SETTING, ("SpotifyPlaylistId", "37i9dQZF1DXcBWIGoYBM5M"))
+    table.execute(INSERT_SETTING, ("SpotifyName", "The Learner"))
+
+    assert read_spotify_rows(settings) == SpotifyRows(
+        refresh_token="AQD-refresh-token-of-a-test", playlist_id="37i9dQZF1DXcBWIGoYBM5M"
+    )
+
+
+@pytest.mark.parametrize("rows", [[], [("SpotifyRefreshToken", ""), ("SpotifyPlaylistId", "")]])
+def test_missing_or_empty_spotify_rows_read_as_none(settings, table, rows):
+    # Phase 6e D4, D5
+    for row in rows:
+        table.execute(INSERT_SETTING, row)
+
+    assert read_spotify_rows(settings) == SpotifyRows(refresh_token=None, playlist_id=None)
+
+
+def test_rotated_spotify_refresh_token_replaces_the_saved_one(settings, table):
+    table.execute(INSERT_SETTING, ("SpotifyRefreshToken", "old-token"))
+    table.execute(INSERT_SETTING, ("SpotifyPlaylistId", "37i9dQZF1DXcBWIGoYBM5M"))
+
+    save_spotify_refresh_token(settings, "new-token")
+
+    assert read_spotify_rows(settings) == SpotifyRows(refresh_token="new-token", playlist_id="37i9dQZF1DXcBWIGoYBM5M")
+
+
+def test_rotated_spotify_refresh_token_adds_no_row(settings, table):
+    save_spotify_refresh_token(settings, "new-token")
+
+    assert read_spotify_rows(settings) == SpotifyRows(refresh_token=None, playlist_id=None)
+
+
+def test_failed_save_of_the_spotify_refresh_token_names_only_the_error_type(settings):
+    database = settings.require_database()
+    unreachable = Settings(database_values={
+        "FUXI_DB_HOST": "127.0.0.1", "FUXI_DB_PORT": str(UNREACHABLE_PORT), "FUXI_DB_NAME": database.name,
+        "FUXI_DB_USER": database.user, "FUXI_DB_PASSWORD": database.password,
+    })
+
+    with pytest.raises(SettingsStoreError) as raised:
+        save_spotify_refresh_token(unreachable, "new-token")
+
+    assert database.password not in str(raised.value) and "new-token" not in str(raised.value)
+
+
+def test_spotify_rows_never_show_the_refresh_token_when_printed():
+    # Phase 6e D13
+    assert "secret-token" not in repr(SpotifyRows(refresh_token="secret-token", playlist_id="id"))

@@ -12,6 +12,7 @@ from engine import BUILD_WAIT_SECONDS, MAX_NAME_LENGTH, EngineDependencies, crea
 from fakes import FakeEmbedder, RenameFailingClient, picture_text
 from chroma_store import TEXT_COLLECTION_NAME, create_chroma_client, is_build_complete, open_collection
 from resources.google_drive_resource import GoogleDriveResource, create_google_drive_resource
+from resources.spotify_resource import SpotifyResource
 from resources.letterboxd_tmdb_resource import LetterboxdTmdbResource, create_letterboxd_tmdb_resource
 from resources.notion_resource import NotionResource, create_notion_resource
 from settings import Settings
@@ -591,13 +592,18 @@ def test_name_length_is_checked_after_trimming(tmp_path):
     assert answer.json() == [{"name": f"  {name}  ", "translation": "x", "content": "content"}]
 
 
-def test_default_resources_are_notion_google_drive_and_the_movies():
-    # Phase 5b E1, Phase 5c F1
+def test_default_resources_are_notion_google_drive_the_movies_and_spotify():
+    # Phase 5b E1, Phase 5c F1, Phase 6e G1
     resources = engine.default_resources(Settings())
 
-    assert [type(resource) for resource in resources] == [NotionResource, GoogleDriveResource, LetterboxdTmdbResource]
+    assert [type(resource) for resource in resources] == [
+        NotionResource, GoogleDriveResource, LetterboxdTmdbResource, SpotifyResource
+    ]
     assert [(resource.name, resource.kind) for resource in resources] == [
-        ("notion", ResourceKind.TEXT), ("google_drive", ResourceKind.IMAGE), ("letterboxd_tmdb", ResourceKind.TEXT)
+        ("notion", ResourceKind.TEXT),
+        ("google_drive", ResourceKind.IMAGE),
+        ("letterboxd_tmdb", ResourceKind.TEXT),
+        ("spotify", ResourceKind.TEXT),
     ]
 
 

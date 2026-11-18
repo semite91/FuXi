@@ -33,6 +33,11 @@ public static class ApiRoutes
     public const string GET_GOOGLE_DRIVE_CONNECTION = PREFIX + "/GetGoogleDriveConnection";
     public const string UPDATE_GOOGLE_DRIVE_FOLDER = PREFIX + "/UpdateGoogleDriveFolder";
 
+    public const string SPOTIFY_CONNECT = PREFIX + "/SpotifyConnect";
+    public const string SPOTIFY_CALLBACK = PREFIX + "/SpotifyCallback";
+    public const string GET_SPOTIFY_CONNECTION = PREFIX + "/GetSpotifyConnection";
+    public const string UPDATE_SPOTIFY_PLAYLIST = PREFIX + "/UpdateSpotifyPlaylist";
+
     public const string GET_LETTERBOXD_LIKES = PREFIX + "/GetLetterboxdLikes";
     public const string UPLOAD_LETTERBOXD_LIKES = PREFIX + "/UploadLetterboxdLikes";
 }

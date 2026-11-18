@@ -18,15 +18,19 @@ import {
   PERMISSION_TEXTS,
   REQUESTS_TEXTS,
   SETTINGS_TEXTS,
+  SPOTIFY_TEXTS,
 } from '../constants/texts';
 import { useEmbeddingsUpdate, type EmbeddingsStep } from '../hooks/use_embeddings_update';
-import { useGoogleDriveConnection, type FolderSaveError } from '../hooks/use_google_drive_connection';
+import { useGoogleDriveConnection } from '../hooks/use_google_drive_connection';
 import { useLetterboxdLikes, type UploadError } from '../hooks/use_letterboxd_likes';
+import type { LinkSaveError } from '../hooks/use_link_choice';
 import { useNotificationPermission } from '../hooks/use_notification_permission';
 import { useNotionConnection } from '../hooks/use_notion_connection';
+import { useSpotifyConnection } from '../hooks/use_spotify_connection';
 import { folderAddress } from '../services/google_drive_service';
 import type { LetterboxdLikes } from '../services/letterboxd_service';
-import { GoogleDriveLogo, LetterboxdLogo, NotionLogo } from '../image/icons';
+import { playlistAddress } from '../services/spotify_service';
+import { GoogleDriveLogo, LetterboxdLogo, NotionLogo, SpotifyLogo } from '../image/icons';
 import exportStepOne from '../image/letterboxd_export_step_1.svg';
 import exportStepTwo from '../image/letterboxd_export_step_2.svg';
 import exportStepThree from '../image/letterboxd_export_step_3.svg';
@@ -41,9 +45,16 @@ const CONFIRM_STEP: EmbeddingsStep = 'confirm';
 const NEW_TAB = '_blank';
 const NEW_TAB_REL = 'noopener noreferrer';
 
-const FOLDER_SAVE_ERRORS: Record<FolderSaveError, string> = {
-  notAFolderLink: GOOGLE_DRIVE_TEXTS.notAFolderLink,
+const FOLDER_SAVE_ERRORS: Record<LinkSaveError, string> = {
+  notALink: GOOGLE_DRIVE_TEXTS.notAFolderLink,
+  notReadable: GOOGLE_DRIVE_TEXTS.saveFailed,
   failed: GOOGLE_DRIVE_TEXTS.saveFailed,
+};
+
+const PLAYLIST_SAVE_ERRORS: Record<LinkSaveError, string> = {
+  notALink: SPOTIFY_TEXTS.notAPlaylistLink,
+  notReadable: SPOTIFY_TEXTS.playlistNotReadable,
+  failed: SPOTIFY_TEXTS.saveFailed,
 };
 
 const UPLOAD_ERRORS: Record<UploadError, string> = {
@@ -92,9 +103,13 @@ const SettingsPage = () => {
   const notion = useNotionConnection();
   const drive = useGoogleDriveConnection();
   const letterboxd = useLetterboxdLikes();
+  const spotify = useSpotifyConnection();
   // Not stored, so the toggle is closed every time the page opens, unless it opens back from a sign-in.
-  const [isRequestsOpen, setIsRequestsOpen] = useState(notion.isReturningFromSignIn || drive.isReturningFromSignIn);
+  const [isRequestsOpen, setIsRequestsOpen] = useState(
+    notion.isReturningFromSignIn || drive.isReturningFromSignIn || spotify.isReturningFromSignIn,
+  );
   const folderId = drive.connection?.folderId ?? null;
+  const playlistId = spotify.connection?.playlistId ?? null;
 
   return (
     <PageCard title={SETTINGS_TEXTS.title}>
@@ -174,6 +189,36 @@ const SettingsPage = () => {
           stateText={likesStateText(letterboxd.likes)}
           onConnect={letterboxd.openGuide}
         />
+        <RequestRow
+          logo={<SpotifyLogo />}
+          connectLabel={SPOTIFY_TEXTS.connect}
+          text={SPOTIFY_TEXTS.label}
+          aboutLabel={SPOTIFY_TEXTS.about}
+          tipText={SPOTIFY_TEXTS.tip}
+          stateText={connectionStateText(spotify.connection, spotify.connection?.name)}
+          errorText={spotify.hasSignInFailed ? SPOTIFY_TEXTS.failed : undefined}
+          onConnect={spotify.press}
+        >
+          {spotify.connection?.isConnected && (
+            <>
+              <p className="request-row__detail">
+                {playlistId === null ? (
+                  SPOTIFY_TEXTS.noPlaylist
+                ) : (
+                  <>
+                    <span>{SPOTIFY_TEXTS.playlistChosen}</span>
+                    <a href={playlistAddress(playlistId)} target={NEW_TAB} rel={NEW_TAB_REL}>
+                      {SPOTIFY_TEXTS.openPlaylist}
+                    </a>
+                  </>
+                )}
+              </p>
+              <button type="button" className="request-row__action" onClick={spotify.connectAgain}>
+                {SPOTIFY_TEXTS.connectAgain}
+              </button>
+            </>
+          )}
+        </RequestRow>
       </DisclosureToggle>
       {letterboxd.isGuideOpen && (
         <UploadGuideDialog
@@ -187,6 +232,19 @@ const SettingsPage = () => {
           errorText={letterboxd.uploadError === null ? undefined : UPLOAD_ERRORS[letterboxd.uploadError]}
           onFile={(file) => void letterboxd.upload(file)}
           onClose={letterboxd.closeGuide}
+        />
+      )}
+      {spotify.isChoosingPlaylist && (
+        <LinkDialog
+          title={SPOTIFY_TEXTS.choosePlaylist}
+          linkLabel={SPOTIFY_TEXTS.playlistLink}
+          initialLink={playlistId === null ? '' : playlistAddress(playlistId)}
+          saveLabel={SPOTIFY_TEXTS.save}
+          closeLabel={APP_TEXTS.closeDialog}
+          isSaving={spotify.isSaving}
+          errorText={spotify.saveError === null ? undefined : PLAYLIST_SAVE_ERRORS[spotify.saveError]}
+          onSave={(link) => void spotify.savePlaylist(link)}
+          onClose={spotify.closePlaylist}
         />
       )}
       {drive.isChoosingFolder && (

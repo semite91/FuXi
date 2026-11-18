@@ -1,9 +1,7 @@
-using System.Text.Json;
 using FuXi.Api.Database;
 using FuXi.Api.Database.Entities;
 using FuXi.Api.OAuth;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.EntityFrameworkCore;
 
 namespace FuXi.Api.GoogleDrive;
 
@@ -80,8 +78,8 @@ public sealed class GoogleDriveService(
 
         return new GoogleDriveConnection(
             true,
-            NullWhenEmpty(values.GetValueOrDefault(SettingCodes.GOOGLE_DRIVE_EMAIL)),
-            NullWhenEmpty(values.GetValueOrDefault(SettingCodes.GOOGLE_DRIVE_FOLDER_ID)));
+            SettingRows.NullWhenEmpty(values.GetValueOrDefault(SettingCodes.GOOGLE_DRIVE_EMAIL)),
+            SettingRows.NullWhenEmpty(values.GetValueOrDefault(SettingCodes.GOOGLE_DRIVE_FOLDER_ID)));
     }
 
     /// <summary>Saves the folder the engine reads. Only the link's form is checked; Google is not called.</summary>
@@ -97,8 +95,6 @@ public sealed class GoogleDriveService(
 
         return new GoogleDriveFolderSaved(folderId);
     }
-
-    private static string? NullWhenEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
     // The code, the client secret and the tokens are never logged.
     private async Task<bool> TryConnectAsync(OAuthClientOptions options, string code, CancellationToken cancellationToken)
@@ -123,11 +119,11 @@ public sealed class GoogleDriveService(
             await SaveAsync(tokens.RefreshToken, email, cancellationToken);
             return true;
         }
-        catch (GoogleRequestException exception)
+        catch (OAuthRequestException exception)
         {
             logger.LogError("{Message}", exception.Message);
         }
-        catch (Exception exception) when (IsConnectFailure(exception, cancellationToken))
+        catch (Exception exception) when (OAuthFailures.IsConnectFailure(exception, cancellationToken))
         {
             logger.LogError("The Google Drive sign-in could not be finished: {ErrorType}.", exception.GetType().Name);
         }
@@ -151,11 +147,6 @@ public sealed class GoogleDriveService(
             ? null
             : "the Drive read scope";
     }
-
-    // A network error, a timeout, an unreadable answer or a failed save; never the Learner closing the page.
-    private static bool IsConnectFailure(Exception exception, CancellationToken cancellationToken) =>
-        exception is HttpRequestException or JsonException or DbUpdateException
-        || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested);
 
     // Another account may not see the saved folder, so a new email clears it in the same transaction.
     private async Task SaveAsync(string refreshToken, string email, CancellationToken cancellationToken)

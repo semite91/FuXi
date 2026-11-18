@@ -15,10 +15,12 @@ from typing import Any
 import httpx
 
 from base import (
+    METADATA_MUSICIAN,
     METADATA_NAME,
     METADATA_PATH,
     METADATA_TIMESTAMP,
     METADATA_TYPE,
+    NO_PATH,
     TEXT_DOCUMENT_TYPE,
     Document,
     Resource,
@@ -67,8 +69,6 @@ INVALID_ADDRESS = "an address that is not valid"
 EVERY_REQUEST_REFUSED_MESSAGE = "TMDB refused every movie request (400 or 422)"
 # The endpoint of an error that is not of one call.
 NO_ENDPOINT = ""
-# A movie has no folder path.
-NO_PATH = ""
 # Movies are looked up this many at a time.
 LOOKUP_WORKERS = 4
 
@@ -96,7 +96,6 @@ SUMMARY_SEPARATOR = ", "
 LINE_SEPARATOR = "\n"
 
 METADATA_DIRECTOR = "director"
-METADATA_MUSICIAN = "musician"
 METADATA_GENRE = "genre"
 
 

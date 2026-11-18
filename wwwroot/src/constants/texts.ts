@@ -173,6 +173,24 @@ export const LETTERBOXD_TEXTS = {
   exportStepCaption: 'Press Export your data and unzip the file you get.',
 } as const;
 
+export const SPOTIFY_TEXTS = {
+  connect: 'Connect Spotify',
+  label: 'Spotify',
+  failed: 'Spotify could not be connected.',
+  about: 'About Spotify',
+  tip: 'Connect your Spotify list',
+  noPlaylist: 'No playlist chosen',
+  playlistChosen: 'Playlist chosen',
+  openPlaylist: 'Open in Spotify',
+  connectAgain: 'Connect again',
+  choosePlaylist: 'Choose playlist',
+  playlistLink: 'Playlist link',
+  save: 'Save',
+  notAPlaylistLink: 'This is not a Spotify playlist link.',
+  playlistNotReadable: 'Spotify does not let FuXi read this playlist. Choose one you own or collaborate on.',
+  saveFailed: 'The playlist could not be saved.',
+} as const;
+
 export const CREDITS_TEXTS = {
   title: 'Credits',
   tmdbLogo: 'TMDB',

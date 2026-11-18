@@ -1,9 +1,7 @@
-using System.Text.Json;
 using FuXi.Api.Database;
 using FuXi.Api.Database.Entities;
 using FuXi.Api.OAuth;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.EntityFrameworkCore;
 
 namespace FuXi.Api.Notion;
 
@@ -97,16 +95,11 @@ public sealed class NotionService(
         {
             logger.LogError("Notion refused the token request with status {StatusCode}.", exception.StatusCode);
         }
-        catch (Exception exception) when (IsConnectFailure(exception, cancellationToken))
+        catch (Exception exception) when (OAuthFailures.IsConnectFailure(exception, cancellationToken))
         {
             logger.LogError(exception, "The Notion sign-in could not be finished.");
         }
 
         return false;
     }
-
-    // A network error, a timeout, an unreadable answer or a failed save; never the Learner closing the page.
-    private static bool IsConnectFailure(Exception exception, CancellationToken cancellationToken) =>
-        exception is HttpRequestException or JsonException or DbUpdateException
-        || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested);
 }

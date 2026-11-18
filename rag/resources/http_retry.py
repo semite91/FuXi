@@ -1,5 +1,6 @@
 """Retry rules, read statistics, the HTTP client and the Bearer header shared by the resources that call a web API."""
 
+import base64
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -23,6 +24,9 @@ REQUEST_TIMEOUT_SECONDS = 60.0
 TRANSIENT_NETWORK_ERRORS = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
 AUTHORIZATION_HEADER = "Authorization"
 BEARER_FORMAT = "Bearer {token}"
+BASIC_FORMAT = "Basic {credentials}"
+BASIC_CREDENTIALS_FORMAT = "{user}:{password}"
+BASIC_CREDENTIALS_ENCODING = "utf-8"
 
 T = TypeVar("T")
 # Seconds that only move forward; differences between two readings are measured.
@@ -112,6 +116,12 @@ def bearer_header(token: str) -> dict[str, str]:
     return {AUTHORIZATION_HEADER: BEARER_FORMAT.format(token=token)}
 
 
+def basic_header(user: str, password: str) -> dict[str, str]:
+    """The Authorization header of a call signed with HTTP Basic credentials."""
+    credentials = BASIC_CREDENTIALS_FORMAT.format(user=user, password=password).encode(BASIC_CREDENTIALS_ENCODING)
+    return {AUTHORIZATION_HEADER: BASIC_FORMAT.format(credentials=base64.b64encode(credentials).decode("ascii"))}
+
+
 def backoff_seconds(attempt: int) -> float:
     return NETWORK_RETRY_SECONDS * NETWORK_RETRY_GROWTH**attempt
 
@@ -127,6 +137,14 @@ def http_retry_wait(error: Exception, attempt: int) -> Wait | None:
         return rate_limit_wait(response, attempt)
     if response.status_code >= MIN_SERVER_ERROR_STATUS:
         return Wait(backoff_seconds(attempt), rate_limited=False)
+    return None
+
+
+def rate_limit_retry_wait(error: Exception, attempt: int) -> Wait | None:
+    """The rule of a call that must not reach the server twice (a single-use token): only a 429, which the server
+    refused before it used the call, waits Retry-After (or backs off); any other error is raised at once."""
+    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == RATE_LIMITED_STATUS:
+        return rate_limit_wait(error.response, attempt)
     return None
 
 

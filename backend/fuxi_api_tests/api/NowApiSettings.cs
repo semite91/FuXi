@@ -26,6 +26,12 @@ public sealed record NowApiSettings
 
     public string? GoogleRedirectUri { get; init; }
 
+    public string? SpotifyClientId { get; init; }
+
+    public string? SpotifyClientSecret { get; init; }
+
+    public string? SpotifyRedirectUri { get; init; }
+
     public string? AppUrl { get; init; }
 
     /// <summary>False keeps the API's own TimeProvider and INotificationTimer.</summary>

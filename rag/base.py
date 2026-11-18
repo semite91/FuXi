@@ -11,8 +11,13 @@ METADATA_NAME = "name"
 METADATA_PATH = "path"
 METADATA_TYPE = "type"
 METADATA_TIMESTAMP = "timestamp"
+METADATA_MUSICIAN = "musician"
+METADATA_ALBUM = "album"
 TEXT_DOCUMENT_TYPE = "text"
 PICTURE_DOCUMENT_TYPE = "picture"
+SONG_DOCUMENT_TYPE = "song"
+# A document that has no folder path, such as a movie or a song.
+NO_PATH = ""
 
 
 class ResourceKind(StrEnum):

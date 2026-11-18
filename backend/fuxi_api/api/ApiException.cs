@@ -10,4 +10,8 @@ public sealed class ApiException(int statusCode, string message) : Exception(mes
     public static ApiException NotFound(string message) => new(StatusCodes.Status404NotFound, message);
 
     public static ApiException Conflict(string message) => new(StatusCodes.Status409Conflict, message);
+
+    public static ApiException Unprocessable(string message) => new(StatusCodes.Status422UnprocessableEntity, message);
+
+    public static ApiException BadGateway(string message) => new(StatusCodes.Status502BadGateway, message);
 }
