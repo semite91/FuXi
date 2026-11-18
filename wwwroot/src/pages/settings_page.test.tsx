@@ -9,11 +9,13 @@ import { LOCATION_TEST_ID, renderApp } from '../test/render_app';
 vi.mock('../services/page_location', () => ({ moveTo: vi.fn() }));
 
 const NOT_CONNECTED_ANSWER = { body: { isConnected: false, workspaceName: null } };
+const DRIVE_NOT_CONNECTED_ANSWER = { body: { isConnected: false, email: null, folderId: null } };
 
 const openSettings = (route = {}, path = '/settings') => {
   const api = mockApi({
     'POST /Update_Collections': { status: 204 },
     'GET /api/GetNotionConnection': NOT_CONNECTED_ANSWER,
+    'GET /api/GetGoogleDriveConnection': DRIVE_NOT_CONNECTED_ANSWER,
     ...route,
   });
   renderApp(path);
@@ -23,9 +25,13 @@ const openSettings = (route = {}, path = '/settings') => {
 
 const button = (name: string) => screen.getByRole('button', { name });
 
-// Since 6b the page reads the Notion state when it opens (6b E3); "no call" means no other call.
-const callsBesidesNotionState = (api: ApiMock) =>
-  api.calls.filter((call) => !call.path.endsWith('/GetNotionConnection'));
+// Each source of the Requests toggle is a group named after it, so a test reads one source's row.
+const rowOf = (source: string) => screen.getByRole('group', { name: source });
+
+// Since 6b the page reads the Notion state, since 6c the Google Drive state, when it opens; "no call" means no other.
+const CONNECTION_STATE_CALLS = ['/GetNotionConnection', '/GetGoogleDriveConnection'];
+const callsBesidesConnectionStates = (api: ApiMock) =>
+  api.calls.filter((call) => !CONNECTION_STATE_CALLS.some((path) => call.path.endsWith(path)));
 
 const stubNotification = (permission: NotificationPermission, answer: NotificationPermission = permission) => {
   const requestPermission = vi.fn(async () => answer);
@@ -88,7 +94,7 @@ test('P1 the page shows its title and link without a call', () => {
 
   expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
   expect(button('Update embeddings')).toBeInTheDocument();
-  expect(callsBesidesNotionState(api)).toHaveLength(0);
+  expect(callsBesidesConnectionStates(api)).toHaveLength(0);
 });
 
 test('P2 the info button shows its tooltip on hover and focus', () => {
@@ -106,7 +112,7 @@ test('P3 the link asks "Are you sure?" without a call', () => {
 
   expect(screen.getByRole('dialog', { name: 'Are you sure?' })).toBeInTheDocument();
   expect(button('Yes')).toBeInTheDocument();
-  expect(callsBesidesNotionState(api)).toHaveLength(0);
+  expect(callsBesidesConnectionStates(api)).toHaveLength(0);
 });
 
 test('P4 Yes calls Update_Collections once, P6 even when clicked twice, P5 then shows the result', async () => {
@@ -206,7 +212,7 @@ test('I1 opening the Settings page asks nothing and calls no push API', async ()
   expect(requestPermission).not.toHaveBeenCalled();
   expect(pushManager.getSubscription).not.toHaveBeenCalled();
   expect(pushManager.subscribe).not.toHaveBeenCalled();
-  expect(callsBesidesNotionState(api)).toHaveLength(0);
+  expect(callsBesidesConnectionStates(api)).toHaveLength(0);
 });
 
 test('I2 "Enable notifications" asks the browser for permission', async () => {
@@ -654,7 +660,7 @@ test.each([
 ])('6b %s isConnected %s with workspace %s reads "%s"', async (_, isConnected, workspaceName, text) => {
   openRequests(notionAnswer(isConnected, workspaceName));
 
-  expect(await screen.findByText(text)).toBeInTheDocument();
+  expect(await within(rowOf('Notion')).findByText(text)).toBeInTheDocument();
 });
 
 const NOTION_CONNECT_URL = `${API_URL}/api/NotionConnect`;
@@ -670,7 +676,7 @@ test.each([
   ['E10 when GetNotionConnection fails', 'Not connected', { 'GET /api/GetNotionConnection': networkFailure }],
 ])('6b %s the row reads "%s" and the Notion button moves the browser to the API sign-in start', async (_, text, route) => {
   openRequests(route);
-  expect(await screen.findByText(text)).toBeInTheDocument();
+  expect(await within(rowOf('Notion')).findByText(text)).toBeInTheDocument();
 
   clickConnect();
 
@@ -681,7 +687,7 @@ test('6b E4-E6 while GetNotionConnection is pending the row shows no state, so a
   const pending = deferred();
   openRequests({ 'GET /api/GetNotionConnection': () => pending.promise });
 
-  expect(screen.queryByText('Not connected')).not.toBeInTheDocument();
+  expect(within(rowOf('Notion')).queryByText('Not connected')).not.toBeInTheDocument();
   await act(async () => pending.resolve({ body: { isConnected: true, workspaceName: 'Study Notes' } }));
 
   expect(screen.getByText('Connected: Study Notes')).toBeInTheDocument();
@@ -707,7 +713,7 @@ test('6b E12 ?notion=failed opens the Requests toggle with the alert "Notion cou
 
   expect(requestsToggle()).toHaveAttribute('aria-expanded', 'true');
   expect(screen.getByRole('alert')).toHaveTextContent('Notion could not be connected.');
-  expect(await screen.findByText('Not connected')).toBeInTheDocument();
+  expect(await within(rowOf('Notion')).findByText('Not connected')).toBeInTheDocument();
 });
 
 test('6b E11 ?notion=connected shows no alert', async () => {
@@ -745,7 +751,7 @@ test('6b F1 an i button named "About Notion" is at the right of the Notion butto
   const notion = button(CONNECT_NOTION);
   const about = button(ABOUT_NOTION);
   expect(notion.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(notion.closest('.notion-connect__row')).toContainElement(about);
+  expect(notion.closest('.request-row__row')).toContainElement(about);
   expect(about.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
 });
 
@@ -834,6 +840,308 @@ test('P2 the "Update embeddings" tip keeps ending at its i button', () => {
   fireEvent.focus(button('About updating embeddings'));
 
   expect(screen.getByRole('tooltip')).not.toHaveClass('tooltip__text--start');
+});
+
+// Phase 6c sections E to G: the Google Drive row, the folder pop-up and its i tooltip.
+const CONNECT_DRIVE = 'Connect Google Drive';
+const DRIVE = 'Google Drive';
+const EMAIL = 'learner@example.com';
+const FOLDER_ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz-_0123';
+const OTHER_FOLDER_ID = '0BzOtherFolder_Id-42';
+const folderAddress = (folderId: string) => `https://drive.google.com/drive/folders/${folderId}`;
+const DRIVE_CONNECT_URL = `${API_URL}/api/GoogleDriveConnect`;
+
+const driveAnswer = (isConnected: boolean, email: string | null = null, folderId: string | null = null) => ({
+  'GET /api/GetGoogleDriveConnection': { body: { isConnected, email, folderId } },
+});
+
+const driveRow = () => rowOf(DRIVE);
+
+test('6c E1 the Google Drive row is under the Notion row, its button shows the text "Google Drive" at the right of its logo', () => {
+  openRequests();
+
+  expect(rowOf('Notion').compareDocumentPosition(driveRow()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const drive = within(driveRow()).getByRole('button', { name: CONNECT_DRIVE });
+  const label = within(drive).getByText(DRIVE);
+  expect(drive.querySelector('svg')!.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(drive).toHaveAccessibleName(expect.stringContaining(DRIVE));
+});
+
+test('6c E2 the Google Drive button draws the inline Google Drive logo hidden from screen readers', () => {
+  openRequests();
+
+  const logo = button(CONNECT_DRIVE).querySelector('svg');
+  expect(logo).toHaveClass('google-drive-logo');
+  expect(logo?.querySelector('path')).not.toBeNull();
+  expect(logo).toHaveAttribute('aria-hidden', 'true');
+});
+
+test('6c E3 opening the Settings page calls GetGoogleDriveConnection once', async () => {
+  const api = openSettings();
+
+  await act(async () => Promise.resolve());
+
+  const calls = api.callsTo('GetGoogleDriveConnection');
+  expect(calls).toHaveLength(1);
+  expect(calls[0].method).toBe('GET');
+  expect(calls[0].url.origin).toBe(API_URL);
+});
+
+test.each([
+  ['E4', driveAnswer(false), 'Not connected'],
+  ['E5', driveAnswer(true, EMAIL), `Connected: ${EMAIL}`],
+  ['E5 without an email', driveAnswer(true), 'Connected'],
+  ['E6 when GetGoogleDriveConnection fails', { 'GET /api/GetGoogleDriveConnection': networkFailure }, 'Not connected'],
+])('6c %s the Google Drive row reads "%s"', async (_, route, text) => {
+  openRequests(route);
+
+  expect(await within(driveRow()).findByText(text)).toBeInTheDocument();
+});
+
+test('6c E4 not connected, the row has no "Choose folder" button and no folder line', async () => {
+  openRequests(driveAnswer(false));
+  await within(driveRow()).findByText('Not connected');
+
+  expect(within(driveRow()).queryByRole('button', { name: 'Choose folder' })).not.toBeInTheDocument();
+  expect(within(driveRow()).queryByText('No folder chosen')).not.toBeInTheDocument();
+});
+
+test('6c E6 while GetGoogleDriveConnection is pending the row shows no state', async () => {
+  const pending = deferred();
+  openRequests({ 'GET /api/GetGoogleDriveConnection': () => pending.promise });
+
+  expect(within(driveRow()).queryByRole('status')).not.toBeInTheDocument();
+  await act(async () => pending.resolve(driveAnswer(true, EMAIL)['GET /api/GetGoogleDriveConnection']));
+
+  expect(within(driveRow()).getByText(`Connected: ${EMAIL}`)).toBeInTheDocument();
+});
+
+test.each([
+  ['E7', driveAnswer(false), 'Not connected'],
+  ['E7 (reconnect)', driveAnswer(true, EMAIL, FOLDER_ID), `Connected: ${EMAIL}`],
+  ['E6 after a failed read', { 'GET /api/GetGoogleDriveConnection': networkFailure }, 'Not connected'],
+])('6c %s the row reads "%s" and the Google Drive button moves the browser to the API sign-in start', async (_, route, text) => {
+  openRequests(route);
+  await within(driveRow()).findByText(text);
+  vi.mocked(moveTo).mockClear();
+
+  fireEvent.click(button(CONNECT_DRIVE));
+
+  expect(moveTo).toHaveBeenCalledExactlyOnceWith(DRIVE_CONNECT_URL);
+});
+
+test('6c E8 connected without a folder, the row says "No folder chosen" and has a "Choose folder" button', async () => {
+  openRequests(driveAnswer(true, EMAIL));
+
+  expect(await within(driveRow()).findByText('No folder chosen')).toBeInTheDocument();
+  expect(within(driveRow()).getByRole('button', { name: 'Choose folder' })).toBeInTheDocument();
+  expect(within(driveRow()).queryByRole('link')).not.toBeInTheDocument();
+});
+
+test('6c E9 with a folder, the row says "Folder chosen" with a link that opens the folder in Drive in a new tab', async () => {
+  openRequests(driveAnswer(true, EMAIL, FOLDER_ID));
+
+  expect(await within(driveRow()).findByText('Folder chosen')).toBeInTheDocument();
+  const link = within(driveRow()).getByRole('link', { name: 'Open in Drive' });
+  expect(link).toHaveAttribute('href', folderAddress(FOLDER_ID));
+  expect(link).toHaveAttribute('target', '_blank');
+  expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  expect(within(driveRow()).getByRole('button', { name: 'Choose folder' })).toBeInTheDocument();
+});
+
+test('6c E10 ?drive=failed opens the Requests toggle with the alert "Google Drive could not be connected." and starts no build', async () => {
+  const api = openSettings({}, '/settings?drive=failed');
+
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'true');
+  expect(within(driveRow()).getByRole('alert')).toHaveTextContent('Google Drive could not be connected.');
+  await waitFor(() => expect(screen.getByTestId(LOCATION_TEST_ID)).toHaveTextContent(/^\/settings$/));
+  expect(api.callsTo('Update_Collections')).toHaveLength(0);
+});
+
+test('6c E10 ?drive=connected opens the Requests toggle without an alert and is removed from the address', async () => {
+  openSettings(driveAnswer(true, EMAIL), '/settings?drive=connected');
+
+  expect(requestsToggle()).toHaveAttribute('aria-expanded', 'true');
+  expect(await within(driveRow()).findByText(`Connected: ${EMAIL}`)).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByTestId(LOCATION_TEST_ID)).toHaveTextContent(/^\/settings$/));
+});
+
+test.each([
+  ['notion', 'Notion', DRIVE],
+  ['drive', DRIVE, 'Notion'],
+])('6c E11 ?%s=failed shows the alert only in the %s row', (parameter, failedSource, otherSource) => {
+  openSettings({}, `/settings?${parameter}=failed`);
+
+  expect(within(rowOf(failedSource)).getByRole('alert')).toBeInTheDocument();
+  expect(within(rowOf(otherSource)).queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('6c E12 the Google Drive row has no Disconnect button', async () => {
+  openRequests(driveAnswer(true, EMAIL, FOLDER_ID));
+  await within(driveRow()).findByText('Folder chosen');
+
+  expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
+});
+
+const openFolderDialog = async (route = {}) => {
+  const api = openRequests({ ...driveAnswer(true, EMAIL), ...route });
+  fireEvent.click(await within(driveRow()).findByRole('button', { name: 'Choose folder' }));
+
+  return api;
+};
+
+const folderDialog = () => screen.getByRole('dialog', { name: 'Choose folder' });
+const folderBox = () => within(folderDialog()).getByRole('textbox', { name: 'Folder link' });
+const saveButton = () => within(folderDialog()).getByRole('button', { name: 'Save' });
+const typeLink = (text: string) => fireEvent.change(folderBox(), { target: { value: text } });
+const SAVE_ROUTE = 'POST /api/UpdateGoogleDriveFolder';
+
+test('6c F1 "Choose folder" opens the pop-up "Choose folder" with the box "Folder link" and a Save button with a save icon', async () => {
+  await openFolderDialog();
+
+  expect(folderBox()).toHaveValue('');
+  expect(saveButton().querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  expect(within(saveButton()).getByText('Save')).toBeInTheDocument();
+});
+
+test('6c F2 with a saved folder, the box starts with the folder\'s link', async () => {
+  openRequests(driveAnswer(true, EMAIL, FOLDER_ID));
+  fireEvent.click(await within(driveRow()).findByRole('button', { name: 'Choose folder' }));
+
+  expect(folderBox()).toHaveValue(folderAddress(FOLDER_ID));
+});
+
+test('6c F3 Save calls UpdateGoogleDriveFolder once with the link and is disabled while it waits', async () => {
+  const pending = deferred();
+  const api = await openFolderDialog({ [SAVE_ROUTE]: () => pending.promise });
+  typeLink(folderAddress(OTHER_FOLDER_ID));
+
+  fireEvent.click(saveButton());
+  fireEvent.click(saveButton());
+
+  expect(saveButton()).toBeDisabled();
+  const calls = api.callsTo('UpdateGoogleDriveFolder');
+  expect(calls).toHaveLength(1);
+  expect(calls[0].body).toEqual({ folderLink: folderAddress(OTHER_FOLDER_ID) });
+  await act(async () => pending.resolve({ body: { folderId: OTHER_FOLDER_ID } }));
+});
+
+test('6c F4 a saved folder closes the pop-up and the row shows "Folder chosen" with the new folder\'s link', async () => {
+  await openFolderDialog({ [SAVE_ROUTE]: { body: { folderId: OTHER_FOLDER_ID } } });
+  typeLink(folderAddress(OTHER_FOLDER_ID));
+
+  await act(async () => fireEvent.click(saveButton()));
+
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(within(driveRow()).getByText('Folder chosen')).toBeInTheDocument();
+  expect(within(driveRow()).getByRole('link', { name: 'Open in Drive' })).toHaveAttribute('href', folderAddress(OTHER_FOLDER_ID));
+});
+
+test.each([
+  ['F5 a 400', problem(400, 'This is not a Google Drive folder link.'), 'This is not a Google Drive folder link.'],
+  ['F5 a 400 with another detail', problem(400, 'Bad request'), 'This is not a Google Drive folder link.'],
+  ['F6 a 409', problem(409, 'Connect Google Drive before choosing a folder.'), 'The folder could not be saved.'],
+  ['F6 a 500', problem(500, 'Server error'), 'The folder could not be saved.'],
+  ['F6 no answer', networkFailure, 'The folder could not be saved.'],
+])('6c %s keeps the pop-up open with the alert "%s" and the row unchanged', async (_, answer, text) => {
+  await openFolderDialog({ [SAVE_ROUTE]: answer });
+  typeLink('https://example.com/not-a-folder');
+
+  await act(async () => fireEvent.click(saveButton()));
+
+  expect(within(folderDialog()).getByRole('alert')).toHaveTextContent(text);
+  expect(saveButton()).toBeEnabled();
+  expect(within(driveRow()).getByText('No folder chosen')).toBeInTheDocument();
+});
+
+test('6c F5 a refused save does not show its alert again when the pop-up is opened again', async () => {
+  await openFolderDialog({ [SAVE_ROUTE]: problem(400, 'This is not a Google Drive folder link.') });
+  typeLink('https://example.com/not-a-folder');
+  await act(async () => fireEvent.click(saveButton()));
+  fireEvent.click(within(folderDialog()).getByRole('button', { name: 'Close dialog' }));
+
+  fireEvent.click(within(driveRow()).getByRole('button', { name: 'Choose folder' }));
+
+  expect(within(folderDialog()).queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test.each(['', '   '])('6c F7 Save is disabled while the box holds only "%s"', async (text) => {
+  await openFolderDialog();
+
+  typeLink(text);
+
+  expect(saveButton()).toBeDisabled();
+});
+
+test.each([
+  ['Escape', () => fireEvent.keyDown(document, { key: 'Escape' })],
+  ['the X button', () => fireEvent.click(within(folderDialog()).getByRole('button', { name: 'Close dialog' }))],
+  ['the backdrop', () => fireEvent.click(document.querySelector('.dialog__backdrop')!)],
+])('6c F8 %s closes the pop-up and saves nothing', async (_, close) => {
+  const api = await openFolderDialog();
+  typeLink(folderAddress(OTHER_FOLDER_ID));
+
+  close();
+
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(api.callsTo('UpdateGoogleDriveFolder')).toHaveLength(0);
+  expect(within(driveRow()).getByText('No folder chosen')).toBeInTheDocument();
+});
+
+test('6c F9 Enter in the box saves like Save', async () => {
+  const api = await openFolderDialog({ [SAVE_ROUTE]: { body: { folderId: FOLDER_ID } } });
+  typeLink(FOLDER_ID);
+
+  await act(async () => fireEvent.submit(folderBox()));
+
+  expect(api.callsTo('UpdateGoogleDriveFolder')).toHaveLength(1);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+test('6c F9 Enter on an empty box saves nothing', async () => {
+  const api = await openFolderDialog();
+
+  fireEvent.submit(folderBox());
+
+  expect(api.callsTo('UpdateGoogleDriveFolder')).toHaveLength(0);
+  expect(folderDialog()).toBeInTheDocument();
+});
+
+const ABOUT_DRIVE = 'About Google Drive';
+const DRIVE_TIP = 'Connect Google Drive images';
+
+test('6c G1 an i button named "About Google Drive" is at the right of the Google Drive button, in the same row', () => {
+  openRequests();
+
+  const drive = button(CONNECT_DRIVE);
+  const about = button(ABOUT_DRIVE);
+  expect(drive.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(drive.closest('.request-row__row')).toContainElement(about);
+});
+
+test.each([
+  ['hovered', fireEvent.mouseEnter],
+  ['focused', fireEvent.focus],
+  ['tapped', tap],
+])('6c G2 the i button %s shows "Connect Google Drive images" opening to the right', (_, show) => {
+  openRequests();
+
+  show(button(ABOUT_DRIVE));
+
+  const tip = screen.getByRole('tooltip');
+  expect(tip).toHaveTextContent(DRIVE_TIP);
+  expect(tip).toHaveClass('tooltip__text--start');
+  expect(button(ABOUT_DRIVE)).toHaveAttribute('aria-describedby', tip.id);
+});
+
+test('6c G2 a second tap on the Google Drive i button hides the tip', () => {
+  openRequests();
+
+  tap(button(ABOUT_DRIVE));
+  tap(button(ABOUT_DRIVE));
+
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
 });
 
 const TMDB_NOTICE = 'This product uses the TMDB API but is not endorsed or certified by TMDB.';

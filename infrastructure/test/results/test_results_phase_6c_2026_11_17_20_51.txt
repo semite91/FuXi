@@ -1,0 +1,128 @@
+FuXi - Phase 6c - Google Drive (Google Drive button, OAuth sign-in, folder link, refresh token in the Settings table)
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_17_19_42.txt (confirmed by the Learner, 2026-11-17)
+Run: 2026-11-17 20:51 UTC, branch claude/phase-6c-google-drive, base commit 573ef17 (work not yet committed)
+
+Totals (related tests only, the Learner's rule of 2026-11-16)
+- Backend (dotnet test, run from /backend): Api.Notion, Api.GoogleDrive and RouteTests: 116 passed (about 5.5 minutes).
+  The fake Notion and Google servers answer every call; no test reaches Notion or Google.
+  The shared sign-in refactor ran first against the unchanged Phase 6b tests: 56 passed.
+- RAG engine (pytest, run from /rag, test_live.py left out): test_google_drive_resource.py, test_settings.py,
+  test_settings_store.py, test_notion_resource.py, test_embedding_pipeline.py, test_engine.py, test_llm_client.py:
+  275 passed. test_settings_store.py uses the .env.test database.
+- Frontend (vitest, run from /wwwroot): settings_page.test.tsx 120 passed; flashcard_page.test.tsx, app.test.tsx,
+  main.test.tsx and the service tests: 6 files, 80 passed. "npx tsc --noEmit": exit 0. There is no lint script.
+  One run of those 6 files had "5a I2" time out at 5 s while the files ran in parallel; it passed alone (17 of 17) and
+  in the next run of all 6 files.
+- Mutation checks (TDD skill's mutate.sh):
+  - RAG engine: 10 of 10 failed a test (refresh timing, invalid_grant, Drive 401, no folder, bad folder ID, trashed
+    folder, a folder in two places, the path, empty Settings values, the renew margin).
+  - Frontend: 13 mutations, 10 failed a test at first. Two survivors were the trim of the folder link: a url box strips
+    the spaces around its value itself, so no input reaches the trim; the trim was removed. The third (an old save
+    error shown again when the pop-up reopens) got the test "6c F5 a refused save does not show its alert again ..."
+    and then failed it.
+  - Backend: NOT RUN yet. One backend run takes about 2 to 5 minutes, so a mutation batch would take long; it waits for
+    the Learner's go-ahead.
+- Scenarios: 78. PASS 73. NOT RUN 5 (I1 to I5: need the Google Cloud OAuth client and the Learner's go-ahead).
+
+Status words: PASS, NOT RUN. FE scenarios are proven by wwwroot tests named "6c <id>"; BE scenarios by
+backend/fuxi_api_tests/api/google_drive; PY scenarios by the rag/tests files named above.
+
+A. SIGN-IN START (GET /api/GoogleDriveConnect)
+A1-A2 PASS   GoogleDriveConnectTests: 302 to https://accounts.google.com/o/oauth2/v2/auth with client_id,
+             response_type=code, redirect_uri, scope drive.readonly, access_type=offline, prompt=consent and state;
+             two calls get two different states.
+A3  PASS     GoogleDriveCallbackTests with FakeTimeProvider: accepted at 9:59, refused at 10:00.
+A4  PASS     A Notion state is refused by GoogleDriveCallback and a Google Drive state by NotionCallback
+             (OAuthStateStore keeps the source with each state).
+A5  PASS     An empty Google key logs one error naming the key and "Google Drive"; connect and callback answer
+             ?drive=failed without a Google call; Notion still starts its sign-in.
+
+B. SIGN-IN CALLBACK (GET /api/GoogleDriveCallback)
+B1  PASS     The code goes to https://oauth2.googleapis.com/token as a form with grant_type, code, redirect_uri,
+             client_id and client_secret.
+B2  PASS     Drive's about call (fields=user(emailAddress)) is sent with "Bearer <access token>".
+B3  PASS     GoogleDriveRefreshToken and GoogleDriveEmail are saved and the answer is ?drive=connected; a PostgreSQL
+             trigger that fails the email insert leaves no row (one SaveChanges).
+B4-B5 PASS   The same email updates the rows in place and keeps the folder; another email empties GoogleDriveFolderId.
+B6-B7 PASS   Unknown, expired, missing or used state, and error=access_denied (also with a code): no call, no row.
+B8  PASS     An error status, a missing or empty access or refresh token, no scope, a scope without drive.readonly
+             (also drive.readonly.metadata), or no network: no row, ?drive=failed. drive.readonly among other scopes
+             is accepted.
+B9  PASS     A failed about call (401, no email, unreadable answer, timeout): no row, ?drive=failed.
+B10 PASS     Each failure logs one error with the status or error type and no code, token or secret.
+
+C. CONNECTION STATE AND FOLDER
+C1-C3 PASS   GoogleDriveConnectionTests: no or empty refresh token answers not connected with nulls; email and folderId
+             are given, empty ones as null; the answer has only isConnected, email and folderId.
+C4-C5 PASS   Folder links with ?usp=sharing, /u/0/, /u/1/ and a closing slash, spaces around them, and a bare ID are
+             saved as the ID and answered as { folderId }.
+C6  PASS     Empty, spaces only, a file link, another site, http, no ID, an ID with spaces or "/../" and no folderLink
+             at all answer 400 "This is not a Google Drive folder link." and change nothing.
+C7-C8 PASS   Not connected answers 409; a second folder updates the row in place.
+
+D. RAG ENGINE READS THE FOLDER WITH A FRESH TOKEN
+D1  PASS     The engine posts grant_type=refresh_token with the refresh token, client ID and secret, and uses the access
+             token for every Drive call; it asks again only within 60 s of the token's end; the call counts in the
+             summary; the rows are read at each build.
+D2  PASS     The token stays in memory; settings_store reads with one SELECT on a read-only connection.
+D3-D5 PASS   No refresh token: "not connected", no folder: "no folder chosen", both a ResourceSkipped, so the build
+             is complete (the Phase 6b pipeline tests).
+D6  PASS     invalid_grant (400 or 401) fails with "Google Drive token rejected: connect Google Drive again on the
+             Settings page". Another token error (invalid_client) or no network after the retries fails with
+             "Google's token request failed: status 401" or the error type, never the secret; the Drive call that
+             needed the token does not try the token request again.
+D7  PASS     Drive 401 on the folder lookup, a listing or a download fails like D6.
+D8  PASS     A missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET fails naming only the key.
+D9  PASS     The folder tree is read breadth first (Photos over two pages, Paris, Paris / Night); choosing Paris leaves
+             out the images of Photos; a folder in two places is listed once.
+D10 PASS     Paths: "Photos", "Photos / Paris", "Photos / Paris / Night"; choosing Paris gives "Paris / Night".
+D11 PASS     404, a permission 403, a file, a trashed folder or an ID that is not a Drive ID (never sent in a query)
+             fails with "Google Drive folder not found: choose the folder again on the Settings page"; a rate-limit
+             403 on the lookup is tried again.
+D12 PASS     The listing asks for "'<id>' in parents and trashed = false and (images or folders)".
+D13 PASS     Thumbnails, the 512 px JPEG, transparency, skipped files, dates, retries, rate limits, parallel downloads
+             and the summary line pass with the folder read.
+D14 PASS     settings.py has no RAG_GOOGLE_SERVICE_ACCOUNT_FILE and no service account code; google-auth is no longer
+             a direct dependency in requirements.in (requirements.txt keeps it: google-genai requires it).
+D15 PASS     An unreachable database fails Google Drive with the error type only (test_settings_store.py).
+
+E. SETTINGS PAGE - GOOGLE DRIVE ROW
+E1-E12 PASS  settings_page.test.tsx "6c E1" to "6c E12". Each source is a group named after it; the 6b tests that read
+             "Not connected" now read it inside the Notion row, since both rows can show it.
+
+F. SETTINGS PAGE - FOLDER POP-UP
+F1-F9 PASS   "6c F1" to "6c F9".
+
+G. SETTINGS PAGE - THE i TOOLTIP
+G1-G2 PASS   "6c G1" and "6c G2" (hover, focus, tap, second tap, placement start).
+
+H. SHARED SIGN-IN CODE, DOCUMENTATION AND STRUCTURE
+H1  PASS     The 56 Phase 6b tests passed after the move to OAuthStateStore, OAuthSettings, SignInResultAddress and
+             SettingRows, and again with Google Drive added.
+H2  PASS     backend/fuxi_api/api/oauth holds the state store, the .env key check, the result address and the row save;
+             NotionService and GoogleDriveService use them. setup_environment.sh has one ensure_sign_in_keys for both
+             (run on a scratch env file: defaults added, an existing value kept, no duplicates on a second run).
+H3  PASS     .env.example and .env.test.example have the three Google keys and no RAG_GOOGLE_SERVICE_ACCOUNT_FILE;
+             setup_environment.sh adds them and no longer adds the old key or rag/secrets.
+H4  PASS     project.md: the Google Drive resource, the Settings row, the pop-up and the tooltip, the four endpoints,
+             the six Settings codes.
+H5  PASS     The client secret is read only from .env, never logged; GoogleDriveRows, GoogleClient, DriveConnection and
+             Settings hide the secret and the refresh token when printed.
+H6  PASS     request_row.less and link_dialog.less use tokens; texts are in texts.ts (CONNECTION_TEXTS shared by both
+             rows); the calls are in google_drive_service.ts.
+H7  PASS     The Learner approved request_row/ (renamed from notion_connect/) and link_dialog/ before they were made.
+H8  PASS     FakeGoogleServer (backend) and FakeDriveApi with the token route (RAG); no test reaches Google.
+
+I. LIVE CHECKS
+I1-I5 NOT RUN Waiting for the Google Cloud OAuth client (#47) and the Learner's go-ahead.
+
+J. OUT OF SCOPE CHECKS
+J1  PASS     The Requests toggle holds the Notion and Google Drive rows only.
+J2  PASS     Letterboxd - TMDB and Spotify still read their .env keys.
+J3  PASS     The Settings table has no UserId column; the tokens are plain text.
+J4  PASS     Nothing asks for verification; the scenarios and the docs keep the app in Testing.
+
+Notes
+- The Google Drive logo path is simple-icons 13.0.0 (CC0), compared byte for byte with the file on jsdelivr. The logo is
+  a Google trademark; it is used only to name the Connect button.
+- rag/secrets/ stays git-ignored, since the old service account key may still be there; the Learner deletes it.

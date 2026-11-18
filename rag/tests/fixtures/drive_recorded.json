@@ -1,68 +1,103 @@
 {
-  "_comment": "Recorded examples of Google Drive API v3 answers, trimmed and anonymised for tests. Image bytes are made by the tests with Pillow.",
-  "files_list": {
-    "start": {
-      "nextPageToken": "page-token-2",
-      "files": [
-        {
-          "id": "1dRvImgParisRain0000000000000001",
-          "name": "paris_rain.jpg",
-          "mimeType": "image/jpeg",
-          "parents": ["1dRvFolderPhotos00000000000000a"],
-          "createdTime": "2026-09-20T07:12:31.000Z",
-          "thumbnailLink": "https://lh3.googleusercontent.com/drive-storage/AJQWtBN1parisrainthumb0001=s220",
-          "imageMediaMetadata": {
-            "time": "2026:09:14 18:42:10"
-          }
-        },
-        {
-          "id": "1dRvImgUmbrella00000000000000002",
-          "name": "umbrella.png",
-          "mimeType": "image/png",
-          "parents": ["1dRvFolderParis000000000000000b"],
-          "createdTime": "2026-09-21T10:05:00.000Z",
-          "thumbnailLink": "https://lh3.googleusercontent.com/drive-storage/AJQWtBN1umbrellathumb00002=s220",
-          "imageMediaMetadata": {}
-        }
-      ]
-    },
-    "page-token-2": {
-      "files": [
-        {
-          "id": "1dRvImgCafe000000000000000000003",
-          "name": "cafe.heic",
-          "mimeType": "image/heic",
-          "parents": ["1dRvFolderParis000000000000000b"],
-          "createdTime": "2026-09-22T16:40:12.000Z",
-          "thumbnailLink": "https://lh3.googleusercontent.com/drive-storage/AJQWtBN1cafethumb000000003=s220",
-          "imageMediaMetadata": {
-            "time": "2026:09:15 09:01:55"
-          }
-        },
-        {
-          "id": "1dRvImgSketch00000000000000000004",
-          "name": "sketch.gif",
-          "mimeType": "image/gif",
-          "parents": ["1dRvFolderPhotos00000000000000a"],
-          "createdTime": "2026-10-02T12:00:00.000Z"
-        }
-      ]
-    }
+  "_comment": "Recorded examples of Google Drive API v3 and Google token answers, trimmed and anonymised for tests. children holds files.list pages by parent folder and page token. Image bytes are made by the tests with Pillow.",
+  "token": {
+    "access_token": "test-access-token",
+    "expires_in": 3599,
+    "scope": "https://www.googleapis.com/auth/drive.readonly",
+    "token_type": "Bearer"
   },
-  "empty_list": {
-    "files": []
+  "invalid_grant": {
+    "error": "invalid_grant",
+    "error_description": "Token has been expired or revoked."
   },
   "folders": {
     "1dRvFolderPhotos00000000000000a": {
       "id": "1dRvFolderPhotos00000000000000a",
       "name": "Photos",
-      "parents": ["0AOwnerMyDriveRoot00000000000000"]
+      "mimeType": "application/vnd.google-apps.folder"
     },
     "1dRvFolderParis000000000000000b": {
       "id": "1dRvFolderParis000000000000000b",
       "name": "Paris",
-      "parents": ["1dRvFolderPhotos00000000000000a"]
+      "mimeType": "application/vnd.google-apps.folder"
+    },
+    "1dRvFolderNight000000000000000c": {
+      "id": "1dRvFolderNight000000000000000c",
+      "name": "Night",
+      "mimeType": "application/vnd.google-apps.folder"
     }
+  },
+  "children": {
+    "1dRvFolderPhotos00000000000000a": {
+      "start": {
+        "nextPageToken": "page-token-2",
+        "files": [
+          {
+            "id": "1dRvImgParisRain0000000000000001",
+            "name": "paris_rain.jpg",
+            "mimeType": "image/jpeg",
+            "createdTime": "2026-09-20T07:12:31.000Z",
+            "thumbnailLink": "https://lh3.googleusercontent.com/drive-storage/AJQWtBN1parisrainthumb0001=s220",
+            "imageMediaMetadata": {
+              "time": "2026:09:14 18:42:10"
+            }
+          },
+          {
+            "id": "1dRvFolderParis000000000000000b",
+            "name": "Paris",
+            "mimeType": "application/vnd.google-apps.folder"
+          }
+        ]
+      },
+      "page-token-2": {
+        "files": [
+          {
+            "id": "1dRvImgSketch00000000000000000004",
+            "name": "sketch.gif",
+            "mimeType": "image/gif",
+            "createdTime": "2026-10-02T12:00:00.000Z"
+          }
+        ]
+      }
+    },
+    "1dRvFolderParis000000000000000b": {
+      "start": {
+        "files": [
+          {
+            "id": "1dRvImgUmbrella00000000000000002",
+            "name": "umbrella.png",
+            "mimeType": "image/png",
+            "createdTime": "2026-09-21T10:05:00.000Z",
+            "thumbnailLink": "https://lh3.googleusercontent.com/drive-storage/AJQWtBN1umbrellathumb00002=s220",
+            "imageMediaMetadata": {}
+          },
+          {
+            "id": "1dRvFolderNight000000000000000c",
+            "name": "Night",
+            "mimeType": "application/vnd.google-apps.folder"
+          }
+        ]
+      }
+    },
+    "1dRvFolderNight000000000000000c": {
+      "start": {
+        "files": [
+          {
+            "id": "1dRvImgCafe000000000000000000003",
+            "name": "cafe.heic",
+            "mimeType": "image/heic",
+            "createdTime": "2026-09-22T16:40:12.000Z",
+            "thumbnailLink": "https://lh3.googleusercontent.com/drive-storage/AJQWtBN1cafethumb000000003=s220",
+            "imageMediaMetadata": {
+              "time": "2026:09:15 09:01:55"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "empty_list": {
+    "files": []
   },
   "rate_limited_403": {
     "error": {

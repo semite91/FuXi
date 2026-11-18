@@ -20,6 +20,12 @@ public sealed record NowApiSettings
 
     public string? NotionRedirectUri { get; init; }
 
+    public string? GoogleClientId { get; init; }
+
+    public string? GoogleClientSecret { get; init; }
+
+    public string? GoogleRedirectUri { get; init; }
+
     public string? AppUrl { get; init; }
 
     /// <summary>False keeps the API's own TimeProvider and INotificationTimer.</summary>

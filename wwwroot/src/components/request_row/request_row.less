@@ -1,19 +1,19 @@
 @import (reference) '../../css/tokens.less';
 
-.notion-connect {
+.request-row {
   padding: 0 @space-xsmall;
   display: flex;
   flex-direction: column;
   gap: @space-small;
 }
 
-.notion-connect__row {
+.request-row__row {
   display: flex;
   align-items: center;
   gap: @space-small;
 }
 
-.notion-connect__button {
+.request-row__button {
   .control-reset();
   .focus-ring();
   min-width: @size-control;
@@ -34,12 +34,33 @@
   }
 }
 
-.notion-connect__text {
+.request-row__text {
   font-size: var(--font-size-text);
   font-weight: @font-weight-medium;
 }
 
-.notion-connect__state {
+// A line a source adds under its state, such as the chosen folder; its link is underlined so it reads as a link.
+.request-row__detail {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: @space-xsmall;
+  font-size: var(--font-size-text);
+  color: var(--color-text-muted);
+
+  a {
+    color: var(--color-accent);
+    text-decoration: underline;
+  }
+}
+
+// A button a source adds under its state, such as "Choose folder".
+.request-row__action {
+  .secondary-button();
+  align-self: flex-start;
+}
+
+.request-row__state {
   margin: 0;
   font-size: var(--font-size-text);
   font-weight: @font-weight-medium;

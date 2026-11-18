@@ -1,4 +1,5 @@
 using FuXi.Api.Database;
+using FuXi.Api.GoogleDrive;
 using FuXi.Api.Notion;
 using FuXi.Api.Push;
 
@@ -34,6 +35,9 @@ public sealed class NowApi(NowApiSettings? settings = null) : IDisposable
         NotionSettings.CLIENT_SECRET_KEY,
         NotionSettings.REDIRECT_URI_KEY,
         NotionSettings.APP_URL_KEY,
+        GoogleDriveSettings.CLIENT_ID_KEY,
+        GoogleDriveSettings.CLIENT_SECRET_KEY,
+        GoogleDriveSettings.REDIRECT_URI_KEY,
     ];
 
     private readonly NowApiSettings settings = settings ?? new NowApiSettings();
@@ -107,5 +111,8 @@ public sealed class NowApi(NowApiSettings? settings = null) : IDisposable
         [NotionSettings.CLIENT_SECRET_KEY] = settings.NotionClientSecret,
         [NotionSettings.REDIRECT_URI_KEY] = settings.NotionRedirectUri,
         [NotionSettings.APP_URL_KEY] = settings.AppUrl,
+        [GoogleDriveSettings.CLIENT_ID_KEY] = settings.GoogleClientId,
+        [GoogleDriveSettings.CLIENT_SECRET_KEY] = settings.GoogleClientSecret,
+        [GoogleDriveSettings.REDIRECT_URI_KEY] = settings.GoogleRedirectUri,
     };
 }

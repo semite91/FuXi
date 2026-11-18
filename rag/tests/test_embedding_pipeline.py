@@ -19,14 +19,15 @@ from chroma_store import (
 )
 from embedding_pipeline import Embedders, Mode, run
 from fakes import (
+    DRIVE_TEST_FOLDER_ID,
     FIXTURES_DIR,
     TEST_PICTURE_SIZE,
     FakeDriveApi,
     FakeEmbedder,
     FakeNotionClient,
     FakeTmdbApi,
-    FakeTokens,
     RenameFailingClient,
+    fake_drive_resource,
     load_fixture,
     picture_text,
 )
@@ -476,7 +477,7 @@ def drive_resource(failures=None) -> GoogleDriveResource:
         {file_id: base64.b64decode(picture_text()) for file_id in DRIVE_PICTURE_IDS},
         failures,
     )
-    return GoogleDriveResource(token_source_factory=FakeTokens, http_client_factory=api.client, sleep=lambda _: None)
+    return fake_drive_resource(api, sleep=lambda _: None)
 
 
 def notion_resource() -> NotionResource:
@@ -529,7 +530,7 @@ def test_failing_drive_keeps_notion_embedding_but_the_build_is_incomplete_and_ol
 ):
     # Phase 5b E4
     run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
-    failing_drive = drive_resource(failures={"files.list": [httpx.Response(401)]})
+    failing_drive = drive_resource(failures={f"files.list:{DRIVE_TEST_FOLDER_ID}": [httpx.Response(401)]})
 
     result = run_pipeline(Mode.UPDATE, [notion_resource(), failing_drive], chroma_client, embedders, tmp_path)
 

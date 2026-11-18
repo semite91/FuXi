@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Serialization;
+using FuXi.Api.OAuth;
 
 namespace FuXi.Api.Notion;
 
@@ -19,7 +20,7 @@ public sealed class NotionOAuthClient(HttpClient httpClient)
     private const string AUTHORIZATION_CODE_GRANT = "authorization_code";
 
     /// <summary>Sends the code to Notion. Returns the tokens, or null when Notion refused or answered without an access token.</summary>
-    public async Task<NotionTokens?> ExchangeAsync(NotionClientOptions options, string code, CancellationToken cancellationToken)
+    public async Task<NotionTokens?> ExchangeAsync(OAuthClientOptions options, string code, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, TOKEN_ADDRESS)
         {
@@ -42,7 +43,7 @@ public sealed class NotionOAuthClient(HttpClient httpClient)
         return new NotionTokens(answer.AccessToken, answer.RefreshToken ?? string.Empty, answer.WorkspaceName ?? string.Empty);
     }
 
-    private static string BasicCredentials(NotionClientOptions options) =>
+    private static string BasicCredentials(OAuthClientOptions options) =>
         Convert.ToBase64String(Encoding.UTF8.GetBytes($"{options.ClientId}:{options.ClientSecret}"));
 
     private sealed record TokenRequest(

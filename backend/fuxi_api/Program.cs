@@ -1,6 +1,8 @@
 using FuXi.Api;
 using FuXi.Api.Database;
+using FuXi.Api.GoogleDrive;
 using FuXi.Api.Notion;
+using FuXi.Api.OAuth;
 using FuXi.Api.Push;
 
 // A tool command runs before anything else, so it needs no env file, no database and no API.
@@ -20,8 +22,11 @@ var app = builder.Build();
 // Fails fast when the database or CORS configuration is incomplete.
 app.Configuration.ValidateFuXiConfiguration();
 
-// Notion is optional: a missing key is only logged.
-NotionSettings.LogMissingKeys(app.Configuration, app.Services.GetRequiredService<ILoggerFactory>());
+// Notion and Google Drive are optional: a missing key is only logged.
+var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
+OAuthSettings.LogMissingAppUrl(app.Configuration, loggerFactory);
+NotionSettings.LogMissingKeys(app.Configuration, loggerFactory);
+GoogleDriveSettings.LogMissingKeys(app.Configuration, loggerFactory);
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
