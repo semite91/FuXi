@@ -32,6 +32,24 @@ public static class ApiRequests
         return await client.PostAsync(route, content, TestContext.Current.CancellationToken);
     }
 
+    /// <summary>
+    /// Posts one file as a multipart form, in the form part with this name. The app's own header is sent unless
+    /// withAppHeader is false.
+    /// </summary>
+    public static async Task<HttpResponseMessage> PostFileApiAsync(
+        this HttpClient client, string route, byte[] file, string fileName = "films.csv", string partName = "file", bool withAppHeader = true)
+    {
+        using var content = new MultipartFormDataContent();
+        using var filePart = new ByteArrayContent(file);
+        content.Add(filePart, partName, fileName);
+        if (withAppHeader)
+        {
+            content.Headers.Add("X-Requested-With", "FuXi");
+        }
+
+        return await client.PostAsync(route, content, TestContext.Current.CancellationToken);
+    }
+
     /// <summary>Calls a GET route, expects 200 and returns the items of its JSON list.</summary>
     public static async Task<IReadOnlyList<JsonElement>> GetItemsAsync(
         this HttpClient client, string route, params (string Name, string? Value)[] query)

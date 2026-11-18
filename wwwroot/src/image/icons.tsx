@@ -13,7 +13,8 @@ export type IconName =
   | 'edit'
   | 'plus'
   | 'info'
-  | 'save';
+  | 'save'
+  | 'upload';
 
 const VIEW_BOX = '0 0 24 24';
 const DEFAULT_SIZE = 24;
@@ -48,6 +49,13 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M8 20v-6h8v6M8 4v4h7V4" />
     </>
   ),
+  // An arrow up from a tray.
+  upload: (
+    <>
+      <path d="M12 16V5M7.5 9.5L12 5l4.5 4.5" />
+      <path d="M5 19h14" />
+    </>
+  ),
 };
 
 interface IconProps {
@@ -79,6 +87,23 @@ export const NotionLogo = ({ size }: LogoProps) => <BrandLogo className={NOTION_
 
 export const GoogleDriveLogo = ({ size }: LogoProps) => (
   <BrandLogo className={GOOGLE_DRIVE_LOGO_CLASS} path={GOOGLE_DRIVE_LOGO_PATH} size={size} />
+);
+
+// Letterboxd's mark is three overlapping dots in its own colors, so it is drawn here, not as one filled path.
+const LETTERBOXD_LOGO_CLASS = 'letterboxd-logo';
+const LETTERBOXD_DOTS = [
+  { cx: 6.5, color: '#ff8000' },
+  { cx: 12, color: '#00e054' },
+  { cx: 17.5, color: '#40bcf4' },
+] as const;
+const LETTERBOXD_DOT_RADIUS = 5.5;
+
+export const LetterboxdLogo = ({ size = DEFAULT_SIZE }: LogoProps) => (
+  <svg className={LETTERBOXD_LOGO_CLASS} width={size} height={size} viewBox={VIEW_BOX} aria-hidden="true">
+    {LETTERBOXD_DOTS.map(({ cx, color }) => (
+      <circle key={color} cx={cx} cy="12" r={LETTERBOXD_DOT_RADIUS} fill={color} fillOpacity="0.9" />
+    ))}
+  </svg>
 );
 
 export const Icon = ({ name, size = DEFAULT_SIZE, strokeWidth = DEFAULT_STROKE_WIDTH, className }: IconProps) => (

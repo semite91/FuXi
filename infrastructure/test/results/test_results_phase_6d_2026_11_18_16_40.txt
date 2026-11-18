@@ -1,0 +1,77 @@
+FuXi - Phase 6d - Letterboxd (Letterboxd button, export guide pop-up, liked movies CSV upload, CSV in the Settings table)
+Test results for infrastructure/test/scenarios/test_scenarios_2026_11_18_12_40.txt (confirmed by the Learner, 2026-11-18)
+Run: 2026-11-18 16:40 UTC, branch claude/phase-6d-letterboxd, base commit 2e7e5bc (work not yet committed)
+
+Totals (related tests only, the Learner's rule of 2026-11-16)
+- Backend (dotnet test, run from /backend): Api.Letterboxd and RouteTests: 39 passed (about 1 minute; after the code review fixes). The route count
+  test now expects 24 routes (two Letterboxd routes added).
+- Code review (medium, one round, 2026-11-18): 9 findings. Fixed: NUL character, the app header, the movie row count,
+  the request size limit, a needless parametrize. Deferred to ToDos_review.txt: the token read before the upload check,
+  the CSV parsed on each page load, a late upload result after the pop-up is closed, rag/data hardening.
+- RAG engine (pytest, run from /rag, test_live.py left out): test_letterboxd_tmdb_resource.py, test_settings.py,
+  test_settings_store.py and test_google_drive_resource.py: 270 passed. test_settings_store.py uses the .env.test
+  database.
+  NOT RUN: test_embedding_pipeline.py and test_engine.py. They were edited (the resource takes liked_films_factory;
+  the engine test names FUXI_DB_HOST) but need chromadb, which is not installed in rag/.venv (only the packages of the
+  Drive tests are). They are checked by py_compile only.
+- Frontend (vitest, run from /wwwroot): settings_page.test.tsx and api_client.test.ts: 156 passed. "npx tsc --noEmit":
+  exit 0. There is no lint script.
+- Mutation checks: NOT RUN (the Learner's go-ahead is needed; a backend run takes 1 to 5 minutes).
+- Scenarios: 55. PASS 51. NOT RUN 4 (H1 to H4: wait for the screenshots, #51, and the Learner's go-ahead).
+
+A. UPLOAD
+A1-A10 PASS    LikedFilmsCsv and LetterboxdService: count, BOM, quoted line break, in-place update, missing columns, empty or
+               header-only file, missing file part, not UTF-8, over 5 MB, old text kept, no movie name in logs or answers.
+
+B. STATE
+B1-B3 PASS     No row or an empty row, N rows counted, no CSV text in the answer.
+
+C. RAG ENGINE
+C1  PASS     The resource looks up the rows of the text it gets from the factory (the old lookup tests run on it).
+C2  PASS     No row gives ResourceSkipped("no liked movies uploaded"), with no TMDB call. The engine already counts a
+             skipped source as complete (Phase 6c D5).
+C3  PASS     By the engine's existing skipped-source rule; not re-run in test_engine.py (see the note above).
+C4  PASS     A text without the Name or Year column fails and names the column, not a movie.
+C5  PASS     A row without a readable date still gives a document with an empty timestamp.
+C6  PASS     The document's timestamp is the liked Date.
+C7  PASS     An unreachable database raises SettingsStoreError (not a skip), with no password in the message.
+C8  PASS     The match rules, skip counts, retries, repeated movies and summary tests of the resource still pass.
+C9  PASS     Settings has no letterboxd_watched_file and no require_letterboxd_watched_file.
+C10 PASS     The liked movies are read with the same read-only connection as the other rows.
+
+D. SETTINGS PAGE - LETTERBOXD ROW
+D1-D7 PASS     Row under Google Drive, inline logo with the text at its right, one GetLetterboxdLikes call, the states,
+               pending and failure, and the button opening the pop-up.
+
+E. EXPORT GUIDE POP-UP
+E1-E10 PASS    Three steps with screenshots and captions, the Upload CSV button with an icon, the .csv file chooser, one
+               upload with the "file" part, success, 400, other failure, a non-csv file not sent, Escape, local images.
+
+F. THE i TOOLTIP
+F1-F2 PASS     "About Letterboxd" at the right of the button; "Upload your liked movies" on hover, focus and tap.
+
+G. DOCUMENTATION AND STRUCTURE
+G1  PASS     .env.example and .env.test.example no longer hold RAG_LETTERBOXD_WATCHED_FILE; setup_environment.sh no longer
+             adds it (bash -n passes). The private rag/data folders it created are no longer created.
+G2  PASS     project.md: the Letterboxd part, the Letterboxd row and pop-up, the two endpoints and the new Settings code.
+G3  PASS     Styles use tokens in upload_guide_dialog.less; texts are in texts.ts; calls are in letterboxd_service.ts.
+G4  PASS     The Learner approved upload_guide_dialog before it was created (2026-11-18).
+G5  PASS     The Letterboxd row uses RequestRow; the pop-up uses Dialog and StatusMessage.
+G6  PASS     No test calls TMDB.
+
+H. LIVE CHECKS
+H1-H4 NOT RUN  Waiting for the three screenshots (#51) and for the Learner's go-ahead. The row count and the time
+               estimate come first (no TMDB call).
+
+I. OUT OF SCOPE CHECKS
+I1  PASS     The Requests toggle holds the Notion, Google Drive and Letterboxd rows; no Spotify.
+I2  PASS     Spotify is untouched; TMDB still uses RAG_TMDB_TOKEN.
+I3  PASS     The Settings table has no UserId column; the CSV text is plain text.
+
+Notes
+- The Letterboxd logo is drawn from three dots in Letterboxd's colors; it is a trademark, used only to name the button.
+- The step images are placeholders (image/letterboxd_export_step_1.svg to _3.svg) until the screenshots arrive.
+- Because the token is read first, a build without RAG_TMDB_TOKEN fails Letterboxd - TMDB even when no file is uploaded
+  (as in Phase 5c).
+- The old rag/data/ folder and the old RAG_LETTERBOXD_WATCHED_FILE line in the Learner's .env may still exist; they are
+  not used any more.

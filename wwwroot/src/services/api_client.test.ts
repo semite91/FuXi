@@ -39,6 +39,28 @@ test('C3 a POST call sends camelCase JSON with the JSON content type', async () 
   expect(api.calls[0].headers['Content-Type']).toBe('application/json');
 });
 
+test('6d a file upload posts a multipart form with the file part and no JSON content type', async () => {
+  const api = mockApi({ 'POST /api/UploadLetterboxdLikes': { body: { movieCount: 1 } } });
+  const file = new File(['Date,Name,Year\n'], 'films.csv', { type: 'text/csv' });
+
+  const answer = await createApiClient(API_URL_KEY).postFile('/api/UploadLetterboxdLikes', 'file', file);
+
+  expect(answer).toEqual({ movieCount: 1 });
+  expect((api.calls[0].form?.get('file') as File).name).toBe('films.csv');
+  // The browser adds the multipart content type and its boundary itself.
+  expect(api.calls[0].headers['Content-Type']).toBeUndefined();
+  // A custom header makes the browser ask the API first, so a form on another website cannot send the upload.
+  expect(api.calls[0].headers['X-Requested-With']).toBe('FuXi');
+});
+
+test('6d a failed upload raises an error with the status and the detail', async () => {
+  mockApi({ 'POST /api/UploadLetterboxdLikes': problem(400, 'The file must be a CSV with the Date, Name and Year columns.') });
+
+  await expect(
+    createApiClient(API_URL_KEY).postFile('/api/UploadLetterboxdLikes', 'file', new File([''], 'films.csv')),
+  ).rejects.toMatchObject({ status: 400, message: 'The file must be a CSV with the Date, Name and Year columns.' });
+});
+
 test('C4 a 204 answer returns without parsing a body', async () => {
   mockApi({ 'POST /api/UpdateWordContent': { status: 204 } });
 

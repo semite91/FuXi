@@ -556,7 +556,7 @@ MOVIE_TEST_TOKEN = "tmdb-test-token"
 def movie_resource(failures=None) -> LetterboxdTmdbResource:
     api = FakeTmdbApi(load_fixture("tmdb_recorded.json"), failures)
     return LetterboxdTmdbResource(
-        watched_file_factory=lambda: FIXTURES_DIR / "watched.csv",
+        liked_films_factory=lambda: (FIXTURES_DIR / "watched.csv").read_text(encoding="utf-8"),
         token_factory=lambda: MOVIE_TEST_TOKEN,
         http_client_factory=api.client,
         sleep=lambda _: None,

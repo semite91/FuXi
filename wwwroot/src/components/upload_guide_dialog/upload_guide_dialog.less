@@ -1,0 +1,52 @@
+@import (reference) '../../css/tokens.less';
+
+.upload-guide {
+  display: flex;
+  flex-direction: column;
+  gap: @space-small;
+}
+
+.upload-guide__steps {
+  margin: 0;
+  padding-left: @space-medium;
+  display: flex;
+  flex-direction: column;
+  gap: @space-small;
+}
+
+.upload-guide__step {
+  display: flex;
+  flex-direction: column;
+  gap: @space-xsmall;
+}
+
+.upload-guide__image {
+  width: 100%;
+  height: auto;
+  border: @border-default;
+  border-radius: @border-radius-small;
+}
+
+.upload-guide__caption {
+  margin: 0;
+  font-size: var(--font-size-text);
+  color: var(--color-text);
+}
+
+.upload-guide__hint {
+  margin: 0;
+  font-size: var(--font-size-text);
+  color: var(--color-text-muted);
+}
+
+.upload-guide__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.upload-guide__upload {
+  .primary-button();
+  display: inline-flex;
+  align-items: center;
+  gap: @space-xsmall;
+}

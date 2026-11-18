@@ -42,10 +42,7 @@ readonly GENERATE_VAPID_KEYS_COMMAND="generate-vapid-keys"
 readonly RAG_PYTHON="python3.13"
 readonly RAG_DIRECTORY="rag"
 readonly RAG_VENV=".venv"
-# Git-ignored folders readable by the developer only: the Google service account key and Letterboxd's watched.csv.
-readonly RAG_PRIVATE_DIRECTORIES=("data" "data/letterboxd")
-readonly PRIVATE_DIRECTORY_MODE=700
-readonly RAG_SECRET_KEYS=("RAG_GEMINI_API_KEY" "RAG_TMDB_TOKEN" "RAG_LETTERBOXD_WATCHED_FILE" "RAG_LIVE_TESTS")
+readonly RAG_SECRET_KEYS=("RAG_GEMINI_API_KEY" "RAG_TMDB_TOKEN" "RAG_LIVE_TESTS")
 readonly RAG_DEFAULT_SETTINGS=("RAG_GEMINI_MODEL=gemini-3.8-flash" "RAG_TEXT_THRESHOLD=0.5" "RAG_IMAGE_THRESHOLD=0.25" "RAG_BATCH_SIZE=16" "RAG_REBUILD_COOLDOWN_MINUTES=10")
 readonly PASSWORD_BYTES=24
 readonly PRIVATE_FILE_UMASK=077
@@ -210,17 +207,6 @@ ensure_sign_in_keys() {
   done
 }
 
-# Creates rag/data/letterboxd (watched.csv).
-create_rag_private_directories() {
-  local directory private_path
-  for directory in "${RAG_PRIVATE_DIRECTORIES[@]}"; do
-    private_path="${REPOSITORY_ROOT}/${RAG_DIRECTORY}/${directory}"
-    mkdir -p "${private_path}"
-    chmod "${PRIVATE_DIRECTORY_MODE}" "${private_path}"
-    give_to_invoking_user "${private_path}"
-  done
-}
-
 # Creates rag/.venv and installs the locked Python packages when Python 3.13 exists.
 # The packages are large (PyTorch), so this step can take several minutes the first time.
 create_rag_environment() {
@@ -259,7 +245,6 @@ install_packages
 start_postgres
 create_env_files
 create_role_and_database
-create_rag_private_directories
 create_rag_environment
 if [ "${RAG_ENVIRONMENT_MISSING:-}" = "true" ]; then
   echo "Environment is ready, except the RAG engine: install ${RAG_PYTHON} and run this script again." >&2

@@ -10,12 +10,14 @@ vi.mock('../services/page_location', () => ({ moveTo: vi.fn() }));
 
 const NOT_CONNECTED_ANSWER = { body: { isConnected: false, workspaceName: null } };
 const DRIVE_NOT_CONNECTED_ANSWER = { body: { isConnected: false, email: null, folderId: null } };
+const LETTERBOXD_NO_UPLOAD_ANSWER = { body: { hasUpload: false, movieCount: 0 } };
 
 const openSettings = (route = {}, path = '/settings') => {
   const api = mockApi({
     'POST /Update_Collections': { status: 204 },
     'GET /api/GetNotionConnection': NOT_CONNECTED_ANSWER,
     'GET /api/GetGoogleDriveConnection': DRIVE_NOT_CONNECTED_ANSWER,
+    'GET /api/GetLetterboxdLikes': LETTERBOXD_NO_UPLOAD_ANSWER,
     ...route,
   });
   renderApp(path);
@@ -28,8 +30,9 @@ const button = (name: string) => screen.getByRole('button', { name });
 // Each source of the Requests toggle is a group named after it, so a test reads one source's row.
 const rowOf = (source: string) => screen.getByRole('group', { name: source });
 
-// Since 6b the page reads the Notion state, since 6c the Google Drive state, when it opens; "no call" means no other.
-const CONNECTION_STATE_CALLS = ['/GetNotionConnection', '/GetGoogleDriveConnection'];
+// Since 6b the page reads the Notion state, since 6c the Google Drive state, since 6d the Letterboxd state, when it opens;
+// "no call" means no other.
+const CONNECTION_STATE_CALLS = ['/GetNotionConnection', '/GetGoogleDriveConnection', '/GetLetterboxdLikes'];
 const callsBesidesConnectionStates = (api: ApiMock) =>
   api.calls.filter((call) => !CONNECTION_STATE_CALLS.some((path) => call.path.endsWith(path)));
 
@@ -1144,7 +1147,210 @@ test('6c G2 a second tap on the Google Drive i button hides the tip', () => {
   expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
 });
 
-const TMDB_NOTICE = 'This product uses the TMDB API but is not endorsed or certified by TMDB.';
+// Phase 6d sections D to F: the Letterboxd row, the export guide pop-up and its i tooltip.
+const UPLOAD_LETTERBOXD = 'Upload Letterboxd liked movies';
+const LETTERBOXD = 'Letterboxd';
+const GUIDE_TITLE = 'Upload your liked movies';
+const NOT_A_LIKES_FILE = 'The file must be a CSV with the Date, Name and Year columns.';
+const UPLOAD_ROUTE = 'POST /api/UploadLetterboxdLikes';
+
+const letterboxdAnswer = (hasUpload: boolean, movieCount = 0) => ({
+  'GET /api/GetLetterboxdLikes': { body: { hasUpload, movieCount } },
+});
+
+const letterboxdRow = () => rowOf(LETTERBOXD);
+const likesFile = (name = 'films.csv') =>
+  new File(['Date,Name,Year\n2024-03-01,Perfect Days,2023\n'], name, { type: 'text/csv' });
+
+test('6d D1 the Letterboxd row is under the Google Drive row, its button shows the text "Letterboxd" at the right of its logo', () => {
+  openRequests();
+
+  expect(rowOf('Google Drive').compareDocumentPosition(letterboxdRow()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const upload = within(letterboxdRow()).getByRole('button', { name: UPLOAD_LETTERBOXD });
+  const label = within(upload).getByText(LETTERBOXD);
+  expect(upload.querySelector('svg')!.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test('6d D2 the Letterboxd button draws an inline logo hidden from screen readers', () => {
+  openRequests();
+
+  const logo = button(UPLOAD_LETTERBOXD).querySelector('svg')!;
+  expect(logo).toHaveAttribute('aria-hidden', 'true');
+  expect(logo).toHaveClass('letterboxd-logo');
+});
+
+test('6d D3 opening the Settings page calls GetLetterboxdLikes once', async () => {
+  const api = openSettings();
+
+  await waitFor(() => expect(api.callsTo('GetLetterboxdLikes')).toHaveLength(1));
+});
+
+test.each([
+  ['D4', letterboxdAnswer(false), 'No file uploaded'],
+  ['D5', letterboxdAnswer(true, 12), 'Uploaded: 12 movies'],
+  ['D5 one movie', letterboxdAnswer(true, 1), 'Uploaded: 1 movie'],
+  ['D6 when GetLetterboxdLikes fails', { 'GET /api/GetLetterboxdLikes': networkFailure }, 'No file uploaded'],
+])('6d %s the Letterboxd row reads "%s"', async (_, route, text) => {
+  openRequests(route);
+
+  expect(await within(letterboxdRow()).findByText(text)).toBeInTheDocument();
+});
+
+test('6d D6 while GetLetterboxdLikes is pending the row shows no state, and the button still works', async () => {
+  const pending = deferred();
+  openRequests({ 'GET /api/GetLetterboxdLikes': () => pending.promise });
+
+  expect(within(letterboxdRow()).queryByRole('status')).not.toBeInTheDocument();
+  fireEvent.click(button(UPLOAD_LETTERBOXD));
+  expect(screen.getByRole('dialog', { name: GUIDE_TITLE })).toBeInTheDocument();
+  await act(async () => pending.resolve(letterboxdAnswer(true, 3)['GET /api/GetLetterboxdLikes']));
+});
+
+const openGuide = (route = {}) => {
+  const api = openRequests({ ...letterboxdAnswer(false), ...route });
+  fireEvent.click(button(UPLOAD_LETTERBOXD));
+
+  return api;
+};
+
+const guide = () => screen.getByRole('dialog', { name: GUIDE_TITLE });
+const fileInput = () => guide().querySelector('input[type="file"]') as HTMLInputElement;
+const chooseFile = (file: File) => fireEvent.change(fileInput(), { target: { files: [file] } });
+const uploadButton = () => within(guide()).getByRole('button', { name: 'Upload CSV' });
+
+test('6d D7 the Letterboxd button opens the export guide pop-up without a call', () => {
+  const api = openGuide();
+
+  expect(guide()).toBeInTheDocument();
+  expect(api.callsTo('UploadLetterboxdLikes')).toHaveLength(0);
+});
+
+test('6d E1 the pop-up shows three steps in order, each with a screenshot and a caption', () => {
+  openGuide();
+
+  const steps = within(guide()).getAllByRole('listitem');
+  expect(steps).toHaveLength(3);
+  const keywords = [/settings button/i, /data tab/i, /export button/i];
+  steps.forEach((step, index) => {
+    expect(within(step).getByRole('img', { name: keywords[index] })).toBeInTheDocument();
+    expect(step.textContent?.trim()).not.toBe('');
+  });
+});
+
+test('6d E2 the pop-up has an "Upload CSV" button with an upload icon and a hint about likes/films.csv', () => {
+  openGuide();
+
+  expect(uploadButton().querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  expect(within(uploadButton()).getByText('Upload CSV')).toBeInTheDocument();
+  expect(within(guide()).getByText(/likes\/films\.csv/)).toBeInTheDocument();
+});
+
+test('6d E3 the upload button opens the file chooser, which accepts only .csv files', () => {
+  openGuide();
+  const open = vi.spyOn(fileInput(), 'click');
+
+  fireEvent.click(uploadButton());
+
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(fileInput()).toHaveAttribute('accept', expect.stringContaining('.csv'));
+});
+
+test('6d E4 a chosen file calls UploadLetterboxdLikes once with the "file" part, and the button waits', async () => {
+  const pending = deferred();
+  const api = openGuide({ [UPLOAD_ROUTE]: () => pending.promise });
+
+  chooseFile(likesFile());
+
+  await waitFor(() => expect(uploadButton()).toBeDisabled());
+  const calls = api.callsTo('UploadLetterboxdLikes');
+  expect(calls).toHaveLength(1);
+  expect((calls[0].form?.get('file') as File).name).toBe('films.csv');
+  await act(async () => pending.resolve({ body: { movieCount: 1 } }));
+});
+
+test('6d E5 a saved file closes the pop-up and the row shows "Uploaded: <N> movies"', async () => {
+  openGuide({ [UPLOAD_ROUTE]: { body: { movieCount: 42 } } });
+
+  chooseFile(likesFile());
+
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: GUIDE_TITLE })).not.toBeInTheDocument());
+  expect(within(letterboxdRow()).getByText('Uploaded: 42 movies')).toBeInTheDocument();
+});
+
+test('6d E6 a 400 keeps the pop-up open with the file alert, and the row does not change', async () => {
+  openGuide({ [UPLOAD_ROUTE]: problem(400, 'Anything the API says') });
+
+  chooseFile(likesFile());
+
+  expect(await within(guide()).findByRole('alert')).toHaveTextContent(NOT_A_LIKES_FILE);
+  expect(within(letterboxdRow()).getByText('No file uploaded')).toBeInTheDocument();
+});
+
+test('6d E7 any other failure keeps the pop-up open with "The file could not be uploaded."', async () => {
+  openGuide({ [UPLOAD_ROUTE]: networkFailure });
+
+  chooseFile(likesFile());
+
+  expect(await within(guide()).findByRole('alert')).toHaveTextContent('The file could not be uploaded.');
+});
+
+test('6d E8 a file that is not a .csv is not sent and shows the file alert', async () => {
+  const api = openGuide({ [UPLOAD_ROUTE]: { body: { movieCount: 1 } } });
+
+  chooseFile(likesFile('films.txt'));
+
+  expect(await within(guide()).findByRole('alert')).toHaveTextContent(NOT_A_LIKES_FILE);
+  expect(api.callsTo('UploadLetterboxdLikes')).toHaveLength(0);
+});
+
+test('6d E9 Escape closes the pop-up and nothing is uploaded', () => {
+  const api = openGuide();
+
+  fireEvent.keyDown(guide(), { key: 'Escape' });
+
+  expect(screen.queryByRole('dialog', { name: GUIDE_TITLE })).not.toBeInTheDocument();
+  expect(api.callsTo('UploadLetterboxdLikes')).toHaveLength(0);
+});
+
+test('6d E10 every step shows an image from a local file, a placeholder until the screenshots are provided', () => {
+  openGuide();
+
+  within(guide())
+    .getAllByRole('img')
+    .forEach((picture) => {
+      const source = picture.getAttribute('src') ?? '';
+      expect(source).not.toBe('');
+      expect(source).not.toMatch(/^(https?:)?\/\//);
+    });
+});
+
+const ABOUT_LETTERBOXD = 'About Letterboxd';
+
+test('6d F1 an i button named "About Letterboxd" is at the right of the Letterboxd button, in the same row', () => {
+  openRequests();
+
+  const upload = button(UPLOAD_LETTERBOXD);
+  const about = button(ABOUT_LETTERBOXD);
+  expect(upload.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(upload.closest('.request-row__row')).toContainElement(about);
+});
+
+test.each([
+  ['hovered', fireEvent.mouseEnter],
+  ['focused', fireEvent.focus],
+  ['tapped', tap],
+])('6d F2 the i button %s shows "Upload your liked movies" opening to the right', (_, show) => {
+  openRequests();
+
+  show(button(ABOUT_LETTERBOXD));
+
+  const tip = screen.getByRole('tooltip');
+  expect(tip).toHaveTextContent('Upload your liked movies');
+  expect(tip).toHaveClass('tooltip__text--start');
+  expect(button(ABOUT_LETTERBOXD)).toHaveAttribute('aria-describedby', tip.id);
+});
+
+const TMDB_NOTICE ='This product uses the TMDB API but is not endorsed or certified by TMDB.';
 
 test('5c H1 the Settings page shows a Credits block with the TMDB notice under the other rows', () => {
   openSettings();

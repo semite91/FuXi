@@ -32,4 +32,7 @@ public static class ApiRoutes
     public const string GOOGLE_DRIVE_CALLBACK = PREFIX + "/GoogleDriveCallback";
     public const string GET_GOOGLE_DRIVE_CONNECTION = PREFIX + "/GetGoogleDriveConnection";
     public const string UPDATE_GOOGLE_DRIVE_FOLDER = PREFIX + "/UpdateGoogleDriveFolder";
+
+    public const string GET_LETTERBOXD_LIKES = PREFIX + "/GetLetterboxdLikes";
+    public const string UPLOAD_LETTERBOXD_LIKES = PREFIX + "/UploadLetterboxdLikes";
 }

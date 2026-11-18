@@ -7,11 +7,13 @@ import NotificationPermission from '../components/notification_permission/notifi
 import PageCard from '../components/page_card/page_card';
 import RequestRow from '../components/request_row/request_row';
 import StatusMessage from '../components/status_message/status_message';
+import UploadGuideDialog, { type UploadGuideStep } from '../components/upload_guide_dialog/upload_guide_dialog';
 import {
   APP_TEXTS,
   CONNECTION_TEXTS,
   CREDITS_TEXTS,
   GOOGLE_DRIVE_TEXTS,
+  LETTERBOXD_TEXTS,
   NOTION_TEXTS,
   PERMISSION_TEXTS,
   REQUESTS_TEXTS,
@@ -19,10 +21,15 @@ import {
 } from '../constants/texts';
 import { useEmbeddingsUpdate, type EmbeddingsStep } from '../hooks/use_embeddings_update';
 import { useGoogleDriveConnection, type FolderSaveError } from '../hooks/use_google_drive_connection';
+import { useLetterboxdLikes, type UploadError } from '../hooks/use_letterboxd_likes';
 import { useNotificationPermission } from '../hooks/use_notification_permission';
 import { useNotionConnection } from '../hooks/use_notion_connection';
 import { folderAddress } from '../services/google_drive_service';
-import { GoogleDriveLogo, NotionLogo } from '../image/icons';
+import type { LetterboxdLikes } from '../services/letterboxd_service';
+import { GoogleDriveLogo, LetterboxdLogo, NotionLogo } from '../image/icons';
+import exportStepOne from '../image/letterboxd_export_step_1.svg';
+import exportStepTwo from '../image/letterboxd_export_step_2.svg';
+import exportStepThree from '../image/letterboxd_export_step_3.svg';
 import tmdbLogo from '../image/tmdb_logo.svg';
 
 const RESULT_TITLES: Partial<Record<EmbeddingsStep, string>> = {
@@ -37,6 +44,33 @@ const NEW_TAB_REL = 'noopener noreferrer';
 const FOLDER_SAVE_ERRORS: Record<FolderSaveError, string> = {
   notAFolderLink: GOOGLE_DRIVE_TEXTS.notAFolderLink,
   failed: GOOGLE_DRIVE_TEXTS.saveFailed,
+};
+
+const UPLOAD_ERRORS: Record<UploadError, string> = {
+  notALikesFile: LETTERBOXD_TEXTS.notALikesFile,
+  failed: LETTERBOXD_TEXTS.uploadFailed,
+};
+
+// The export guide: the three places of Letterboxd's data export, each with its screenshot.
+const EXPORT_STEPS: readonly UploadGuideStep[] = [
+  { image: exportStepOne, imageAlt: LETTERBOXD_TEXTS.settingsStepAlt, caption: LETTERBOXD_TEXTS.settingsStepCaption },
+  { image: exportStepTwo, imageAlt: LETTERBOXD_TEXTS.dataStepAlt, caption: LETTERBOXD_TEXTS.dataStepCaption },
+  { image: exportStepThree, imageAlt: LETTERBOXD_TEXTS.exportStepAlt, caption: LETTERBOXD_TEXTS.exportStepCaption },
+];
+
+/** No text until the state is known; "Uploaded: <N> movies" once a file is saved. */
+const likesStateText = (likes: LetterboxdLikes | null) => {
+  if (likes === null) {
+    return undefined;
+  }
+
+  if (!likes.hasUpload) {
+    return LETTERBOXD_TEXTS.noFile;
+  }
+
+  const movies = likes.movieCount === 1 ? LETTERBOXD_TEXTS.movieOne : LETTERBOXD_TEXTS.movieMany;
+
+  return `${LETTERBOXD_TEXTS.uploaded}${CONNECTION_TEXTS.nameSeparator}${likes.movieCount} ${movies}`;
 };
 
 /** No text until the state is known; "Connected: <name>" when the source gave a name. */
@@ -57,6 +91,7 @@ const SettingsPage = () => {
   const notification = useNotificationPermission();
   const notion = useNotionConnection();
   const drive = useGoogleDriveConnection();
+  const letterboxd = useLetterboxdLikes();
   // Not stored, so the toggle is closed every time the page opens, unless it opens back from a sign-in.
   const [isRequestsOpen, setIsRequestsOpen] = useState(notion.isReturningFromSignIn || drive.isReturningFromSignIn);
   const folderId = drive.connection?.folderId ?? null;
@@ -130,7 +165,30 @@ const SettingsPage = () => {
             </>
           )}
         </RequestRow>
+        <RequestRow
+          logo={<LetterboxdLogo />}
+          connectLabel={LETTERBOXD_TEXTS.connect}
+          text={LETTERBOXD_TEXTS.label}
+          aboutLabel={LETTERBOXD_TEXTS.about}
+          tipText={LETTERBOXD_TEXTS.tip}
+          stateText={likesStateText(letterboxd.likes)}
+          onConnect={letterboxd.openGuide}
+        />
       </DisclosureToggle>
+      {letterboxd.isGuideOpen && (
+        <UploadGuideDialog
+          title={LETTERBOXD_TEXTS.guideTitle}
+          steps={EXPORT_STEPS}
+          hint={LETTERBOXD_TEXTS.hint}
+          uploadLabel={LETTERBOXD_TEXTS.uploadCsv}
+          closeLabel={APP_TEXTS.closeDialog}
+          accept={LETTERBOXD_TEXTS.accept}
+          isUploading={letterboxd.isUploading}
+          errorText={letterboxd.uploadError === null ? undefined : UPLOAD_ERRORS[letterboxd.uploadError]}
+          onFile={(file) => void letterboxd.upload(file)}
+          onClose={letterboxd.closeGuide}
+        />
+      )}
       {drive.isChoosingFolder && (
         <LinkDialog
           title={GOOGLE_DRIVE_TEXTS.chooseFolder}

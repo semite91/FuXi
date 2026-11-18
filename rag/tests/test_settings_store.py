@@ -18,6 +18,7 @@ from settings_store import (
     SettingsStoreError,
     connect_read_only,
     read_google_drive_rows,
+    read_liked_films_csv,
     read_notion_token,
 )
 
@@ -30,6 +31,9 @@ UPDATE_SETTING = 'UPDATE "Settings" SET "Value" = %s WHERE "Code" = %s'
 NOTION_ACCESS_TOKEN_CODE = "NotionAccessToken"
 GOOGLE_DRIVE_REFRESH_TOKEN_CODE = "GoogleDriveRefreshToken"
 GOOGLE_DRIVE_FOLDER_ID_CODE = "GoogleDriveFolderId"
+LIKED_FILMS_CSV_CODE = "LetterboxdLikedFilmsCsv"
+LIKED_FILMS_CSV = "Date,Name,Year\n2026-01-05,The Lantern Keeper,2019\n"
+OTHER_LIKED_FILMS_CSV = "Date,Name,Year\n"
 GOOGLE_REFRESH_TOKEN = "1//refresh-token-of-a-store-test"
 FOLDER_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz-_0123"
 
@@ -160,3 +164,42 @@ def test_unreachable_database_fails_without_secrets(settings):
 
     assert database.password not in str(raised.value)
     assert database.password not in repr(raised.value)
+
+
+def test_uploaded_liked_films_csv_is_read_as_it_was_saved(settings, table):
+    # Phase 6d C1
+    table.execute(INSERT_SETTING, (LIKED_FILMS_CSV_CODE, LIKED_FILMS_CSV))
+
+    assert read_liked_films_csv(settings) == LIKED_FILMS_CSV
+
+
+@pytest.mark.parametrize("rows", [[], [(LIKED_FILMS_CSV_CODE, "")]])
+def test_missing_or_empty_liked_films_csv_reads_as_none(settings, table, rows):
+    # Phase 6d C2
+    for row in rows:
+        table.execute(INSERT_SETTING, row)
+
+    assert read_liked_films_csv(settings) is None
+
+
+def test_new_upload_is_read_on_the_next_call(settings, table):
+    # Phase 6d C1: no restart after a new upload
+    table.execute(INSERT_SETTING, (LIKED_FILMS_CSV_CODE, LIKED_FILMS_CSV))
+    read_liked_films_csv(settings)
+    table.execute(UPDATE_SETTING, (OTHER_LIKED_FILMS_CSV, LIKED_FILMS_CSV_CODE))
+
+    assert read_liked_films_csv(settings) == OTHER_LIKED_FILMS_CSV
+
+
+def test_unreachable_database_fails_the_liked_films_without_secrets(settings):
+    # Phase 6d C7: it fails, it is not skipped
+    database = settings.require_database()
+    unreachable = Settings(database_values={
+        "FUXI_DB_HOST": "127.0.0.1", "FUXI_DB_PORT": str(UNREACHABLE_PORT), "FUXI_DB_NAME": database.name,
+        "FUXI_DB_USER": database.user, "FUXI_DB_PASSWORD": database.password,
+    })
+
+    with pytest.raises(SettingsStoreError) as raised:
+        read_liked_films_csv(unreachable)
+
+    assert database.password not in str(raised.value)

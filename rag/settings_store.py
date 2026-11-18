@@ -10,6 +10,7 @@ from settings import DatabaseSettings, Settings
 NOTION_ACCESS_TOKEN_CODE = "NotionAccessToken"
 GOOGLE_DRIVE_REFRESH_TOKEN_CODE = "GoogleDriveRefreshToken"
 GOOGLE_DRIVE_FOLDER_ID_CODE = "GoogleDriveFolderId"
+LETTERBOXD_LIKED_FILMS_CSV_CODE = "LetterboxdLikedFilmsCsv"
 SELECT_SETTINGS = 'SELECT "Code", "Value" FROM "Settings" WHERE "Code" = ANY(%s)'
 CONNECT_TIMEOUT_SECONDS = 10
 READ_FAILED_MESSAGE = "the Settings table could not be read"
@@ -67,3 +68,8 @@ def read_google_drive_rows(settings: Settings) -> GoogleDriveRows:
         refresh_token=values.get(GOOGLE_DRIVE_REFRESH_TOKEN_CODE),
         folder_id=values.get(GOOGLE_DRIVE_FOLDER_ID_CODE),
     )
+
+
+def read_liked_films_csv(settings: Settings) -> str | None:
+    """The text of the liked movies CSV the Learner uploaded on the Settings page; None when there is none."""
+    return read_settings(settings, [LETTERBOXD_LIKED_FILMS_CSV_CODE]).get(LETTERBOXD_LIKED_FILMS_CSV_CODE)

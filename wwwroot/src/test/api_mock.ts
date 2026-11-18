@@ -9,6 +9,8 @@ export interface RecordedCall {
   url: URL;
   path: string;
   body: unknown;
+  /** The parts of a multipart form body, for an upload. */
+  form?: FormData;
   headers: Record<string, string>;
 }
 
@@ -61,6 +63,7 @@ export const mockApi = (routes: Record<string, Route> = {}): ApiMock => {
       url,
       path: url.pathname,
       body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+      form: init?.body instanceof FormData ? init.body : undefined,
       headers: (init?.headers ?? {}) as Record<string, string>,
     };
     calls.push(call);
