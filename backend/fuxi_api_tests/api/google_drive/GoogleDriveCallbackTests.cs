@@ -244,6 +244,7 @@ public sealed class GoogleDriveCallbackTests : IDisposable
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized, "{}")]
     [InlineData(HttpStatusCode.OK, """{"user":{}}""")]
+    [InlineData(HttpStatusCode.OK, """{"user":{"emailAddress":""}}""")]
     [InlineData(HttpStatusCode.OK, "<html>Bad gateway</html>")]
     public async Task FailedAboutCallSavesNothingAndIsLogged(HttpStatusCode status, string answer)
     {

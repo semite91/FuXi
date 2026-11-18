@@ -1586,6 +1586,18 @@ test('6e I3 Save calls UpdateSpotifyPlaylist once with the link and is disabled 
   await act(async () => pending.resolve({ body: { playlistId: OTHER_PLAYLIST_ID } }));
 });
 
+test('6e I3 Enter pressed again while the save waits calls UpdateSpotifyPlaylist only once', async () => {
+  const pending = deferred();
+  const api = await openPlaylistDialog({ [PLAYLIST_SAVE_ROUTE]: () => pending.promise });
+  typePlaylistLink(playlistAddress(OTHER_PLAYLIST_ID));
+
+  fireEvent.submit(playlistBox());
+  fireEvent.submit(playlistBox());
+
+  expect(api.callsTo('UpdateSpotifyPlaylist')).toHaveLength(1);
+  await act(async () => pending.resolve({ body: { playlistId: OTHER_PLAYLIST_ID } }));
+});
+
 test('6e I4 a saved playlist closes the pop-up and the row shows "Playlist chosen" with the new playlist\'s link', async () => {
   await openPlaylistDialog({ [PLAYLIST_SAVE_ROUTE]: { body: { playlistId: OTHER_PLAYLIST_ID } } });
   typePlaylistLink(playlistAddress(OTHER_PLAYLIST_ID));

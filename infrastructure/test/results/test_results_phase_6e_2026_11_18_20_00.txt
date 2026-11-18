@@ -25,7 +25,19 @@ Totals (related tests only, the Learner's rule of 2026-11-16)
   Drive and Spotify. Re-run after the fixes: backend Spotify, Google Drive, Notion and RouteTests 197 passed (the two
   Spotify connection classes 48 passed again after the 422 change); RAG test_spotify_resource.py and
   test_settings_store.py 92 passed; frontend settings_page 180 passed, tsc clean.
-- Mutation checks: NOT RUN (the Learner's go-ahead is needed; a backend run takes 1 to 5 minutes).
+- Mutation checks (run by hand after the merge, 2026-11-18; each mutation applied alone, the related tests run, the file restored):
+  - Backend, Phase 6e (Spotify and the shared OAuth helpers): 10 mutations, 10 failed a test (show_dialog value, an other
+    account keeping the playlist, the readable check inverted, the playlist host unchecked, 403 not refused, any scope
+    enough, 401 on refresh not a conflict, an error status not thrown, client id and secret swapped in the Basic header,
+    a timeout counted as a cancel).
+  - Backend, Phase 6c (Google Drive, the skipped item 59): 6 mutations. 5 failed a test; the sixth (an empty email accepted
+    after the about call) survived at first and compiled only as "email is null"; a test with {"user":{"emailAddress":""}}
+    now kills it.
+  - RAG engine: 4 mutations, 4 failed a test (a rotated token compared with ==, local files not skipped, an item hiding a
+    usable track, the UPDATE matching the wrong row); the refresh retried on every failure (5th) failed 3 tests.
+  - Frontend: 5 mutations, 4 failed a test (422 status, the button's connected branch, the playlist address, the saved
+    id not put in the row). The fifth (the hook's isSaving guard removed) survived: the dialog already ignores a second
+    submit, so the guard is redundant; a test for Enter pressed twice was added.
 - Scenarios: 70. PASS 66. NOT RUN 4 (K1 to K4, the live checks, wait for the Spotify Client ID and Secret, #57, and the
   Learner's go-ahead).
 
