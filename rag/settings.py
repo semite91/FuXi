@@ -22,7 +22,6 @@ GEMINI_API_KEY_KEY = "RAG_GEMINI_API_KEY"
 GOOGLE_CLIENT_ID_KEY = "GOOGLE_CLIENT_ID"
 GOOGLE_CLIENT_SECRET_KEY = "GOOGLE_CLIENT_SECRET"
 TMDB_TOKEN_KEY = "RAG_TMDB_TOKEN"
-LETTERBOXD_WATCHED_FILE_KEY = "RAG_LETTERBOXD_WATCHED_FILE"
 GEMINI_MODEL_KEY = "RAG_GEMINI_MODEL"
 TEXT_THRESHOLD_KEY = "RAG_TEXT_THRESHOLD"
 IMAGE_THRESHOLD_KEY = "RAG_IMAGE_THRESHOLD"
@@ -83,7 +82,6 @@ class Settings:
     google_client_id: str | None = field(default=None, repr=False)
     google_client_secret: str | None = field(default=None, repr=False)
     tmdb_token: str | None = field(default=None, repr=False)
-    letterboxd_watched_file: str | None = field(default=None, repr=False)
 
     def require_database(self) -> DatabaseSettings:
         """The FuXi database; it holds the Settings table with the Notion and Google Drive rows."""
@@ -105,10 +103,6 @@ class Settings:
     def require_tmdb_token(self) -> str:
         return _require(self.tmdb_token, TMDB_TOKEN_KEY)
 
-    def require_letterboxd_watched_file(self) -> Path:
-        """The watched.csv path; a relative path is resolved from the repository root."""
-        return _require_path(self.letterboxd_watched_file, LETTERBOXD_WATCHED_FILE_KEY)
-
 
 def load_settings(
     env_path: Path = ROOT_ENV_PATH, environ: Mapping[str, str] | None = None
@@ -121,7 +115,6 @@ def load_settings(
         google_client_id=_text(values, GOOGLE_CLIENT_ID_KEY),
         google_client_secret=_text(values, GOOGLE_CLIENT_SECRET_KEY),
         tmdb_token=_text(values, TMDB_TOKEN_KEY),
-        letterboxd_watched_file=_text(values, LETTERBOXD_WATCHED_FILE_KEY),
         gemini_model=_text(values, GEMINI_MODEL_KEY) or DEFAULT_GEMINI_MODEL,
         text_threshold=_threshold(values, TEXT_THRESHOLD_KEY, DEFAULT_TEXT_THRESHOLD),
         image_threshold=_threshold(values, IMAGE_THRESHOLD_KEY, DEFAULT_IMAGE_THRESHOLD),
@@ -144,11 +137,6 @@ def _require(value: str | None, key: str) -> str:
     if not value:
         raise MissingSettingError(f"{key} is not set")
     return value
-
-
-def _require_path(value: str | None, key: str) -> Path:
-    path = Path(_require(value, key))
-    return path if path.is_absolute() else REPO_ROOT / path
 
 
 def _text(values: Mapping[str, str], key: str) -> str | None:

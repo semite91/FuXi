@@ -46,7 +46,7 @@ This file is initializer instructor of my project.
   - RAG technologies will be defined at next parts.
   - Phase 5 is split: 5a builds the engine core with Notion; Google Drive (5b), letterboxd - TMDB (5c) and Spotify (5d) follow one by one.
   - The engine runs on the Learner's Windows laptop with Python 3.13 and CPU-only PyTorch. It is started from /rag with: uvicorn engine:app --port 8000
-  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_GEMINI_API_KEY, RAG_TMDB_TOKEN, RAG_LETTERBOXD_WATCHED_FILE, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
+  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_GEMINI_API_KEY, RAG_TMDB_TOKEN, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
 
   -- Words --
   - Words will be added to database manually by the Learner. There is no add word page or api.
@@ -121,6 +121,9 @@ This file is initializer instructor of my project.
     - When Google Drive is connected, the row also says "No folder chosen", or "Folder chosen" with an "Open in Drive" link that opens the folder in a new tab, and has a "Choose folder" button. It opens the "Choose folder" pop-up (components/link_dialog, which Spotify's playlist link will reuse): a "Folder link" box, started with the saved folder's link, and a Save button with a save icon. Save (or Enter) calls UpdateGoogleDriveFolder; it is disabled while the box is empty or the save waits. A saved folder closes the pop-up and updates the row; a 400 shows "This is not a Google Drive folder link.", any other failure "The folder could not be saved.", both as an alert in the pop-up. Escape, the X or the backdrop closes it without saving.
     - ?drive=connected or ?drive=failed works like ?notion: the toggle opens, a failure shows "Google Drive could not be connected." in the Google Drive row, and the value is removed from the address.
 
+    - Under the Google Drive row is the Letterboxd row: a Letterboxd logo button with the text "Letterboxd", named "Upload Letterboxd liked movies", and the state "No file uploaded" or "Uploaded: <N> movies" ("1 movie" for one), read with GetLetterboxdLikes when the page opens. An "About Letterboxd" i button shows the tooltip "Upload your liked movies".
+    - The Letterboxd button opens the "Upload your liked movies" pop-up (components/upload_guide_dialog): three numbered steps of Letterboxd's data export (the Settings button, the Data tab, the export button), each with a screenshot (image/letterboxd_export_step_*.svg, placeholders until the Learner provides the screenshots) and a caption, a hint to upload likes/films.csv, and an "Upload CSV" button with an upload icon that opens the file chooser (.csv only). The chosen file is sent with UploadLetterboxdLikes; the button is disabled while it waits. A saved file closes the pop-up and updates the row; a file that is not a .csv or a 400 shows "The file must be a CSV with the Date, Name and Year columns.", any other failure "The file could not be uploaded.", both as an alert in the pop-up. Escape, the X or the backdrop closes it without uploading.
+
     -- schedule --
     - When user opens schedule page, data should be loaded by GetSchedule api with current month's start and end date-times.
     - When user selects new Notification Window from schedule, UpdateSchedule api will be called. If user changes an existing Notification Window, its id will be sent too.
@@ -193,8 +196,8 @@ This file is initializer instructor of my project.
   CreatedDate: timestamptz
 
   -- Settings --
-  One set of values for the whole app (no UserId column yet). It is created empty. There is no general Settings API; the Notion and Google Drive sign-ins and the Google Drive folder save write their rows.
-  Codes: NotionAccessToken, NotionRefreshToken (stored, not used yet), NotionWorkspaceName, GoogleDriveRefreshToken, GoogleDriveEmail and GoogleDriveFolderId. The RAG engine reads NotionAccessToken, GoogleDriveRefreshToken and GoogleDriveFolderId read-only.
+  One set of values for the whole app (no UserId column yet). It is created empty. There is no general Settings API; the Notion and Google Drive sign-ins, the Google Drive folder save and the Letterboxd upload write their rows.
+  Codes: NotionAccessToken, NotionRefreshToken (stored, not used yet), NotionWorkspaceName, GoogleDriveRefreshToken, GoogleDriveEmail, GoogleDriveFolderId and LetterboxdLikedFilmsCsv (the text of the uploaded liked movies file). The RAG engine reads NotionAccessToken, GoogleDriveRefreshToken, GoogleDriveFolderId and LetterboxdLikedFilmsCsv read-only.
   Id: Guid, primary_key
   Code: text, unique
   Value: text
@@ -270,6 +273,10 @@ This file is initializer instructor of my project.
     It returns isConnected, email and folderId. The refresh token is never returned.
   - UpdateGoogleDriveFolder
     It takes folderLink: a https://drive.google.com/drive/folders/<id> link (also with /u/<n>/, a closing slash or a query) or a bare folder ID. Only the form is checked; Google is not called. It saves GoogleDriveFolderId and returns folderId. Anything else answers 400 "This is not a Google Drive folder link."; without a connected Google Drive it answers 409.
+  - GetLetterboxdLikes
+    It returns hasUpload and movieCount (the movie rows of the saved file). The file's text is never returned.
+  - UploadLetterboxdLikes
+    It takes one file in the "file" part of a multipart form: the liked movies file of Letterboxd's export (likes/films.csv). The file must be UTF-8 text (a BOM is allowed), at most 5 MB, without a NUL character, with the Date, Name and Year columns and at least one movie row (a name and a numeric year, as the engine reads it). The request must carry the header X-Requested-With: FuXi, which the app sends; without it the answer is 400, so a form on another website cannot overwrite the file. Its text is saved in LetterboxdLikedFilmsCsv, replacing the old text, and movieCount is returned. Anything else answers 400 "The file must be a CSV with the Date, Name and Year columns." and changes nothing.
   - SavePushSubscription
     It takes Endpoint, P256dh and Auth. It adds a PushSubscription entry. If endpoint already exists, it is not added again.
 
@@ -333,12 +340,13 @@ This file is initializer instructor of my project.
       - Images are downloaded and prepared in parallel by a few workers. CLIP decodes each batch from Base64, so memory stays bounded.
 
       # letterboxd, TMDB
-      - Watched list is taken from letterboxd's own data export, not its API (the API is a closed beta). The Learner saves the export's watched.csv in the git-ignored rag/data/letterboxd/ folder; RAG_LETTERBOXD_WATCHED_FILE holds its path. There is no RSS feed and no scraping.
+      - The liked movies are taken from letterboxd's own data export (likes/films.csv), not its API (the API is a closed beta). From Phase 6d the Learner uploads the file on the Settings page; the API keeps its text in the Settings table (LetterboxdLikedFilmsCsv) and the engine reads it from there at each build (read-only), so a new upload needs no restart. There is no RSS feed and no scraping.
+      - No uploaded file skips the source ("resource letterboxd_tmdb: no liked movies uploaded, skipped") and the build is still complete. An unreadable Settings table fails it.
       - Each row is searched in TMDB's search movie api by name and year (language en-US). The search asks for the row's year as the primary release year. Among the results of that year, one whose title or original title equals the row's name is taken first, otherwise the first result of that year; a movie without such a result is skipped and counted in the embedding log.
-      - Watched movies' name, director, musician (original music composer), scriptwriter, genre, summary and the top 10 billed actors are taken from TMDB's movie details api with credits.
+      - The liked movies' name, director, musician (original music composer), scriptwriter, genre, summary and the top 10 billed actors are taken from TMDB's movie details api with credits.
       - TMDB is called with its API Read Access Token (RAG_TMDB_TOKEN) as a Bearer header. Calls follow the shared retry rules; movies are looked up in parallel by a few workers.
-      - A missing watched.csv or an empty RAG_TMDB_TOKEN makes the source fail, so the build is not complete and the old collections are kept.
-      - The watched date of watched.csv is the document's timestamp.
+      - A file without the Name or Year column, or an empty RAG_TMDB_TOKEN, makes the source fail, so the build is not complete and the old collections are kept.
+      - The liked Date of the file is the document's timestamp.
       - The Settings page shows a Credits block with the TMDB logo and "This product uses the TMDB API but is not endorsed or certified by TMDB."
 
       # Spotify

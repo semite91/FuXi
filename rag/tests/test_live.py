@@ -120,12 +120,10 @@ KNOWN_MOVIES_CSV = (
 KNOWN_MOVIE_TITLES = ["The Matrix", "Spirited Away", "Parasite"]
 
 
-def test_real_tmdb_returns_three_known_movies_with_a_director_and_actors(tmp_path):
-    # Phase 5c D15 (the real token, a watched.csv written by the test)
-    watched_file = tmp_path / "watched.csv"
-    watched_file.write_text(KNOWN_MOVIES_CSV, encoding="utf-8")
+def test_real_tmdb_returns_three_known_movies_with_a_director_and_actors():
+    # Phase 5c D15 (the real token, a liked movies CSV written by the test)
     resource = LetterboxdTmdbResource(
-        watched_file_factory=lambda: watched_file, token_factory=LIVE_SETTINGS.require_tmdb_token
+        liked_films_factory=lambda: KNOWN_MOVIES_CSV, token_factory=LIVE_SETTINGS.require_tmdb_token
     )
 
     documents = resource.read_documents()

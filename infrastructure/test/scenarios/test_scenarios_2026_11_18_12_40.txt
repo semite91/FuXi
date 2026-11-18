@@ -1,0 +1,134 @@
+FuXi - Phase 6d - Letterboxd (Letterboxd button, export guide pop-up, liked movies CSV upload, CSV in the Settings table)
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-18 12:40 UTC
+Status: CONFIRMED BY THE LEARNER (2026-11-18)
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 6d is the fourth part of Phase 6 (ToDos_review.txt #49 to #53). The Learner uploads the liked movies file of
+Letterboxd's data export on the Settings page; the RAG engine reads the movies from it and looks them up in TMDB.
+Spotify follows in 6e.
+
+Decisions taken by the Learner:
+- #49 to #53 of ToDos_review.txt: a Letterboxd button with an i tooltip "Upload your liked movies"; a pop-up with an
+  export presentation (three screenshots) and an upload button; the upload accepts only a CSV with Date, Name and Year
+  columns; the resource reads the liked movies file (likes/films.csv), not watched.csv.
+- 2026-11-18: the uploaded CSV is stored in the Settings table, not in a file; the engine reads it from the database;
+  RAG_LETTERBOXD_WATCHED_FILE is removed.
+- From 6b and 6c: every source button shows its logo with its name as text at its right; the pop-up is made like the
+  Google Drive one; a new component is asked before it is created; no build is started by the upload.
+
+Proposed by Claude, to confirm with these scenarios:
+- The endpoints follow ApiRoutes: GET /api/GetLetterboxdLikes and POST /api/UploadLetterboxdLikes (multipart form, one
+  "file" part).
+- The Settings table gets one row: LetterboxdLikedFilmsCsv (the file's text). The movie count is counted from it when
+  read; it is not a second row.
+- The API checks the file: UTF-8 (a BOM is allowed, a NUL character is not), at most 5 MB, a header with the Date, Name
+  and Year columns, and at least one movie row (a row with a name and a numeric year, as the engine reads it).
+- The upload needs the header X-Requested-With: FuXi, which only the app sends; a form on another website cannot add it
+  without a preflight (code review 2026-11-18). A bad file changes nothing. A new upload replaces the old text.
+- The row shows "No file uploaded" or "Uploaded: <N> movies"; its pop-up shows the three steps, each with its
+  screenshot and a caption, an "Upload CSV" button with an icon, and the API's error as an alert.
+- Until the Learner provides the screenshots (#51), the steps show a placeholder image; the tests do not depend on the
+  image content.
+- The engine keeps its TMDB lookup, retries, skip counts and documents; only its source changes from a file path to the
+  Settings row, and the document's timestamp is the liked Date.
+- The engine's Letterboxd file errors name no file path (there is none now) and no movie name.
+- New components (the Letterboxd pop-up with the presentation) are asked before they are created (frontend standards).
+
+Marks:
+[FE]  frontend scenario, verified by a Vitest test.
+[BE]  backend scenario, verified by an xUnit test (against the PostgreSQL test database where it writes rows).
+[PY]  RAG engine scenario, verified by a pytest test.
+[RV]  verified by reading the code, running a command, a preview or a browser check.
+[LV]  live check against the real TMDB, run only after the Learner's go-ahead.
+
+==================================================
+A. UPLOAD (POST /api/UploadLetterboxdLikes)
+==================================================
+A1. [BE] Given a CSV with the Date, Name and Year columns and at least one row, when it is uploaded, then LetterboxdLikedFilmsCsv holds its text and it answers 200 with { movieCount: <rows> }.
+A2. [BE] Given a CSV with a UTF-8 BOM and the extra columns of Letterboxd's export (Letterboxd URI), when it is uploaded, then it is accepted and the text is saved as it is.
+A3. [BE] Given a saved CSV, when another valid CSV is uploaded, then the row is updated in place with the new text.
+A4. [BE] Given a CSV without the Date, Name or Year column, when it is uploaded, then it answers 400 with "The file must be a CSV with the Date, Name and Year columns." and no row changes.
+A5. [BE] Given a CSV with the header only, a file whose rows all lack a name or a numeric year, an empty file, or no file part, when it is uploaded, then it answers 400 with the same kind of message and no row changes.
+A6. [BE] Given a file that is not UTF-8 text, holds a NUL character, or is larger than 5 MB, when it is uploaded, then it answers 400 and no row changes.
+A7. [BE] Given an upload that fails, when the Settings table is read, then the old text is still there.
+A8. [BE] Given the uploaded text, when any log or error is read, then it holds no movie name.
+A9. [BE] Given an upload without the X-Requested-With: FuXi header, when it is sent, then it answers 400 and no row changes.
+A10. [BE] Given rows with an empty name or a year that is not a number among valid rows, when the file is uploaded, then movieCount counts only the valid rows.
+
+==================================================
+B. STATE (GET /api/GetLetterboxdLikes)
+==================================================
+B1. [BE] Given no LetterboxdLikedFilmsCsv row, or an empty one, when it is called, then it answers { hasUpload: false, movieCount: 0 }.
+B2. [BE] Given a saved CSV with N data rows, when it is called, then it answers { hasUpload: true, movieCount: N }.
+B3. [BE] Given any saved CSV, when the answer is read, then it holds no CSV text.
+
+==================================================
+C. RAG ENGINE READS THE LIKED MOVIES FROM THE SETTINGS TABLE
+==================================================
+C1. [PY] Given a LetterboxdLikedFilmsCsv row, when a build reads Letterboxd - TMDB, then the rows of that text are looked up in TMDB as before (search by name and year, then details with credits).
+C2. [PY] Given no row, or an empty one, when a build runs, then Letterboxd - TMDB is skipped with "resource letterboxd_tmdb: no liked movies uploaded, skipped" and the other sources build.
+C3. [PY] Given Letterboxd - TMDB is skipped and every other source succeeds, when the build ends, then the build is complete.
+C4. [PY] Given a text without the Name or Year column, when a build reads it, then Letterboxd - TMDB fails with a message that names the column and holds no movie name.
+C5. [PY] Given a row without a readable Date, when it is read, then the movie is still read and its timestamp is empty, as before.
+C6. [PY] Given a liked row, when its document is made, then its timestamp is the liked Date.
+C7. [PY] Given the database cannot be reached, when a build reads the row, then Letterboxd - TMDB fails (it is not skipped) and the error names only the error type.
+C8. [PY] Given the existing TMDB handling, when the related tests run, then the match rules, the skip counts, the retries, the repeated movies and the summary line still pass.
+C9. [PY] Given settings.py, when it is read, then it has no RAG_LETTERBOXD_WATCHED_FILE and no file path code for Letterboxd.
+C10. [PY] Given the engine's settings connection, when it reads the row, then it stays read-only.
+
+==================================================
+D. SETTINGS PAGE - LETTERBOXD ROW
+==================================================
+D1. [FE] Given the open Requests toggle, when it is shown, then it holds a Letterboxd row under the Google Drive row, with a button named "Upload Letterboxd liked movies" that shows the Letterboxd logo and the text "Letterboxd" at its right.
+D2. [FE] Given the Letterboxd logo, when it is drawn, then it is an inline SVG from image/icons hidden from screen readers.
+D3. [FE] Given the Settings page, when it opens, then /api/GetLetterboxdLikes is called once by a service.
+D4. [FE] Given it answers hasUpload: false, when the row is shown, then it says "No file uploaded".
+D5. [FE] Given it answers hasUpload: true, when the row is shown, then it says "Uploaded: <N> movies" (singular for 1 movie).
+D6. [FE] Given the call is pending or fails, when the row is shown, then no state is shown while pending, "No file uploaded" after a failure, and the button still works.
+D7. [FE] Given the Letterboxd button, when it is clicked, then the export guide pop-up opens.
+
+==================================================
+E. SETTINGS PAGE - EXPORT GUIDE POP-UP
+==================================================
+E1. [FE] Given the pop-up, when it is opened, then it is titled "Upload your liked movies" and shows three steps in order: 1) the Settings button's location, 2) the Data tab's location, 3) the export button's location, each with a screenshot (alt text names the step) and a caption.
+E2. [FE] Given the pop-up, when it is read, then it has an "Upload CSV" button with an upload icon and a hint that the file is likes/films.csv of the export.
+E3. [FE] Given the upload button, when it is clicked, then the browser's file chooser opens, accepting only .csv files.
+E4. [FE] Given a chosen file, when it is chosen, then /api/UploadLetterboxdLikes is called once with it as the "file" part and the button is disabled while it waits.
+E5. [FE] Given the API answers 200, when the answer comes, then the pop-up closes and the row shows "Uploaded: <N> movies".
+E6. [FE] Given the API answers 400, when the answer comes, then the pop-up stays open and shows "The file must be a CSV with the Date, Name and Year columns." as an alert; the row does not change.
+E7. [FE] Given any other failure, when the answer comes, then the pop-up stays open and shows "The file could not be uploaded." as an alert.
+E8. [FE] Given a file that is not a .csv, when it is chosen, then it is not sent and the alert of E6 is shown.
+E9. [FE] Given the pop-up, when Escape, the X button or the backdrop is used, then it closes and nothing is uploaded (the Phase 6a dialog).
+E10. [FE] Given the screenshots are not provided yet, when the pop-up is shown, then each step shows a placeholder image and its caption.
+
+==================================================
+F. SETTINGS PAGE - THE i TOOLTIP
+==================================================
+F1. [FE] Given the Letterboxd row, when it is shown, then an i button named "About Letterboxd" is at the right of the Letterboxd button.
+F2. [FE] Given the i button, when it is hovered, focused or tapped, then the tooltip "Upload your liked movies" is shown with role tooltip and aria-describedby; a second tap, Escape, the pointer or focus leaving hides it; it opens to the right (placement start).
+
+==================================================
+G. DOCUMENTATION AND STRUCTURE
+==================================================
+G1. [RV] Given .env.example and .env.test.example, when they are read, then they have no RAG_LETTERBOXD_WATCHED_FILE; setup_environment.sh no longer adds it.
+G2. [RV] Given project.md, when it is read, then the Letterboxd part says the liked movies CSV is uploaded on the Settings page and read from the Settings table, the settings part describes the Letterboxd row, the pop-up and the tooltip, the API part lists the two endpoints, and the Settings table part lists the new code.
+G3. [RV] Given the new and changed components, when they are read, then styles use tokens in their own .less files, texts are in texts.ts and API calls are in services.
+G4. [RV] Given a new component, when it is created, then the Learner was asked before (frontend standards).
+G5. [RV] Given the pop-up and the row, when they are read, then the Google Drive and Letterboxd rows share RequestRow and the dialog code, not copies.
+G6. [BE] [PY] Given the related tests, when they run, then they pass without calling TMDB (fake servers).
+
+==================================================
+H. LIVE CHECKS (after the Learner's go-ahead)
+==================================================
+H1. [RV] Given the three screenshots (#51), when the Learner provides them, then they replace the placeholders.
+H2. [LV] Given the running API and app, when the Learner follows the pop-up, uploads likes/films.csv, then the row shows "Uploaded: <N> movies".
+H3. [RV] Given the uploaded file, when the rows are counted (no TMDB call), then the row count and the time estimate are reported to the Learner first.
+H4. [LV] Given the Learner's go-ahead after H3, when one build runs (D15 and I7 of the old scenarios), then the movies are read from TMDB and the summary line is in logs/embedding/; its time is reported.
+
+==================================================
+I. OUT OF SCOPE CHECKS
+==================================================
+I1. [RV] Given the Requests toggle, when it is read, then it holds no Spotify button (6e).
+I2. [RV] Given the RAG engine, when it is read, then Spotify still reads its .env keys and TMDB still uses RAG_TMDB_TOKEN.
+I3. [RV] Given the Settings table, when it is read, then it has no UserId column (#40) and the CSV text is plain text (#20).

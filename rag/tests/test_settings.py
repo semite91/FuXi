@@ -8,9 +8,9 @@ from settings import (
     DEFAULT_IMAGE_THRESHOLD,
     DEFAULT_REBUILD_COOLDOWN_MINUTES,
     DEFAULT_TEXT_THRESHOLD,
-    REPO_ROOT,
     DatabaseSettings,
     MissingSettingError,
+    Settings,
     SettingsError,
     load_settings,
 )
@@ -222,39 +222,32 @@ def test_google_service_account_file_is_no_setting(tmp_path):
     assert not hasattr(settings, "require_google_service_account_file")
 
 
-MOVIE_ENV = "RAG_TMDB_TOKEN=tmdb-test-token\nRAG_LETTERBOXD_WATCHED_FILE=rag/data/letterboxd/watched.csv\n"
-
-
-def test_tmdb_token_and_watched_file_are_read(tmp_path):
+def test_tmdb_token_is_read(tmp_path):
     # Phase 5c B1
-    content = f"RAG_TMDB_TOKEN=tmdb-test-token\nRAG_LETTERBOXD_WATCHED_FILE={tmp_path / 'watched.csv'}\n"
-
-    settings = load_settings(write_env(tmp_path, content), environ={})
+    settings = load_settings(write_env(tmp_path, "RAG_TMDB_TOKEN=tmdb-test-token\n"), environ={})
 
     assert settings.require_tmdb_token() == "tmdb-test-token"
-    assert settings.require_letterboxd_watched_file() == tmp_path / "watched.csv"
 
 
-def test_relative_watched_file_is_resolved_from_the_repository_root(tmp_path):
-    # Phase 5c B2
-    settings = load_settings(write_env(tmp_path, MOVIE_ENV), environ={})
-
-    assert settings.require_letterboxd_watched_file() == REPO_ROOT / "rag" / "data" / "letterboxd" / "watched.csv"
-
-
-def test_missing_tmdb_token_and_watched_file_fail_only_when_used(tmp_path):
+def test_missing_tmdb_token_fails_only_when_used(tmp_path):
     # Phase 5c B3
-    settings = load_settings(write_env(tmp_path, "RAG_TMDB_TOKEN=\nRAG_LETTERBOXD_WATCHED_FILE\n"), environ={})
+    settings = load_settings(write_env(tmp_path, "RAG_TMDB_TOKEN=\n"), environ={})
 
     with pytest.raises(MissingSettingError, match="RAG_TMDB_TOKEN"):
         settings.require_tmdb_token()
-    with pytest.raises(MissingSettingError, match="RAG_LETTERBOXD_WATCHED_FILE"):
-        settings.require_letterboxd_watched_file()
+
+
+def test_settings_have_no_letterboxd_file_path():
+    # Phase 6d C9: the liked movies come from the Settings table, not from a file path
+    settings = Settings()
+
+    assert not hasattr(settings, "require_letterboxd_watched_file")
+    assert not hasattr(settings, "letterboxd_watched_file")
 
 
 def test_printed_settings_hide_the_tmdb_token(tmp_path):
     # Phase 5c B4
-    settings = load_settings(write_env(tmp_path, MOVIE_ENV), environ={})
+    settings = load_settings(write_env(tmp_path, "RAG_TMDB_TOKEN=tmdb-test-token\n"), environ={})
 
     assert "tmdb-test-token" not in repr(settings)
     assert "tmdb-test-token" not in str(settings)

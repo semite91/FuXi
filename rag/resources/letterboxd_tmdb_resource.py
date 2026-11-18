@@ -1,6 +1,8 @@
-"""Letterboxd and TMDB resource: every movie of the Letterboxd watched.csv, as one TMDB text document per movie."""
+"""Letterboxd and TMDB resource: every movie of the liked movies CSV the Learner uploaded (Letterboxd's likes/films.csv),
+as one TMDB text document per movie."""
 
 import csv
+import io
 import threading
 import time
 from collections import Counter
@@ -8,7 +10,6 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -22,6 +23,7 @@ from base import (
     Document,
     Resource,
     ResourceKind,
+    ResourceSkipped,
 )
 from resources.http_retry import (
     Clock,
@@ -33,13 +35,15 @@ from resources.http_retry import (
     timed_read,
 )
 from resources.parallel import in_parallel
-from settings import LETTERBOXD_WATCHED_FILE_KEY, Settings
+from settings import Settings
+from settings_store import read_liked_films_csv
 
 RESOURCE_NAME = "letterboxd_tmdb"
 
-# Letterboxd's data export; a UTF-8 BOM is allowed.
-WATCHED_FILE_ENCODING = "utf-8-sig"
+# Letterboxd's data export may start with a UTF-8 BOM.
+BYTE_ORDER_MARK = "\ufeff"
 CSV_NEWLINE = ""
+NO_LIKED_MOVIES = "no liked movies uploaded"
 NAME_COLUMN = "Name"
 YEAR_COLUMN = "Year"
 DATE_COLUMN = "Date"
@@ -96,8 +100,8 @@ METADATA_MUSICIAN = "musician"
 METADATA_GENRE = "genre"
 
 
-class WatchedFileError(RuntimeError):
-    """The watched.csv cannot be used. The message names the setting, never the file's path."""
+class LikedFilmsError(RuntimeError):
+    """The uploaded liked movies CSV cannot be used. The message names the column, never a movie."""
 
 
 class TmdbError(RuntimeError):
@@ -126,7 +130,7 @@ class TmdbRefusedError(TmdbError):
 
 
 class Skip(Enum):
-    """Why a watched row gave no document."""
+    """Why a liked row gave no document."""
 
     NO_MATCH = "no match"
     NOT_FOUND = "not found"
@@ -164,17 +168,17 @@ class LookupCounts:
 
 
 @dataclass(frozen=True)
-class WatchedRow:
+class LikedRow:
     name: str
     year: int
-    watched_date: str
+    liked_date: str
 
 
 @dataclass(frozen=True)
-class WatchedList:
+class LikedList:
     """The rows to look up, and what was left out of the file's rows."""
 
-    rows: list[WatchedRow]
+    rows: list[LikedRow]
     row_count: int = 0
     bad_rows: int = 0
     repeated_rows: int = 0
@@ -186,23 +190,23 @@ class LetterboxdTmdbResource(Resource):
 
     def __init__(
         self,
-        watched_file_factory: Callable[[], Path],
+        liked_films_factory: Callable[[], str | None],
         token_factory: Callable[[], str],
         http_client_factory: Callable[[], httpx.Client] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         clock: Clock = time.monotonic,
     ) -> None:
-        self._watched_file_factory = watched_file_factory
+        self._liked_films_factory = liked_films_factory
         self._token_factory = token_factory
         self._http_client_factory = http_client_factory or create_http_client
         self._sleep = sleep
         self._clock = clock
         self._stats = ReadStats()
-        self._watched = WatchedList([])
+        self._liked = LikedList([])
         self._counts = LookupCounts()
 
     def read_documents(self) -> list[Document]:
-        self._watched = WatchedList([])
+        self._liked = LikedList([])
         self._counts = LookupCounts()
         with timed_read(self._clock) as self._stats:
             return self._read_documents()
@@ -210,26 +214,29 @@ class LetterboxdTmdbResource(Resource):
     def read_summary(self) -> str:
         """The movies and skips count every lookup that finished, also when the read failed."""
         skips = self._counts.skips
-        bad_rows = self._watched.bad_rows
+        bad_rows = self._liked.bad_rows
         skip_counts = [f"{bad_rows} bad rows", *(f"{skips[skip]} {skip.value}" for skip in Skip)]
         return self._stats.summary(
-            f"{self._watched.row_count} rows",
+            f"{self._liked.row_count} rows",
             f"{self._counts.movies} movies",
             f"{bad_rows + skips.total()} skipped rows ({SUMMARY_SEPARATOR.join(skip_counts)})",
-            f"{self._watched.repeated_rows + self._counts.repeated_rows} repeated rows",
+            f"{self._liked.repeated_rows + self._counts.repeated_rows} repeated rows",
         )
 
     def _read_documents(self) -> list[Document]:
         token = self._token_factory()
-        self._watched = read_watched_list(self._watched_file_factory())
+        csv_text = self._liked_films_factory()
+        if csv_text is None:
+            raise ResourceSkipped(NO_LIKED_MOVIES)
+        self._liked = read_liked_list(csv_text)
         with self._http_client_factory() as client:
             tmdb = _TmdbSession(client, token, self._stats, self._sleep)
-            results = in_parallel(lambda row: self._look_up(tmdb, row), self._watched.rows, LOOKUP_WORKERS)
+            results = in_parallel(lambda row: self._look_up(tmdb, row), self._liked.rows, LOOKUP_WORKERS)
         if results and all(result is Skip.REFUSED for result in results):
             raise TmdbRefusedError()
         return _documents_of_different_movies(results)
 
-    def _look_up(self, tmdb: "_TmdbSession", row: WatchedRow) -> Movie | Skip:
+    def _look_up(self, tmdb: "_TmdbSession", row: LikedRow) -> Movie | Skip:
         result = _read_movie(tmdb, row)
         self._counts.count(result)
         return result
@@ -262,7 +269,7 @@ class _TmdbSession:
             raise TmdbError.of_call(type(error).__name__, endpoint) from None
         return _json_object(response, endpoint)
 
-    def search(self, row: WatchedRow) -> list[dict[str, Any]]:
+    def search(self, row: LikedRow) -> list[dict[str, Any]]:
         params = {"query": row.name, "primary_release_year": row.year, "language": TMDB_LANGUAGE}
         return _entries(self.get(SEARCH_MOVIE_URL, params).get("results"))
 
@@ -290,62 +297,59 @@ def _json_object(response: httpx.Response, endpoint: str) -> dict[str, Any]:
     return answer
 
 
-def create_letterboxd_tmdb_resource(settings: Settings) -> LetterboxdTmdbResource:
-    """The token and the file path are read only when the resource reads, so a missing setting fails only then."""
+def create_letterboxd_tmdb_resource(
+    settings: Settings, read_csv: Callable[[Settings], str | None] = read_liked_films_csv
+) -> LetterboxdTmdbResource:
+    """The token and the uploaded CSV are read only when the resource reads, so a missing setting fails only then
+    and a new upload needs no restart. No upload skips the source; an unreadable table fails it."""
     return LetterboxdTmdbResource(
-        watched_file_factory=settings.require_letterboxd_watched_file,
+        liked_films_factory=lambda: read_csv(settings),
         token_factory=settings.require_tmdb_token,
     )
 
 
-def read_watched_list(watched_file: Path) -> WatchedList:
-    """Each name and year once, in the file's order; a row with an empty name or a year that is not a number is left out."""
+def read_liked_list(csv_text: str) -> LikedList:
+    """Each name and year once, in the CSV's order; a row with an empty name or a year that is not a number is left out."""
     try:
-        if not watched_file.is_file():
-            raise WatchedFileError(f"The {LETTERBOXD_WATCHED_FILE_KEY} file does not exist")
-        with watched_file.open(encoding=WATCHED_FILE_ENCODING, newline=CSV_NEWLINE) as csv_file:
-            reader = csv.DictReader(csv_file)
-            _check_columns(reader.fieldnames or [])
-            return _watched_list(reader)
-    except (UnicodeDecodeError, csv.Error):
+        reader = csv.DictReader(io.StringIO(csv_text.removeprefix(BYTE_ORDER_MARK), newline=CSV_NEWLINE))
+        _check_columns(reader.fieldnames or [])
+        return _liked_list(reader)
+    except csv.Error:
         # The cause is dropped, so no part of the file reaches a log.
-        raise WatchedFileError(f"The {LETTERBOXD_WATCHED_FILE_KEY} file is not a UTF-8 CSV file") from None
-    except OSError:
-        # The cause is dropped, so the file's path does not reach a log.
-        raise WatchedFileError(f"The {LETTERBOXD_WATCHED_FILE_KEY} file cannot be opened or read") from None
+        raise LikedFilmsError("The uploaded liked movies file is not a CSV file") from None
 
 
 def _check_columns(columns: Iterable[str]) -> None:
     for column in REQUIRED_COLUMNS:
         if column not in columns:
-            raise WatchedFileError(f"The {LETTERBOXD_WATCHED_FILE_KEY} file has no {column} column")
+            raise LikedFilmsError(f"The uploaded liked movies file has no {column} column")
 
 
-def _watched_list(csv_rows: Iterable[dict[str, Any]]) -> WatchedList:
-    rows: dict[tuple[str, int], WatchedRow] = {}
+def _liked_list(csv_rows: Iterable[dict[str, Any]]) -> LikedList:
+    rows: dict[tuple[str, int], LikedRow] = {}
     row_count = bad_rows = repeated_rows = 0
     for csv_row in csv_rows:
         row_count += 1
-        row = _watched_row(csv_row)
+        row = _liked_row(csv_row)
         if row is None:
             bad_rows += 1
         elif (row.name, row.year) in rows:
             repeated_rows += 1
         else:
             rows[(row.name, row.year)] = row
-    return WatchedList(list(rows.values()), row_count, bad_rows, repeated_rows)
+    return LikedList(list(rows.values()), row_count, bad_rows, repeated_rows)
 
 
-def _watched_row(csv_row: dict[str, Any]) -> WatchedRow | None:
+def _liked_row(csv_row: dict[str, Any]) -> LikedRow | None:
     name = _text(csv_row.get(NAME_COLUMN))
     year = _text(csv_row.get(YEAR_COLUMN))
     if not name or not year.isdecimal():
         return None
-    return WatchedRow(name, int(year), _iso_date(_text(csv_row.get(DATE_COLUMN))))
+    return LikedRow(name, int(year), _iso_date(_text(csv_row.get(DATE_COLUMN))))
 
 
 def _iso_date(text: str) -> str:
-    """The watched date as an ISO date; empty text when the row has no readable date."""
+    """The liked date as an ISO date; empty text when the row has no readable date."""
     try:
         return date.fromisoformat(text).isoformat()
     except ValueError:
@@ -362,7 +366,7 @@ def _documents_of_different_movies(results: Iterable[Movie | Skip]) -> list[Docu
     return [movie.document for movie in first_movies.values()]
 
 
-def _read_movie(tmdb: _TmdbSession, row: WatchedRow) -> Movie | Skip:
+def _read_movie(tmdb: _TmdbSession, row: LikedRow) -> Movie | Skip:
     """The movie with its document, or why the row is skipped: no result of its year, a search that TMDB refuses
     (400 or 422), or details that TMDB refuses or does not have (400, 422 or 404)."""
     try:
@@ -387,7 +391,7 @@ def _skip_or_raise(error: TmdbError, skipped_statuses: frozenset[int]) -> Skip:
     return Skip.REFUSED if error.status in REFUSED_REQUEST_STATUSES else Skip.NOT_FOUND
 
 
-def _matching_movie_id(results: list[dict[str, Any]], row: WatchedRow) -> int | None:
+def _matching_movie_id(results: list[dict[str, Any]], row: LikedRow) -> int | None:
     """Among the results released in the row's year, the first with the row's name as its title or original
     title, else the first; a result without a release date never matches."""
     same_year = [
@@ -413,7 +417,7 @@ def _release_year(result: dict[str, Any]) -> str:
     return release_date.split(RELEASE_DATE_SEPARATOR)[0] if isinstance(release_date, str) else ""
 
 
-def build_document(details: dict[str, Any], row: WatchedRow) -> Document:
+def build_document(details: dict[str, Any], row: LikedRow) -> Document:
     title = _text(details.get("title")) or row.name
     credits = details.get("credits")
     credits = credits if isinstance(credits, dict) else {}
@@ -440,7 +444,7 @@ def build_document(details: dict[str, Any], row: WatchedRow) -> Document:
         METADATA_DIRECTOR: directors,
         METADATA_MUSICIAN: musicians,
         METADATA_GENRE: genres,
-        METADATA_TIMESTAMP: row.watched_date,
+        METADATA_TIMESTAMP: row.liked_date,
         METADATA_TYPE: TEXT_DOCUMENT_TYPE,
     }
     return Document(LINE_SEPARATOR.join(lines), metadata)

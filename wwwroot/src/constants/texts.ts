@@ -150,6 +150,29 @@ export const GOOGLE_DRIVE_TEXTS = {
   saveFailed: 'The folder could not be saved.',
 } as const;
 
+export const LETTERBOXD_TEXTS = {
+  connect: 'Upload Letterboxd liked movies',
+  label: 'Letterboxd',
+  about: 'About Letterboxd',
+  tip: 'Upload your liked movies',
+  noFile: 'No file uploaded',
+  uploaded: 'Uploaded',
+  movieOne: 'movie',
+  movieMany: 'movies',
+  guideTitle: 'Upload your liked movies',
+  hint: 'Upload likes/films.csv from the export.',
+  uploadCsv: 'Upload CSV',
+  notALikesFile: 'The file must be a CSV with the Date, Name and Year columns.',
+  uploadFailed: 'The file could not be uploaded.',
+  accept: '.csv,text/csv',
+  settingsStepAlt: 'Screenshot: the Settings button on your Letterboxd profile',
+  settingsStepCaption: 'Open Settings from your profile menu.',
+  dataStepAlt: 'Screenshot: the Data tab in Settings',
+  dataStepCaption: 'Open the Data tab.',
+  exportStepAlt: 'Screenshot: the export button on the Data tab',
+  exportStepCaption: 'Press Export your data and unzip the file you get.',
+} as const;
+
 export const CREDITS_TEXTS = {
   title: 'Credits',
   tmdbLogo: 'TMDB',

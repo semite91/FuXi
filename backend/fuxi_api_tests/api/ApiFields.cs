@@ -28,6 +28,8 @@ public static class ApiFields
     public const string EMAIL = "email";
     public const string FOLDER_ID = "folderId";
     public const string DETAIL = "detail";
+    public const string HAS_UPLOAD = "hasUpload";
+    public const string MOVIE_COUNT = "movieCount";
 
     public const string WORD_IDS = "wordIds";
     public const string WORD_ID = "wordId";

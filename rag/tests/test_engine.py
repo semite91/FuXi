@@ -652,8 +652,8 @@ def test_engine_starts_without_the_movie_settings_and_names_the_key_when_the_mov
     assert "resource letterboxd_tmdb failed: MissingSettingError: RAG_TMDB_TOKEN is not set" in log
 
 
-def test_engine_names_the_watched_file_key_when_only_the_token_is_set(tmp_path):
-    # Phase 5c B3
+def test_engine_names_the_database_key_when_only_the_token_is_set(tmp_path):
+    # Phase 5c B3, Phase 6d C7: the liked movies are read from the Settings table
     harness = Harness(
         tmp_path,
         settings=Settings(tmdb_token=SECRET),
@@ -664,7 +664,7 @@ def test_engine_names_the_watched_file_key_when_only_the_token_is_set(tmp_path):
     harness.wait_for_build()
 
     log = "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "logs").iterdir())
-    assert "resource letterboxd_tmdb failed: MissingSettingError: RAG_LETTERBOXD_WATCHED_FILE is not set" in log
+    assert "resource letterboxd_tmdb failed: MissingSettingError: FUXI_DB_HOST is not set" in log
     assert SECRET not in log
 
 

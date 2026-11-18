@@ -6,6 +6,8 @@ export const UNREACHABLE_MESSAGE = 'The API cannot be reached.';
 export const FAILED_MESSAGE = 'The request failed.';
 
 const JSON_CONTENT_TYPE = 'application/json';
+const APP_HEADER = 'X-Requested-With';
+const APP_HEADER_VALUE = 'FuXi';
 const METHOD_GET = 'GET';
 const METHOD_POST = 'POST';
 const METHOD_DELETE = 'DELETE';
@@ -29,6 +31,8 @@ export class ApiError extends Error {
 export interface ApiClient {
   get<T>(path: string, query?: Query): Promise<T>;
   post<T>(path: string, body?: unknown): Promise<T>;
+  /** Posts one file as a multipart form, in the form part with this name. */
+  postFile<T>(path: string, partName: string, file: File): Promise<T>;
   remove(path: string, query?: Query): Promise<void>;
   /** The full address of a path, for a page the browser opens itself. */
   url(path: string): string;
@@ -119,6 +123,18 @@ export const createApiClient = (baseUrlKey: string): ApiClient => ({
       headers: { 'Content-Type': JSON_CONTENT_TYPE },
       body: JSON.stringify(body ?? {}),
     }),
+  // No Content-Type header: the browser adds the multipart one with its boundary. The app header is custom, so the
+  // browser asks the API first (a preflight); a form on another website cannot send this request.
+  postFile: async (path, partName, file) => {
+    const form = new FormData();
+    form.append(partName, file);
+
+    return send(buildUrl(requireBaseUrl(baseUrlKey), path), {
+      method: METHOD_POST,
+      headers: { [APP_HEADER]: APP_HEADER_VALUE },
+      body: form,
+    });
+  },
   remove: async (path, query) => send(buildUrl(requireBaseUrl(baseUrlKey), path, query), { method: METHOD_DELETE }),
   url: (path) => buildUrl(requireBaseUrl(baseUrlKey), path),
 });

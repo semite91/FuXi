@@ -1,4 +1,5 @@
 import copy
+import csv
 import threading
 import traceback
 from pathlib import Path
@@ -6,7 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from base import Resource, ResourceKind
+from base import Resource, ResourceKind, ResourceSkipped
 from fakes import FIXTURES_DIR, FakeTmdbApi, load_fixture
 from resources import http_retry, letterboxd_tmdb_resource
 from resources.http_retry import MAX_ATTEMPTS, NETWORK_RETRY_SECONDS
@@ -16,12 +17,13 @@ from resources.letterboxd_tmdb_resource import (
     LetterboxdTmdbResource,
     TmdbError,
     TmdbRefusedError,
-    WatchedFileError,
+    NO_LIKED_MOVIES,
+    LikedFilmsError,
     create_letterboxd_tmdb_resource,
 )
 from settings import MissingSettingError, Settings
 
-WATCHED_FILE = FIXTURES_DIR / "watched.csv"
+LIKED_CSV = (FIXTURES_DIR / "watched.csv").read_text(encoding="utf-8")
 TMDB_TOKEN = "tmdb-test-read-access-token"
 CSV_HEADER = "Date,Name,Year,Letterboxd URI"
 LANTERN_ROW = "2026-01-05,The Lantern Keeper,2019,https://boxd.it/aB1c"
@@ -56,10 +58,10 @@ def make_api(data=None, failures=None) -> FakeTmdbApi:
     return FakeTmdbApi(data or recorded(), failures)
 
 
-def make_resource(api, watched_file: Path = WATCHED_FILE, sleeps=None, clock=None, token: str = TMDB_TOKEN):
+def make_resource(api, csv_text: str | None = LIKED_CSV, sleeps=None, clock=None, token: str = TMDB_TOKEN):
     sleeps = [] if sleeps is None else sleeps
     return LetterboxdTmdbResource(
-        watched_file_factory=lambda: watched_file,
+        liked_films_factory=lambda: csv_text,
         token_factory=lambda: token,
         http_client_factory=api.client,
         sleep=sleeps.append,
@@ -67,10 +69,8 @@ def make_resource(api, watched_file: Path = WATCHED_FILE, sleeps=None, clock=Non
     )
 
 
-def write_watched(tmp_path: Path, *rows: str, header: str = CSV_HEADER, encoding: str = "utf-8") -> Path:
-    watched_file = tmp_path / "watched.csv"
-    watched_file.write_text("\n".join([header, *rows]) + "\n", encoding=encoding)
-    return watched_file
+def liked_csv(*rows: str, header: str = CSV_HEADER) -> str:
+    return "\n".join([header, *rows]) + "\n"
 
 
 def names(documents) -> list[str]:
@@ -120,53 +120,47 @@ def test_each_watched_row_gives_its_name_year_and_watched_date():
     ]
 
 
-def test_watched_file_with_a_bom_and_non_english_names_is_read_correctly(tmp_path):
-    # Phase 5c C2
-    watched_file = write_watched(
-        tmp_path,
+def test_csv_with_a_bom_and_non_english_names_is_read_correctly():
+    # Phase 5c C2, Phase 6d C1
+    csv_text = "\ufeff" + liked_csv(
         "2026-02-11,Kış Güneşi,2021,https://boxd.it/aB2d",
         "2026-03-20,Les Étoiles Perdues,2008,https://boxd.it/aB4f",
-        encoding="utf-8-sig",
     )
-    assert watched_file.read_bytes().startswith(b"\xef\xbb\xbf")
     api = make_api()
 
-    documents = make_resource(api, watched_file).read_documents()
+    documents = make_resource(api, csv_text).read_documents()
 
     assert searches(api) and sorted(searches(api)) == sorted([("Kış Güneşi", "2021"), ("Les Étoiles Perdues", "2008")])
     assert [document.metadata["timestamp"] for document in documents] == ["2026-02-11", "2026-03-20"]
 
 
-def test_missing_watched_file_fails_the_read_and_names_the_setting_without_the_path(tmp_path):
-    # Phase 5c C3
+def test_no_uploaded_csv_skips_the_source_before_any_call():
+    # Phase 6d C2
     api = make_api()
-    resource = make_resource(api, tmp_path / "absent" / "watched.csv")
+    resource = make_resource(api, None)
 
-    with pytest.raises(WatchedFileError, match="RAG_LETTERBOXD_WATCHED_FILE") as raised:
+    with pytest.raises(ResourceSkipped, match=NO_LIKED_MOVIES):
         resource.read_documents()
 
-    assert str(tmp_path) not in str(raised.value)
-    assert "watched.csv" not in str(raised.value)
     assert api.requests == []
 
 
 @pytest.mark.parametrize(("header", "column"), [("Date,Year,Letterboxd URI", "Name"), ("Date,Name,Letterboxd URI", "Year")])
-def test_watched_file_without_a_required_column_fails_and_names_the_column(tmp_path, header, column):
+def test_csv_without_a_required_column_fails_and_names_the_column(header, column):
     # Phase 5c C4
     api = make_api()
-    watched_file = write_watched(tmp_path, "2026-01-05,The Lantern Keeper,https://boxd.it/aB1c", header=header)
+    csv_text = liked_csv("2026-01-05,The Lantern Keeper,https://boxd.it/aB1c", header=header)
 
-    with pytest.raises(WatchedFileError, match=f"RAG_LETTERBOXD_WATCHED_FILE file has no {column} column") as raised:
-        make_resource(api, watched_file).read_documents()
+    with pytest.raises(LikedFilmsError, match=f"liked movies file has no {column} column") as raised:
+        make_resource(api, csv_text).read_documents()
 
-    assert str(tmp_path) not in str(raised.value)
+    assert "Lantern Keeper" not in str(raised.value)
     assert api.requests == []
 
 
 def test_row_with_an_empty_name_or_a_year_that_is_not_a_number_is_skipped_and_counted(tmp_path):
     # Phase 5c C5
-    watched_file = write_watched(
-        tmp_path,
+    csv_text = liked_csv(
         "2026-01-01,,2019,https://boxd.it/x1",
         LANTERN_ROW,
         "2026-01-02,Paper Harbor,n/a,https://boxd.it/x2",
@@ -174,7 +168,7 @@ def test_row_with_an_empty_name_or_a_year_that_is_not_a_number_is_skipped_and_co
         HARBOR_ROW,
     )
     api = make_api()
-    resource = make_resource(api, watched_file)
+    resource = make_resource(api, csv_text)
 
     documents = resource.read_documents()
 
@@ -186,9 +180,9 @@ def test_row_with_an_empty_name_or_a_year_that_is_not_a_number_is_skipped_and_co
 
 def test_same_name_and_year_in_two_rows_asks_tmdb_once_and_makes_one_document(tmp_path):
     # Phase 5c C6
-    watched_file = write_watched(tmp_path, LANTERN_ROW, HARBOR_ROW, "2026-04-09,The Lantern Keeper,2019,https://boxd.it/aB1c")
+    csv_text = liked_csv(LANTERN_ROW, HARBOR_ROW, "2026-04-09,The Lantern Keeper,2019,https://boxd.it/aB1c")
     api = make_api()
-    resource = make_resource(api, watched_file)
+    resource = make_resource(api, csv_text)
 
     documents = resource.read_documents()
 
@@ -204,8 +198,8 @@ def test_two_names_of_the_same_tmdb_movie_make_one_document_of_the_first_row(tmp
     data = with_results("Lantern Keeper", {"id": int(LANTERN_ID), "title": "The Lantern Keeper", "release_date": "2019-03-01"})
     # The first row's search is held until the later row's movie is read, so the later row finishes first.
     api = GatedTmdbApi(data, held_route="search:Lantern Keeper", release_route=LANTERN_DETAILS)
-    watched_file = write_watched(tmp_path, "2026-04-09,Lantern Keeper,2019,https://boxd.it/aB9z", HARBOR_ROW, LANTERN_ROW)
-    resource = make_resource(api, watched_file)
+    csv_text = liked_csv("2026-04-09,Lantern Keeper,2019,https://boxd.it/aB9z", HARBOR_ROW, LANTERN_ROW)
+    resource = make_resource(api, csv_text)
 
     documents = resource.read_documents()
 
@@ -218,56 +212,29 @@ def test_two_names_of_the_same_tmdb_movie_make_one_document_of_the_first_row(tmp
     )
 
 
-def test_watched_file_with_only_the_header_gives_no_document_and_no_error(tmp_path):
+def test_csv_with_only_the_header_gives_no_document_and_no_error():
     # Phase 5c C7
     api = make_api()
-    resource = make_resource(api, write_watched(tmp_path))
+    resource = make_resource(api, liked_csv())
 
     assert resource.read_documents() == []
     assert api.requests == []
     assert resource.read_summary().startswith("0 rows, 0 movies, 0 skipped rows")
 
 
-@pytest.mark.parametrize("error_type", [PermissionError, FileNotFoundError])
-def test_watched_file_that_cannot_be_opened_fails_and_names_the_setting_without_the_path(tmp_path, monkeypatch, error_type):
-    # Phase 5c C8
-    watched_file = write_watched(tmp_path, LANTERN_ROW)
-    real_open = Path.open
-
-    def refusing_open(path, *args, **kwargs):
-        if path == watched_file:
-            raise error_type(13, "The file cannot be opened", str(path))
-        return real_open(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "open", refusing_open)
-    api = make_api()
-
-    with pytest.raises(WatchedFileError, match="RAG_LETTERBOXD_WATCHED_FILE") as raised:
-        make_resource(api, watched_file).read_documents()
-
-    monkeypatch.undo()
-    printed = logged(raised.value) + "".join(traceback.format_exception(raised.value))
-    assert str(tmp_path) not in printed
-    assert "watched.csv" not in printed
-    assert raised.value.__cause__ is None
-    assert api.requests == []
-
-
-def test_watched_file_that_fails_while_it_is_read_fails_and_names_the_setting_without_the_path(tmp_path, monkeypatch):
-    # Phase 5c C8
-    watched_file = write_watched(tmp_path, LANTERN_ROW)
-
+def test_csv_that_is_not_readable_fails_without_any_part_of_it(monkeypatch):
+    # Phase 6d C4
     def failing_rows(reader):
-        raise OSError(5, "The file cannot be read", str(watched_file))
+        raise csv.Error("line contains NUL: Secret Film Name")
 
-    monkeypatch.setattr(letterboxd_tmdb_resource, "_watched_list", failing_rows)
+    monkeypatch.setattr(letterboxd_tmdb_resource, "_liked_list", failing_rows)
     api = make_api()
 
-    with pytest.raises(WatchedFileError, match="RAG_LETTERBOXD_WATCHED_FILE") as raised:
-        make_resource(api, watched_file).read_documents()
+    with pytest.raises(LikedFilmsError, match="not a CSV file") as raised:
+        make_resource(api, liked_csv(LANTERN_ROW)).read_documents()
 
-    assert str(tmp_path) not in logged(raised.value)
-    assert "watched.csv" not in logged(raised.value)
+    assert "Secret Film Name" not in logged(raised.value)
+    assert raised.value.__cause__ is None
     assert api.requests == []
 
 
@@ -275,7 +242,7 @@ def test_empty_tmdb_token_fails_before_any_call_and_names_the_setting():
     # Phase 5c D1
     api = make_api()
     resource = LetterboxdTmdbResource(
-        watched_file_factory=lambda: WATCHED_FILE,
+        liked_films_factory=lambda: LIKED_CSV,
         token_factory=Settings(tmdb_token="").require_tmdb_token,
         http_client_factory=api.client,
     )
@@ -292,8 +259,8 @@ def test_unset_settings_fail_only_when_the_movies_are_read():
 
     with pytest.raises(MissingSettingError, match="RAG_TMDB_TOKEN"):
         resource.read_documents()
-    with pytest.raises(MissingSettingError, match="RAG_LETTERBOXD_WATCHED_FILE"):
-        create_letterboxd_tmdb_resource(Settings(tmdb_token=TMDB_TOKEN)).read_documents()
+    with pytest.raises(ResourceSkipped, match=NO_LIKED_MOVIES):
+        create_letterboxd_tmdb_resource(Settings(tmdb_token=TMDB_TOKEN), read_csv=lambda settings: None).read_documents()
 
 
 def test_every_call_sends_the_bearer_token_and_never_puts_it_in_the_url():
@@ -312,7 +279,7 @@ def test_search_is_called_with_the_rows_name_year_and_english(tmp_path):
     # Phase 5c D3
     api = make_api()
 
-    make_resource(api, write_watched(tmp_path, LANTERN_ROW)).read_documents()
+    make_resource(api, liked_csv(LANTERN_ROW)).read_documents()
 
     search = api.requests[0]
     assert search.method == "GET"
@@ -329,7 +296,7 @@ def test_first_result_with_the_rows_year_is_taken_not_the_first_result(tmp_path)
         "1987", "2019"
     ]
 
-    documents = make_resource(api, write_watched(tmp_path, LANTERN_ROW)).read_documents()
+    documents = make_resource(api, liked_csv(LANTERN_ROW)).read_documents()
 
     assert api.routes == [LANTERN_SEARCH, LANTERN_DETAILS]
     assert documents[0].text.startswith("The Lantern Keeper (2019)")
@@ -342,9 +309,9 @@ def test_result_with_the_rows_title_is_taken_before_an_earlier_result_of_the_sam
         {"id": 9010, "title": "Paper Harbor Nights", "original_title": "Paper Harbor Nights"},
         {"id": 1003, "title": " PAPER HARBOR ", "original_title": "Papirhavn"},  # letter case and outer spaces are ignored
     ))
-    watched_file = write_watched(tmp_path, "2026-03-02,paper harbor,2015,https://boxd.it/aB3e")
+    csv_text = liked_csv("2026-03-02,paper harbor,2015,https://boxd.it/aB3e")
 
-    documents = make_resource(api, watched_file).read_documents()
+    documents = make_resource(api, csv_text).read_documents()
 
     assert api.routes == ["search:paper harbor", "movie:1003"]
     assert names(documents) == ["Paper Harbor"]
@@ -357,9 +324,9 @@ def test_result_with_the_rows_original_title_is_taken_before_an_earlier_result_o
         {"id": 9011, "title": "Winter Sun Rising", "original_title": "Winter Sun Rising", "release_date": "2021-05-01"},
         {"id": 1002, "title": "Winter Sun", "original_title": "kış GÜNEŞi", "release_date": "2021-01-22"},
     ))
-    watched_file = write_watched(tmp_path, "2026-02-11,Kış Güneşi,2021,https://boxd.it/aB2d")
+    csv_text = liked_csv("2026-02-11,Kış Güneşi,2021,https://boxd.it/aB2d")
 
-    documents = make_resource(api, watched_file).read_documents()
+    documents = make_resource(api, csv_text).read_documents()
 
     assert api.routes == ["search:Kış Güneşi", "movie:1002"]
     assert names(documents) == ["Winter Sun"]
@@ -373,9 +340,9 @@ def test_title_of_another_year_is_not_taken_and_the_first_result_of_the_rows_yea
         {"id": 1003, "title": "Paper Harbor", "original_title": "Paper Harbor"},
         {"id": 9013, "title": "Harbor Lights", "original_title": "Harbor Lights"},
     ))
-    watched_file = write_watched(tmp_path, "2026-03-02,Harbor,2015,https://boxd.it/aB3e")
+    csv_text = liked_csv("2026-03-02,Harbor,2015,https://boxd.it/aB3e")
 
-    documents = make_resource(api, watched_file).read_documents()
+    documents = make_resource(api, csv_text).read_documents()
 
     assert api.routes == ["search:Harbor", "movie:1003"]
     assert names(documents) == ["Paper Harbor"]
@@ -388,7 +355,7 @@ def routes_for_titles(tmp_path, row_name: str, tmdb_title: str) -> list[str]:
         {"id": 9010, "title": "Another Film", "original_title": "Another Film"},
         {"id": 1003, "title": tmdb_title, "original_title": "Papirhavn"},
     ))
-    make_resource(api, write_watched(tmp_path, f"2026-03-02,{row_name},2015,https://boxd.it/aB3e")).read_documents()
+    make_resource(api, liked_csv(f"2026-03-02,{row_name},2015,https://boxd.it/aB3e")).read_documents()
     return api.routes
 
 
@@ -437,7 +404,7 @@ def test_different_title_does_not_match_and_the_first_result_of_the_year_is_take
 def test_row_without_a_result_of_its_year_is_skipped_and_counted(tmp_path, row):
     # Phase 5c D5
     api = make_api()
-    resource = make_resource(api, write_watched(tmp_path, row, HARBOR_ROW))
+    resource = make_resource(api, liked_csv(row, HARBOR_ROW))
 
     documents = resource.read_documents()
 
@@ -451,7 +418,7 @@ def test_result_without_a_release_date_does_not_count_as_the_rows_year(tmp_path)
     api = make_api()
     results = api.recorded["search"]["Undated Cut"]["results"]
     assert results[0]["release_date"] == "" and "release_date" not in results[1]
-    resource = make_resource(api, write_watched(tmp_path, "2026-05-03,Undated Cut,2017,https://boxd.it/u1"))
+    resource = make_resource(api, liked_csv("2026-05-03,Undated Cut,2017,https://boxd.it/u1"))
 
     assert resource.read_documents() == []
     assert api.routes == ["search:Undated Cut"]
@@ -462,7 +429,7 @@ def test_details_are_asked_once_with_the_credits_in_english(tmp_path):
     # Phase 5c D7
     api = make_api()
 
-    make_resource(api, write_watched(tmp_path, LANTERN_ROW)).read_documents()
+    make_resource(api, liked_csv(LANTERN_ROW)).read_documents()
 
     details = [request for request in api.requests if request.url.path != "/3/search/movie"]
     assert [request.url.path for request in details] == [f"/3/movie/{LANTERN_ID}"]
@@ -472,9 +439,9 @@ def test_details_are_asked_once_with_the_credits_in_english(tmp_path):
 def test_details_404_skips_the_movie_and_the_others_are_still_read(tmp_path):
     # Phase 5c D8
     api = make_api()
-    watched_file = write_watched(tmp_path, LANTERN_ROW, "2026-05-04,Vanished Print,2012,https://boxd.it/v1", HARBOR_ROW)
+    csv_text = liked_csv(LANTERN_ROW, "2026-05-04,Vanished Print,2012,https://boxd.it/v1", HARBOR_ROW)
     sleeps: list[float] = []
-    resource = make_resource(api, watched_file, sleeps)
+    resource = make_resource(api, csv_text, sleeps)
 
     documents = resource.read_documents()
 
@@ -490,7 +457,7 @@ def test_400_or_422_on_a_movies_search_or_details_skips_the_movie_and_the_others
     # Phase 5c D8
     sleeps: list[float] = []
     api = make_api(failures={route: [answer(status)]})
-    resource = make_resource(api, write_watched(tmp_path, LANTERN_ROW, HARBOR_ROW), sleeps)
+    resource = make_resource(api, liked_csv(LANTERN_ROW, HARBOR_ROW), sleeps)
 
     documents = resource.read_documents()
 
@@ -505,7 +472,7 @@ def test_404_on_the_search_call_fails_the_movie_resource(tmp_path):
     api = make_api(failures={LANTERN_SEARCH: [answer(404)]})
 
     with pytest.raises(TmdbError) as raised:
-        make_resource(api, write_watched(tmp_path, LANTERN_ROW, HARBOR_ROW)).read_documents()
+        make_resource(api, liked_csv(LANTERN_ROW, HARBOR_ROW)).read_documents()
 
     assert raised.value.status == 404
 
@@ -559,7 +526,7 @@ def test_retries_wait_1_2_4_and_8_seconds_and_fail_the_source_after_5_attempts(t
     api = make_api(failures={LANTERN_SEARCH: [failure] * MAX_ATTEMPTS})
 
     with pytest.raises(TmdbError):
-        make_resource(api, write_watched(tmp_path, LANTERN_ROW), sleeps).read_documents()
+        make_resource(api, liked_csv(LANTERN_ROW), sleeps).read_documents()
 
     assert sleeps == [1.0, 2.0, 4.0, 8.0]
     assert MAX_ATTEMPTS == 5
@@ -585,8 +552,8 @@ class GatedTmdbApi(FakeTmdbApi):
         return response
 
 
-def ten_movies(tmp_path) -> tuple[dict, Path, list[str]]:
-    """Ten recorded movies and their watched.csv, made from the recorded Paper Harbor answers."""
+def ten_movies() -> tuple[dict, str, list[str]]:
+    """Ten recorded movies and their liked movies CSV, made from the recorded Paper Harbor answers."""
     data = recorded()
     titles = [f"Parallel Film {number}" for number in range(1, PARALLEL_ROWS + 1)]
     for number, title in enumerate(titles, start=1):
@@ -596,15 +563,15 @@ def ten_movies(tmp_path) -> tuple[dict, Path, list[str]]:
         data["search"][title] = search
         data["movies"][str(movie_id)] = {**copy.deepcopy(data["movies"]["1003"]), "id": movie_id, "title": title}
     rows = [f"2026-06-{number:02d},{title},2015,https://boxd.it/p{number}" for number, title in enumerate(titles, start=1)]
-    return data, write_watched(tmp_path, *rows), titles
+    return data, liked_csv(*rows), titles
 
 
-def test_ten_rows_are_looked_up_in_parallel_and_documents_keep_the_watched_order(tmp_path):
+def test_ten_rows_are_looked_up_in_parallel_and_documents_keep_the_liked_order():
     # Phase 5c D12
-    data, watched_file, titles = ten_movies(tmp_path)
+    data, csv_text, titles = ten_movies()
     api = GatedTmdbApi(data, held_route=f"search:{titles[0]}", release_route=f"movie:{2000 + PARALLEL_ROWS}")
 
-    documents = make_resource(api, watched_file).read_documents()
+    documents = make_resource(api, csv_text).read_documents()
 
     assert LOOKUP_WORKERS == 4
     assert names(documents) == titles
@@ -616,8 +583,7 @@ def test_ten_rows_are_looked_up_in_parallel_and_documents_keep_the_watched_order
 
 def test_read_summary_counts_rows_movies_skips_calls_waits_and_time(tmp_path):
     # Phase 5c D13
-    watched_file = write_watched(
-        tmp_path,
+    csv_text = liked_csv(
         LANTERN_ROW,
         "2026-01-02,Paper Harbor,n/a,https://boxd.it/x2",
         "2026-05-01,Ghost Reel,2020,https://boxd.it/g1",
@@ -627,7 +593,7 @@ def test_read_summary_counts_rows_movies_skips_calls_waits_and_time(tmp_path):
     )
     ticks = iter([100.0, 107.5])
     api = make_api(failures={LANTERN_SEARCH: [answer(429, {"Retry-After": "3"}), httpx.ReadError("connection reset")]})
-    resource = make_resource(api, watched_file, clock=lambda: next(ticks))
+    resource = make_resource(api, csv_text, clock=lambda: next(ticks))
 
     resource.read_documents()
 
@@ -640,9 +606,9 @@ def test_read_summary_counts_rows_movies_skips_calls_waits_and_time(tmp_path):
 
 def test_read_summary_counts_a_refused_row_apart_from_a_row_that_is_not_found(tmp_path):
     # Phase 5c D13
-    watched_file = write_watched(tmp_path, LANTERN_ROW, "2026-05-04,Vanished Print,2012,https://boxd.it/v1", HARBOR_ROW)
+    csv_text = liked_csv(LANTERN_ROW, "2026-05-04,Vanished Print,2012,https://boxd.it/v1", HARBOR_ROW)
     api = make_api(failures={LANTERN_SEARCH: [answer(400)]})
-    resource = make_resource(api, watched_file)
+    resource = make_resource(api, csv_text)
 
     resource.read_documents()
 
@@ -655,7 +621,7 @@ def test_read_summary_is_kept_when_the_read_fails(tmp_path):
     # Phase 5c D13
     ticks = iter([10.0, 25.0])
     api = make_api(failures={LANTERN_SEARCH: [httpx.ReadError("reset")] * MAX_ATTEMPTS})
-    resource = make_resource(api, write_watched(tmp_path, LANTERN_ROW), clock=lambda: next(ticks))
+    resource = make_resource(api, liked_csv(LANTERN_ROW), clock=lambda: next(ticks))
 
     with pytest.raises(TmdbError):
         resource.read_documents()
@@ -690,7 +656,7 @@ def test_tmdb_error_that_fails_the_source_holds_the_status_and_endpoint_not_the_
     api = make_api(failures={route: failures})
 
     with pytest.raises(TmdbError) as raised:
-        make_resource(api, write_watched(tmp_path, LANTERN_ROW)).read_documents()
+        make_resource(api, liked_csv(LANTERN_ROW)).read_documents()
 
     line = logged(raised.value)
     assert kind in line and endpoint in line
@@ -720,7 +686,7 @@ def test_any_other_httpx_error_fails_the_source_with_its_kind_and_endpoint_not_t
     api = make_api(failures={route: [error_type(f"failed for The Lantern Keeper with Bearer {TMDB_TOKEN}")]})
 
     with pytest.raises(TmdbError) as raised:
-        make_resource(api, write_watched(tmp_path, LANTERN_ROW), sleeps).read_documents()
+        make_resource(api, liked_csv(LANTERN_ROW), sleeps).read_documents()
 
     assert logged(raised.value) == f"TmdbError: TMDB call failed: {error_type.__name__} on {endpoint}"
     assert (raised.value.status, raised.value.endpoint) == (None, endpoint)
@@ -736,7 +702,7 @@ def test_movie_id_that_makes_no_valid_address_fails_the_source_with_a_tmdb_error
     api = make_api(with_results("The Lantern Keeper", {"id": "The Lantern\nKeeper", "release_date": "2019-03-01"}))
 
     with pytest.raises(TmdbError) as raised:
-        make_resource(api, write_watched(tmp_path, LANTERN_ROW)).read_documents()
+        make_resource(api, liked_csv(LANTERN_ROW)).read_documents()
 
     assert logged(raised.value) == "TmdbError: TMDB call failed: InvalidURL on an address that is not valid"
     printed = "".join(traceback.format_exception(raised.value))
@@ -749,7 +715,7 @@ def test_network_error_that_cannot_pass_by_trying_again_is_raised_after_one_atte
     # Phase 5c D20
     sleeps: list[float] = []
     api = make_api(failures={LANTERN_SEARCH: [httpx.LocalProtocolError("a malformed request header")]})
-    resource = make_resource(api, write_watched(tmp_path, LANTERN_ROW), sleeps)
+    resource = make_resource(api, liked_csv(LANTERN_ROW), sleeps)
 
     with pytest.raises(TmdbError, match="LocalProtocolError on /3/search/movie"):
         resource.read_documents()
@@ -769,7 +735,7 @@ def test_rows_that_are_all_refused_fail_the_movie_resource_without_a_movie_name(
     # Phase 5c D19
     sleeps: list[float] = []
     api = make_api(failures={route: [answer(status)] for route, status in zip(routes, statuses)})
-    resource = make_resource(api, write_watched(tmp_path, LANTERN_ROW, HARBOR_ROW), sleeps)
+    resource = make_resource(api, liked_csv(LANTERN_ROW, HARBOR_ROW), sleeps)
 
     with pytest.raises(TmdbError) as raised:
         resource.read_documents()
@@ -790,7 +756,7 @@ def test_refused_error_has_no_status_and_an_endpoint_that_is_text(tmp_path):
     api = make_api(failures={LANTERN_SEARCH: [answer(400)]})
 
     with pytest.raises(TmdbRefusedError) as raised:
-        make_resource(api, write_watched(tmp_path, LANTERN_ROW)).read_documents()
+        make_resource(api, liked_csv(LANTERN_ROW)).read_documents()
 
     assert (raised.value.status, raised.value.endpoint) == (None, "")
     assert raised.value.args == ("TMDB refused every movie request (400 or 422)",)
@@ -799,10 +765,10 @@ def test_refused_error_has_no_status_and_an_endpoint_that_is_text(tmp_path):
 def test_single_refused_row_fails_the_movie_resource(tmp_path):
     # Phase 5c D19
     api = make_api(failures={LANTERN_SEARCH: [answer(400)]})
-    watched_file = write_watched(tmp_path, "2026-01-01,,2019,https://boxd.it/x1", LANTERN_ROW)  # the bad row is not looked up
+    csv_text = liked_csv("2026-01-01,,2019,https://boxd.it/x1", LANTERN_ROW)  # the bad row is not looked up
 
     with pytest.raises(TmdbRefusedError):
-        make_resource(api, watched_file).read_documents()
+        make_resource(api, csv_text).read_documents()
 
 
 @pytest.mark.parametrize(("other_row", "skip_counts"), [
@@ -812,7 +778,7 @@ def test_single_refused_row_fails_the_movie_resource(tmp_path):
 def test_refused_row_is_skipped_when_another_row_is_not_refused_even_without_a_movie(tmp_path, other_row, skip_counts):
     # Phase 5c D19
     api = make_api(failures={LANTERN_SEARCH: [answer(422)]})
-    resource = make_resource(api, write_watched(tmp_path, LANTERN_ROW, other_row))
+    resource = make_resource(api, liked_csv(LANTERN_ROW, other_row))
 
     assert resource.read_documents() == []
     assert f"2 rows, 0 movies, 2 skipped rows (0 bad rows, {skip_counts})" in resource.read_summary()
@@ -821,7 +787,7 @@ def test_refused_row_is_skipped_when_another_row_is_not_refused_even_without_a_m
 def test_rows_that_are_all_bad_give_no_document_and_no_error(tmp_path):
     # Phase 5c D19
     api = make_api()
-    resource = make_resource(api, write_watched(tmp_path, "2026-01-01,,2019,https://boxd.it/x1"))
+    resource = make_resource(api, liked_csv("2026-01-01,,2019,https://boxd.it/x1"))
 
     assert resource.read_documents() == []
     assert api.requests == []
@@ -841,7 +807,7 @@ def test_200_answer_that_is_not_a_json_object_fails_the_source_with_the_endpoint
     api = make_api(failures={route: [body(content)]})
 
     with pytest.raises(TmdbError) as raised:
-        make_resource(api, write_watched(tmp_path, LANTERN_ROW), sleeps).read_documents()
+        make_resource(api, liked_csv(LANTERN_ROW), sleeps).read_documents()
 
     assert raised.value.endpoint == endpoint
     assert raised.value.status is None
@@ -861,7 +827,7 @@ def test_search_results_of_a_wrong_shape_count_as_no_result(tmp_path, results):
     # Phase 5c D18
     data = recorded()
     data["search"]["The Lantern Keeper"] = {**data["empty_search"], "results": results}
-    resource = make_resource(make_api(data), write_watched(tmp_path, LANTERN_ROW, HARBOR_ROW))
+    resource = make_resource(make_api(data), liked_csv(LANTERN_ROW, HARBOR_ROW))
 
     assert names(resource.read_documents()) == ["Paper Harbor"]
     assert "2 rows, 1 movies, 1 skipped rows (0 bad rows, 1 no match, 0 not found, 0 refused)" in resource.read_summary()
@@ -891,8 +857,7 @@ def test_details_parts_of_a_wrong_shape_count_as_missing(tmp_path, credits):
 
 def test_read_summary_of_a_failed_read_counts_the_movies_and_skips_finished_before_the_failure(tmp_path):
     # Phase 5c D17
-    watched_file = write_watched(
-        tmp_path,
+    csv_text = liked_csv(
         LANTERN_ROW,
         "2026-01-02,Paper Harbor,n/a,https://boxd.it/x2",
         "2026-05-01,Ghost Reel,2020,https://boxd.it/g1",
@@ -900,7 +865,7 @@ def test_read_summary_of_a_failed_read_counts_the_movies_and_skips_finished_befo
         HARBOR_ROW,  # the last row fails, so the rows before it have finished when the error is raised
     )
     api = make_api(failures={"search:Paper Harbor": [recorded_answer("unauthorized", 401)]})
-    resource = make_resource(api, watched_file)
+    resource = make_resource(api, csv_text)
 
     with pytest.raises(TmdbError):
         resource.read_documents()
@@ -912,9 +877,9 @@ def test_read_summary_of_a_failed_read_counts_the_movies_and_skips_finished_befo
 
 def test_second_read_after_a_failed_read_starts_its_counts_again(tmp_path):
     # Phase 5c D17
-    watched_file = write_watched(tmp_path, LANTERN_ROW, HARBOR_ROW)
+    csv_text = liked_csv(LANTERN_ROW, HARBOR_ROW)
     api = make_api(failures={"search:Paper Harbor": [recorded_answer("unauthorized", 401)]})
-    resource = make_resource(api, watched_file)
+    resource = make_resource(api, csv_text)
     with pytest.raises(TmdbError):
         resource.read_documents()
 
@@ -948,7 +913,7 @@ def lantern_document(tmp_path, change=None):
     data = recorded()
     if change:
         change(data["movies"][LANTERN_ID])
-    return make_resource(make_api(data), write_watched(tmp_path, LANTERN_ROW)).read_documents()[0]
+    return make_resource(make_api(data), liked_csv(LANTERN_ROW)).read_documents()[0]
 
 
 def test_document_text_has_the_title_year_and_every_line(tmp_path):
@@ -1067,8 +1032,8 @@ def test_metadata_has_name_empty_path_director_musician_genre_timestamp_and_type
 ])
 def test_missing_or_unreadable_watched_date_gives_an_empty_timestamp(tmp_path, header, row):
     # Phase 5c E6
-    watched_file = write_watched(tmp_path, row, header=header)
+    csv_text = liked_csv(row, header=header)
 
-    document = make_resource(make_api(), watched_file).read_documents()[0]
+    document = make_resource(make_api(), csv_text).read_documents()[0]
 
     assert document.metadata["timestamp"] == ""
