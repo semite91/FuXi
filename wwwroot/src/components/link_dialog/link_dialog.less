@@ -1,0 +1,27 @@
+@import (reference) '../../css/tokens.less';
+
+.link-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: @space-small;
+}
+
+.link-dialog__label {
+  .field-label();
+}
+
+.link-dialog__input {
+  .text-input();
+}
+
+.link-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.link-dialog__save {
+  .primary-button();
+  display: inline-flex;
+  align-items: center;
+  gap: @space-xsmall;
+}

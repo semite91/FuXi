@@ -13,7 +13,13 @@ import pytest
 from psycopg import sql
 
 from settings import TEST_ENV_PATH, DatabaseSettings, MissingSettingError, Settings, SettingsError, load_settings
-from settings_store import SettingsStoreError, connect_read_only, read_notion_token
+from settings_store import (
+    GoogleDriveRows,
+    SettingsStoreError,
+    connect_read_only,
+    read_google_drive_rows,
+    read_notion_token,
+)
 
 ACCESS_TOKEN = "secret_store-test-token"
 OTHER_ACCESS_TOKEN = "secret_other-store-test-token"
@@ -22,6 +28,10 @@ CREATE_SETTINGS_TABLE = 'CREATE TABLE "Settings" ("Id" uuid PRIMARY KEY, "Code" 
 INSERT_SETTING = 'INSERT INTO "Settings" ("Id", "Code", "Value") VALUES (gen_random_uuid(), %s, %s)'
 UPDATE_SETTING = 'UPDATE "Settings" SET "Value" = %s WHERE "Code" = %s'
 NOTION_ACCESS_TOKEN_CODE = "NotionAccessToken"
+GOOGLE_DRIVE_REFRESH_TOKEN_CODE = "GoogleDriveRefreshToken"
+GOOGLE_DRIVE_FOLDER_ID_CODE = "GoogleDriveFolderId"
+GOOGLE_REFRESH_TOKEN = "1//refresh-token-of-a-store-test"
+FOLDER_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz-_0123"
 
 
 def _test_settings() -> Settings:
@@ -103,6 +113,38 @@ def test_store_connection_cannot_write(settings, table):
     with connect_read_only(settings.require_database()) as connection:
         with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
             connection.execute(INSERT_SETTING, (NOTION_ACCESS_TOKEN_CODE, ACCESS_TOKEN))
+
+
+def test_google_drive_rows_are_read_together(settings, table):
+    # Phase 6c D1
+    table.execute(INSERT_SETTING, (GOOGLE_DRIVE_REFRESH_TOKEN_CODE, GOOGLE_REFRESH_TOKEN))
+    table.execute(INSERT_SETTING, (GOOGLE_DRIVE_FOLDER_ID_CODE, FOLDER_ID))
+    table.execute(INSERT_SETTING, ("GoogleDriveEmail", "learner@example.com"))
+
+    assert read_google_drive_rows(settings) == GoogleDriveRows(refresh_token=GOOGLE_REFRESH_TOKEN, folder_id=FOLDER_ID)
+
+
+@pytest.mark.parametrize("rows", [[], [(GOOGLE_DRIVE_REFRESH_TOKEN_CODE, ""), (GOOGLE_DRIVE_FOLDER_ID_CODE, "")]])
+def test_missing_or_empty_google_drive_rows_read_as_none(settings, table, rows):
+    # Phase 6c D3, D4
+    for row in rows:
+        table.execute(INSERT_SETTING, row)
+
+    assert read_google_drive_rows(settings) == GoogleDriveRows(refresh_token=None, folder_id=None)
+
+
+def test_unreachable_database_fails_google_drive_without_secrets(settings):
+    # Phase 6c D15
+    database = settings.require_database()
+    unreachable = Settings(database_values={
+        "FUXI_DB_HOST": "127.0.0.1", "FUXI_DB_PORT": str(UNREACHABLE_PORT), "FUXI_DB_NAME": database.name,
+        "FUXI_DB_USER": database.user, "FUXI_DB_PASSWORD": database.password,
+    })
+
+    with pytest.raises(SettingsStoreError) as raised:
+        read_google_drive_rows(unreachable)
+
+    assert database.password not in str(raised.value)
 
 
 def test_unreachable_database_fails_without_secrets(settings):

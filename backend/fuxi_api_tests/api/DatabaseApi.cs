@@ -32,6 +32,8 @@ public sealed class DatabaseApi(bool startsNotificationTimer = false) : IDisposa
 
     public Tests.Api.Notion.FakeNotionServer Notion => host.Notion;
 
+    public Tests.Api.GoogleDrive.FakeGoogleServer Google => host.Google;
+
     /// <summary>Configuration values that win over .env.test. Set them before the first call.</summary>
     public Dictionary<string, string?> Settings => host.Settings;
 

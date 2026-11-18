@@ -66,7 +66,7 @@ def cosine_similarity(first: list[float], second: list[float]) -> float:
 
 
 def test_real_google_drive_returns_picture_documents():
-    # Phase 5b C21 (reads and downloads every image shared with the service account)
+    # Phase 5b C21, Phase 6c I4 (reads the chosen folder of the connected account, from the Settings table)
     documents = create_google_drive_resource(LIVE_SETTINGS).read_documents()
 
     assert len(documents) >= 1

@@ -15,6 +15,7 @@ from resources.google_drive_resource import GoogleDriveResource, create_google_d
 from resources.letterboxd_tmdb_resource import LetterboxdTmdbResource, create_letterboxd_tmdb_resource
 from resources.notion_resource import NotionResource, create_notion_resource
 from settings import Settings
+from settings_store import GoogleDriveRows
 
 ALLOWED_ORIGIN = "http://localhost:5173"
 SECRET = "super-secret-test-key"
@@ -600,15 +601,15 @@ def test_default_resources_are_notion_google_drive_and_the_movies():
     ]
 
 
-def test_engine_starts_without_the_key_file_setting_and_names_it_when_drive_is_read(tmp_path):
-    # Phase 5b B3
+def test_engine_starts_without_the_database_settings_and_names_the_key_when_drive_is_read(tmp_path):
+    # Phase 5b B3, Phase 6c D15: the Google Drive rows are read from the Settings table at each build
     harness = Harness(tmp_path, settings=Settings(), resource_factory=engine.default_resources)
 
     assert harness.client.post("/Init_RAG").status_code == 202
     harness.wait_for_build()
 
     log = "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "logs").iterdir())
-    assert "resource google_drive failed: MissingSettingError: RAG_GOOGLE_SERVICE_ACCOUNT_FILE is not set" in log
+    assert "resource google_drive failed: MissingSettingError: FUXI_DB_HOST is not set" in log
 
 
 def test_drive_photo_data_url_is_answered_unchanged(tmp_path):
@@ -623,18 +624,19 @@ def test_drive_photo_data_url_is_answered_unchanged(tmp_path):
     assert answer.json() == [{"name": "serendipity", "translation": "şans", "content": content}]
 
 
-def test_missing_key_file_setting_fails_update_with_a_generic_message_and_keeps_old_collections(tmp_path):
-    # Phase 5b H2
+def test_missing_google_client_setting_fails_update_with_a_generic_message_and_keeps_old_collections(tmp_path):
+    # Phase 5b H2, Phase 6c D8
     resources: list[Resource] = [NotesResource()]
     harness = Harness(tmp_path, resource_factory=lambda settings: list(resources))
     harness.build_ready()
-    resources.append(create_google_drive_resource(harness.dependencies.settings))
+    connected = GoogleDriveRows(refresh_token="1//refresh-token-of-a-test", folder_id="1dRvFolderPhotos00000000000000a")
+    resources.append(create_google_drive_resource(harness.dependencies.settings, read_rows=lambda settings: connected))
 
     answer = harness.client.post("/Update_Collections")
 
     assert answer.status_code == 502
     assert answer.json() == {"detail": "The RAG collections could not be updated. The old collections are kept."}
-    assert "RAG_GOOGLE_SERVICE_ACCOUNT_FILE" not in answer.text
+    assert "GOOGLE_CLIENT_ID" not in answer.text
     assert harness.stored_documents() == ["note 1"]
     assert harness.client.post("/Init_RAG").json() == {"status": "ready"}
 

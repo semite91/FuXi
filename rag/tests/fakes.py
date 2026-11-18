@@ -3,6 +3,7 @@
 import base64
 import io
 import json
+import re
 import threading
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,11 @@ START_CURSOR = "start"
 FAKE_VECTOR_SIZE = 8
 DRIVE_FILES_PATH = "/drive/v3/files"
 DRIVE_THUMBNAIL_HOST = "lh3.googleusercontent.com"
+GOOGLE_TOKEN_HOST = "oauth2.googleapis.com"
+# The chosen folder of drive_recorded.json: Photos, with Paris and Paris / Night under it.
+DRIVE_TEST_FOLDER_ID = "1dRvFolderPhotos00000000000000a"
+# The folder a files.list call asks for, from its q parameter.
+PARENT_QUERY = re.compile(r"'([^']+)' in parents")
 THUMBNAIL_SIZE_MARK = "=s"
 FAKE_ACCESS_TOKEN = "test-access-token"
 TMDB_SEARCH_PATH = "/3/search/movie"
@@ -89,9 +95,11 @@ class _FakePages:
 
 
 class FakeDriveApi:
-    """Answers Drive REST calls from recorded JSON through httpx.MockTransport; pictures are bytes by file id.
+    """Answers Google token and Drive REST calls from recorded JSON through httpx.MockTransport; pictures are bytes by
+    file id.
 
-    Routes: "files.list", "files.get:<id>" (folders), "media:<id>" (alt=media) and "thumbnail:<id>".
+    Routes: "token" (Google's token endpoint), "files.get:<id>" (the chosen folder), "files.list:<parent id>" (one
+    folder's children, recorded["children"][parent][page token]), "media:<id>" (alt=media) and "thumbnail:<id>".
     failures[route] answers (responses or errors) are used one per call before the recorded answer.
     """
 
@@ -110,7 +118,8 @@ class FakeDriveApi:
         self._lock = threading.Lock()
         self._thumbnail_ids = {
             file["thumbnailLink"].rsplit(THUMBNAIL_SIZE_MARK, 1)[0]: file["id"]
-            for page in recorded["files_list"].values()
+            for pages in recorded["children"].values()
+            for page in pages.values()
             for file in page["files"]
             if file.get("thumbnailLink")
         }
@@ -129,21 +138,29 @@ class FakeDriveApi:
         return answer if answer is not None else self._answer(request, route)
 
     def _route(self, request: httpx.Request) -> str:
+        if request.url.host == GOOGLE_TOKEN_HOST:
+            return "token"
         if request.url.host == DRIVE_THUMBNAIL_HOST:
             return f"thumbnail:{self._thumbnail_ids[str(request.url).rsplit(THUMBNAIL_SIZE_MARK, 1)[0]]}"
         if request.url.path == DRIVE_FILES_PATH:
-            return "files.list"
+            parent = PARENT_QUERY.search(request.url.params.get("q", ""))
+            return f"files.list:{parent.group(1) if parent else ''}"
         file_id = request.url.path.rsplit("/", 1)[-1]
         return f"media:{file_id}" if request.url.params.get("alt") == "media" else f"files.get:{file_id}"
 
     def _answer(self, request: httpx.Request, route: str) -> httpx.Response:
-        kind, _, file_id = route.partition(":")
+        kind, _, key = route.partition(":")
+        if kind == "token":
+            return httpx.Response(200, json=self.recorded["token"])
         if kind == "files.list":
-            return httpx.Response(200, json=self.recorded["files_list"][request.url.params.get("pageToken", START_CURSOR)])
+            pages = self.recorded["children"].get(key)
+            if pages is None:
+                return httpx.Response(404, json=self.recorded["not_found"])
+            return httpx.Response(200, json=pages[request.url.params.get("pageToken", START_CURSOR)])
         if kind == "files.get":
-            folder = self.recorded["folders"].get(file_id)
+            folder = self.recorded["folders"].get(key)
             return httpx.Response(200, json=folder) if folder else httpx.Response(404, json=self.recorded["not_found"])
-        return httpx.Response(200, content=self.pictures[file_id], headers={"Content-Type": "image/jpeg"})
+        return httpx.Response(200, content=self.pictures[key], headers={"Content-Type": "image/jpeg"})
 
 
 class FakeTmdbApi:
@@ -199,6 +216,18 @@ class FakeTokens:
     def access_token(self) -> str:
         self.uses += 1
         return self.token
+
+
+def fake_drive_resource(api: FakeDriveApi, folder_id: str = DRIVE_TEST_FOLDER_ID, **kwargs: Any) -> Any:
+    """A Google Drive resource that reads the recorded folder tree from api with FakeTokens (no token call)."""
+    from resources.google_drive_resource import DriveConnection, GoogleClient, GoogleDriveResource
+
+    return GoogleDriveResource(
+        connection_factory=lambda: DriveConnection(folder_id, "fake-refresh-token", GoogleClient("fake-id", "fake-secret")),
+        token_source_factory=lambda client, connection: FakeTokens(),
+        http_client_factory=api.client,
+        **kwargs,
+    )
 
 
 class FakeEmbedder:

@@ -184,34 +184,42 @@ def test_zero_cooldown_is_accepted(tmp_path):
     assert settings.rebuild_cooldown_minutes == 0
 
 
-def test_google_service_account_file_is_read(tmp_path):
-    # Phase 5b B1
-    settings = load_settings(write_env(tmp_path, f"RAG_GOOGLE_SERVICE_ACCOUNT_FILE={tmp_path / 'key.json'}\n"), environ={})
-
-    assert settings.require_google_service_account_file() == tmp_path / "key.json"
+GOOGLE_ENV = "GOOGLE_CLIENT_ID=google-test-client.apps.googleusercontent.com\nGOOGLE_CLIENT_SECRET=google-test-secret\n"
 
 
-def test_relative_google_service_account_file_is_resolved_from_the_repository_root(tmp_path):
-    # Phase 5b B2
+def test_google_client_keys_are_read(tmp_path):
+    # Phase 6c D1: the same keys the API reads
+    settings = load_settings(write_env(tmp_path, GOOGLE_ENV), environ={})
+
+    assert settings.require_google_client() == ("google-test-client.apps.googleusercontent.com", "google-test-secret")
+
+
+@pytest.mark.parametrize(("content", "key"), [
+    ("GOOGLE_CLIENT_SECRET=google-test-secret\n", "GOOGLE_CLIENT_ID"),
+    ("GOOGLE_CLIENT_ID=google-test-client\nGOOGLE_CLIENT_SECRET=\n", "GOOGLE_CLIENT_SECRET"),
+])
+def test_missing_google_client_key_fails_only_when_used_and_names_the_key(tmp_path, content, key):
+    # Phase 6c D8
+    settings = load_settings(write_env(tmp_path, content), environ={})
+
+    with pytest.raises(MissingSettingError, match=key):
+        settings.require_google_client()
+
+
+def test_printed_settings_hide_the_google_client_secret(tmp_path):
+    # Phase 6c H5
+    settings = load_settings(write_env(tmp_path, GOOGLE_ENV), environ={})
+
+    assert "google-test-secret" not in repr(settings)
+    assert "google-test-secret" not in str(settings)
+
+
+def test_google_service_account_file_is_no_setting(tmp_path):
+    # Phase 6c D14: the Learner's own Google account replaces the service account
     settings = load_settings(write_env(tmp_path, "RAG_GOOGLE_SERVICE_ACCOUNT_FILE=rag/secrets/drive.json\n"), environ={})
 
-    assert settings.require_google_service_account_file() == REPO_ROOT / "rag" / "secrets" / "drive.json"
-
-
-def test_missing_google_service_account_file_fails_only_when_used(tmp_path):
-    # Phase 5b B3
-    settings = load_settings(write_env(tmp_path, ""), environ={})
-
-    with pytest.raises(MissingSettingError, match="RAG_GOOGLE_SERVICE_ACCOUNT_FILE"):
-        settings.require_google_service_account_file()
-
-
-def test_printed_settings_hide_the_key_file_path(tmp_path):
-    # Phase 5b B4
-    settings = load_settings(write_env(tmp_path, "RAG_GOOGLE_SERVICE_ACCOUNT_FILE=rag/secrets/drive.json\n"), environ={})
-
-    assert "drive.json" not in repr(settings)
-    assert "drive.json" not in str(settings)
+    assert not hasattr(settings, "google_service_account_file")
+    assert not hasattr(settings, "require_google_service_account_file")
 
 
 MOVIE_ENV = "RAG_TMDB_TOKEN=tmdb-test-token\nRAG_LETTERBOXD_WATCHED_FILE=rag/data/letterboxd/watched.csv\n"

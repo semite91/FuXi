@@ -15,7 +15,7 @@ public sealed class RouteTests : IDisposable
     private const string DELETE = "DELETE";
     private const string ANY_METHOD = "*";
     private const char ROUTE_SEPARATOR = '/';
-    private const int ROUTE_COUNT = 18;
+    private const int ROUTE_COUNT = 22;
     private const string INTERNAL_FUNCTION_NAME = "GetNotificationWords";
     private const string INTERNAL_FUNCTION_ROUTE = ApiRoutes.PREFIX + "/" + INTERNAL_FUNCTION_NAME;
     private static readonly string[] GET_ROUTES =
@@ -30,6 +30,9 @@ public sealed class RouteTests : IDisposable
         ApiRoutes.NOTION_CONNECT,
         ApiRoutes.NOTION_CALLBACK,
         ApiRoutes.GET_NOTION_CONNECTION,
+        ApiRoutes.GOOGLE_DRIVE_CONNECT,
+        ApiRoutes.GOOGLE_DRIVE_CALLBACK,
+        ApiRoutes.GET_GOOGLE_DRIVE_CONNECTION,
     ];
     private static readonly string[] POST_ROUTES =
     [
@@ -40,6 +43,7 @@ public sealed class RouteTests : IDisposable
         ApiRoutes.UPDATE_NOTIFICATION_PERIOD,
         ApiRoutes.UPDATE_SCHEDULE,
         ApiRoutes.SAVE_PUSH_SUBSCRIPTION,
+        ApiRoutes.UPDATE_GOOGLE_DRIVE_FOLDER,
     ];
     private static readonly string[] DELETE_ROUTES = [ApiRoutes.DELETE_SCHEDULE];
 
@@ -76,9 +80,9 @@ public sealed class RouteTests : IDisposable
     }
 
     [Fact]
-    public void ApiHasExactlyEighteenRoutes()
+    public void ApiHasExactlyTwentyTwoRoutes()
     {
-        // B5, Phase 6b: three Notion routes
+        // B5, Phase 6b: three Notion routes; Phase 6c: four Google Drive routes
         (string Route, string Method)[] expected =
         [
             .. GET_ROUTES.Select(route => (route, GET)),

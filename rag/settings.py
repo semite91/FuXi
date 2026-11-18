@@ -18,7 +18,9 @@ DB_NAME_KEY = "FUXI_DB_NAME"
 DB_USER_KEY = "FUXI_DB_USER"
 DB_PASSWORD_KEY = "FUXI_DB_PASSWORD"
 GEMINI_API_KEY_KEY = "RAG_GEMINI_API_KEY"
-GOOGLE_SERVICE_ACCOUNT_FILE_KEY = "RAG_GOOGLE_SERVICE_ACCOUNT_FILE"
+# The Google sign-in client, the same keys the API reads; the engine uses them to refresh the Drive token.
+GOOGLE_CLIENT_ID_KEY = "GOOGLE_CLIENT_ID"
+GOOGLE_CLIENT_SECRET_KEY = "GOOGLE_CLIENT_SECRET"
 TMDB_TOKEN_KEY = "RAG_TMDB_TOKEN"
 LETTERBOXD_WATCHED_FILE_KEY = "RAG_LETTERBOXD_WATCHED_FILE"
 GEMINI_MODEL_KEY = "RAG_GEMINI_MODEL"
@@ -78,12 +80,13 @@ class Settings:
     # hash=False: a dict cannot be hashed; equal Settings still compare these values.
     database_values: Mapping[str, str | None] = field(default_factory=dict, repr=False, hash=False)
     gemini_api_key: str | None = field(default=None, repr=False)
-    google_service_account_file: str | None = field(default=None, repr=False)
+    google_client_id: str | None = field(default=None, repr=False)
+    google_client_secret: str | None = field(default=None, repr=False)
     tmdb_token: str | None = field(default=None, repr=False)
     letterboxd_watched_file: str | None = field(default=None, repr=False)
 
     def require_database(self) -> DatabaseSettings:
-        """The FuXi database; it holds the Settings table with the Notion token."""
+        """The FuXi database; it holds the Settings table with the Notion and Google Drive rows."""
         # Checked in .env order, so the first missing key is the one named.
         host, raw_port, name, user, password = (_require(self.database_values.get(key), key) for key in DB_KEYS)
         try:
@@ -95,9 +98,9 @@ class Settings:
     def require_gemini_api_key(self) -> str:
         return _require(self.gemini_api_key, GEMINI_API_KEY_KEY)
 
-    def require_google_service_account_file(self) -> Path:
-        """The key file path; a relative path is resolved from the repository root."""
-        return _require_path(self.google_service_account_file, GOOGLE_SERVICE_ACCOUNT_FILE_KEY)
+    def require_google_client(self) -> tuple[str, str]:
+        """The Google client ID and secret, in .env order, so the first missing key is the one named."""
+        return _require(self.google_client_id, GOOGLE_CLIENT_ID_KEY), _require(self.google_client_secret, GOOGLE_CLIENT_SECRET_KEY)
 
     def require_tmdb_token(self) -> str:
         return _require(self.tmdb_token, TMDB_TOKEN_KEY)
@@ -115,7 +118,8 @@ def load_settings(
     return Settings(
         database_values={key: _text(values, key) for key in DB_KEYS},
         gemini_api_key=_text(values, GEMINI_API_KEY_KEY),
-        google_service_account_file=_text(values, GOOGLE_SERVICE_ACCOUNT_FILE_KEY),
+        google_client_id=_text(values, GOOGLE_CLIENT_ID_KEY),
+        google_client_secret=_text(values, GOOGLE_CLIENT_SECRET_KEY),
         tmdb_token=_text(values, TMDB_TOKEN_KEY),
         letterboxd_watched_file=_text(values, LETTERBOXD_WATCHED_FILE_KEY),
         gemini_model=_text(values, GEMINI_MODEL_KEY) or DEFAULT_GEMINI_MODEL,

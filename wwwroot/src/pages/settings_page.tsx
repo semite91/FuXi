@@ -2,22 +2,27 @@ import { useState } from 'react';
 import Credits from '../components/credits/credits';
 import DisclosureToggle from '../components/disclosure_toggle/disclosure_toggle';
 import EmbeddingsUpdate from '../components/embeddings_update/embeddings_update';
+import LinkDialog from '../components/link_dialog/link_dialog';
 import NotificationPermission from '../components/notification_permission/notification_permission';
-import NotionConnect from '../components/notion_connect/notion_connect';
 import PageCard from '../components/page_card/page_card';
+import RequestRow from '../components/request_row/request_row';
 import StatusMessage from '../components/status_message/status_message';
 import {
   APP_TEXTS,
+  CONNECTION_TEXTS,
   CREDITS_TEXTS,
+  GOOGLE_DRIVE_TEXTS,
   NOTION_TEXTS,
   PERMISSION_TEXTS,
   REQUESTS_TEXTS,
   SETTINGS_TEXTS,
 } from '../constants/texts';
 import { useEmbeddingsUpdate, type EmbeddingsStep } from '../hooks/use_embeddings_update';
+import { useGoogleDriveConnection, type FolderSaveError } from '../hooks/use_google_drive_connection';
 import { useNotificationPermission } from '../hooks/use_notification_permission';
 import { useNotionConnection } from '../hooks/use_notion_connection';
-import type { NotionConnection } from '../services/notion_service';
+import { folderAddress } from '../services/google_drive_service';
+import { GoogleDriveLogo, NotionLogo } from '../image/icons';
 import tmdbLogo from '../image/tmdb_logo.svg';
 
 const RESULT_TITLES: Partial<Record<EmbeddingsStep, string>> = {
@@ -26,28 +31,35 @@ const RESULT_TITLES: Partial<Record<EmbeddingsStep, string>> = {
 };
 
 const CONFIRM_STEP: EmbeddingsStep = 'confirm';
+const NEW_TAB = '_blank';
+const NEW_TAB_REL = 'noopener noreferrer';
 
-/** No text until the state is known. */
-const notionStateText = (connection: NotionConnection | null): string | undefined => {
+const FOLDER_SAVE_ERRORS: Record<FolderSaveError, string> = {
+  notAFolderLink: GOOGLE_DRIVE_TEXTS.notAFolderLink,
+  failed: GOOGLE_DRIVE_TEXTS.saveFailed,
+};
+
+/** No text until the state is known; "Connected: <name>" when the source gave a name. */
+const connectionStateText = (connection: { isConnected: boolean } | null, name: string | null | undefined) => {
   if (connection === null) {
     return undefined;
   }
 
   if (!connection.isConnected) {
-    return NOTION_TEXTS.notConnected;
+    return CONNECTION_TEXTS.notConnected;
   }
 
-  return connection.workspaceName
-    ? `${NOTION_TEXTS.connected}${NOTION_TEXTS.workspaceSeparator}${connection.workspaceName}`
-    : NOTION_TEXTS.connected;
+  return name ? `${CONNECTION_TEXTS.connected}${CONNECTION_TEXTS.nameSeparator}${name}` : CONNECTION_TEXTS.connected;
 };
 
 const SettingsPage = () => {
   const embeddings = useEmbeddingsUpdate();
   const notification = useNotificationPermission();
   const notion = useNotionConnection();
-  // Not stored, so the toggle is closed every time the page opens, unless it opens back from the Notion sign-in.
-  const [isRequestsOpen, setIsRequestsOpen] = useState(notion.isReturningFromSignIn);
+  const drive = useGoogleDriveConnection();
+  // Not stored, so the toggle is closed every time the page opens, unless it opens back from a sign-in.
+  const [isRequestsOpen, setIsRequestsOpen] = useState(notion.isReturningFromSignIn || drive.isReturningFromSignIn);
+  const folderId = drive.connection?.folderId ?? null;
 
   return (
     <PageCard title={SETTINGS_TEXTS.title}>
@@ -78,16 +90,60 @@ const SettingsPage = () => {
         isFlush
         onToggle={() => setIsRequestsOpen((isOpen) => !isOpen)}
       >
-        <NotionConnect
+        <RequestRow
+          logo={<NotionLogo />}
           connectLabel={NOTION_TEXTS.connect}
           text={NOTION_TEXTS.label}
           aboutLabel={NOTION_TEXTS.about}
           tipText={NOTION_TEXTS.tip}
-          stateText={notionStateText(notion.connection)}
+          stateText={connectionStateText(notion.connection, notion.connection?.workspaceName)}
           errorText={notion.hasSignInFailed ? NOTION_TEXTS.failed : undefined}
           onConnect={notion.connect}
         />
+        <RequestRow
+          logo={<GoogleDriveLogo />}
+          connectLabel={GOOGLE_DRIVE_TEXTS.connect}
+          text={GOOGLE_DRIVE_TEXTS.label}
+          aboutLabel={GOOGLE_DRIVE_TEXTS.about}
+          tipText={GOOGLE_DRIVE_TEXTS.tip}
+          stateText={connectionStateText(drive.connection, drive.connection?.email)}
+          errorText={drive.hasSignInFailed ? GOOGLE_DRIVE_TEXTS.failed : undefined}
+          onConnect={drive.connect}
+        >
+          {drive.connection?.isConnected && (
+            <>
+              <p className="request-row__detail">
+                {folderId === null ? (
+                  GOOGLE_DRIVE_TEXTS.noFolder
+                ) : (
+                  <>
+                    <span>{GOOGLE_DRIVE_TEXTS.folderChosen}</span>
+                    <a href={folderAddress(folderId)} target={NEW_TAB} rel={NEW_TAB_REL}>
+                      {GOOGLE_DRIVE_TEXTS.openFolder}
+                    </a>
+                  </>
+                )}
+              </p>
+              <button type="button" className="request-row__action" onClick={drive.chooseFolder}>
+                {GOOGLE_DRIVE_TEXTS.chooseFolder}
+              </button>
+            </>
+          )}
+        </RequestRow>
       </DisclosureToggle>
+      {drive.isChoosingFolder && (
+        <LinkDialog
+          title={GOOGLE_DRIVE_TEXTS.chooseFolder}
+          linkLabel={GOOGLE_DRIVE_TEXTS.folderLink}
+          initialLink={folderId === null ? '' : folderAddress(folderId)}
+          saveLabel={GOOGLE_DRIVE_TEXTS.save}
+          closeLabel={APP_TEXTS.closeDialog}
+          isSaving={drive.isSaving}
+          errorText={drive.saveError === null ? undefined : FOLDER_SAVE_ERRORS[drive.saveError]}
+          onSave={(link) => void drive.saveFolder(link)}
+          onClose={drive.closeFolder}
+        />
+      )}
       <Credits
         title={CREDITS_TEXTS.title}
         logoSource={tmdbLogo}

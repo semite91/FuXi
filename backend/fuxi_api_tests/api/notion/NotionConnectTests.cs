@@ -1,6 +1,7 @@
 using System.Net;
 using FluentAssertions;
 using FuXi.Api.Notion;
+using FuXi.Api.OAuth;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -70,7 +71,6 @@ public sealed class NotionConnectTests
     [InlineData(NotionSettings.CLIENT_ID_KEY)]
     [InlineData(NotionSettings.CLIENT_SECRET_KEY)]
     [InlineData(NotionSettings.REDIRECT_URI_KEY)]
-    [InlineData(NotionSettings.APP_URL_KEY)]
     public void MissingKeyIsLoggedAndApiStillStarts(string key)
     {
         // A4
@@ -81,6 +81,20 @@ public sealed class NotionConnectTests
         start.Should().NotThrow();
         api.Host.Logs.Of(typeof(NotionSettings).FullName!).Should().ContainSingle()
             .Which.Should().Match<LogEntry>(entry => entry.Level == LogLevel.Error && entry.Message.Contains(key));
+    }
+
+    [Fact]
+    public void MissingAppUrlIsLoggedOnceForBothSourcesAndApiStillStarts()
+    {
+        // A4, review: the app address is shared, so it is one error, not one per source
+        using var api = new NowApi(NotionTestData.SettingsWithout(NotionSettings.APP_URL_KEY));
+
+        var start = () => api.Services;
+
+        start.Should().NotThrow();
+        api.Host.Logs.Of(typeof(OAuthSettings).FullName!).Should().ContainSingle()
+            .Which.Should().Match<LogEntry>(entry => entry.Level == LogLevel.Error && entry.Message.Contains(OAuthSettings.APP_URL_KEY));
+        api.Host.Logs.Of(typeof(NotionSettings).FullName!).Should().BeEmpty();
     }
 
     [Theory]

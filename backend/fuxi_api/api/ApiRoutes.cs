@@ -27,4 +27,9 @@ public static class ApiRoutes
     public const string NOTION_CONNECT = PREFIX + "/NotionConnect";
     public const string NOTION_CALLBACK = PREFIX + "/NotionCallback";
     public const string GET_NOTION_CONNECTION = PREFIX + "/GetNotionConnection";
+
+    public const string GOOGLE_DRIVE_CONNECT = PREFIX + "/GoogleDriveConnect";
+    public const string GOOGLE_DRIVE_CALLBACK = PREFIX + "/GoogleDriveCallback";
+    public const string GET_GOOGLE_DRIVE_CONNECTION = PREFIX + "/GetGoogleDriveConnection";
+    public const string UPDATE_GOOGLE_DRIVE_FOLDER = PREFIX + "/UpdateGoogleDriveFolder";
 }

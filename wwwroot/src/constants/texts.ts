@@ -119,15 +119,35 @@ export const REQUESTS_TEXTS = {
   title: 'Requests',
 } as const;
 
+/** The connection state every source of the Requests toggle shows: "Connected: <name>" when the name is known. */
+export const CONNECTION_TEXTS = {
+  notConnected: 'Not connected',
+  connected: 'Connected',
+  nameSeparator: ': ',
+} as const;
+
 export const NOTION_TEXTS = {
   connect: 'Connect Notion',
   label: 'Notion',
-  notConnected: 'Not connected',
-  connected: 'Connected',
-  workspaceSeparator: ': ',
   failed: 'Notion could not be connected.',
   about: 'About Notion',
   tip: 'Connect Notion pages',
+} as const;
+
+export const GOOGLE_DRIVE_TEXTS = {
+  connect: 'Connect Google Drive',
+  label: 'Google Drive',
+  failed: 'Google Drive could not be connected.',
+  about: 'About Google Drive',
+  tip: 'Connect Google Drive images',
+  noFolder: 'No folder chosen',
+  folderChosen: 'Folder chosen',
+  openFolder: 'Open in Drive',
+  chooseFolder: 'Choose folder',
+  folderLink: 'Folder link',
+  save: 'Save',
+  notAFolderLink: 'This is not a Google Drive folder link.',
+  saveFailed: 'The folder could not be saved.',
 } as const;
 
 export const CREDITS_TEXTS = {

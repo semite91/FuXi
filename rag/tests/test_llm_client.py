@@ -9,9 +9,17 @@ from google.genai import errors
 from PIL import Image
 
 from base import RetrievedItem
-from fakes import FakeDriveApi, FakeGeminiClient, FakeTokens, ScriptedRandom, load_fixture, picture_text
+from fakes import (
+    DRIVE_TEST_FOLDER_ID,
+    FakeDriveApi,
+    FakeGeminiClient,
+    ScriptedRandom,
+    fake_drive_resource,
+    load_fixture,
+    picture_text,
+)
 from llm_client import METHODS, PROMPTS_DIR, LlmClient
-from resources.google_drive_resource import MAX_PICTURE_SIDE, GoogleDriveResource
+from resources.google_drive_resource import MAX_PICTURE_SIDE
 from settings import MissingSettingError, Settings
 
 RECORDED = load_fixture("gemini_recorded.json")
@@ -386,9 +394,10 @@ def test_stored_drive_photo_holds_a_jpeg_of_at_most_512_px():
     large = io.BytesIO()
     Image.new("RGB", (1600, 900), (90, 140, 200)).save(large, format="PNG")
     data = load_fixture("drive_recorded.json")
-    data["files_list"] = {"start": {"files": [data["files_list"]["start"]["files"][1]]}}
+    umbrella = data["children"]["1dRvFolderParis000000000000000b"]["start"]["files"][0]
+    data["children"] = {DRIVE_TEST_FOLDER_ID: {"start": {"files": [umbrella]}}}
     api = FakeDriveApi(data, {"1dRvImgUmbrella00000000000000002": large.getvalue()})
-    document = GoogleDriveResource(token_source_factory=FakeTokens, http_client_factory=api.client).read_documents()[0]
+    document = fake_drive_resource(api).read_documents()[0]
     images = [DRIVE_IMAGES[0], RetrievedItem(document.text, document.metadata, 0.4)]
     client, _, _ = make_client([RECORDED["photo_drive_success"]], ["photo"])
 

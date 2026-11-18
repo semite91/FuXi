@@ -46,7 +46,7 @@ This file is initializer instructor of my project.
   - RAG technologies will be defined at next parts.
   - Phase 5 is split: 5a builds the engine core with Notion; Google Drive (5b), letterboxd - TMDB (5c) and Spotify (5d) follow one by one.
   - The engine runs on the Learner's Windows laptop with Python 3.13 and CPU-only PyTorch. It is started from /rag with: uvicorn engine:app --port 8000
-  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_GEMINI_API_KEY, RAG_GOOGLE_SERVICE_ACCOUNT_FILE, RAG_TMDB_TOKEN, RAG_LETTERBOXD_WATCHED_FILE, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
+  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_GEMINI_API_KEY, RAG_TMDB_TOKEN, RAG_LETTERBOXD_WATCHED_FILE, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
 
   -- Words --
   - Words will be added to database manually by the Learner. There is no add word page or api.
@@ -116,6 +116,10 @@ This file is initializer instructor of my project.
     - The Requests toggle holds the Notion row: a Notion logo button with the text "Notion", named "Connect Notion", and the state "Not connected", "Connected: <workspace>" or "Connected", read with GetNotionConnection when the page opens. The button goes to the API's NotionConnect, also when Notion is connected (to reconnect, for example to share more pages). There is no Disconnect button yet.
     - An "About Notion" i button at the right of the Notion button shows the tooltip "Connect Notion pages" on hover, keyboard focus and tap; a second tap, Escape, the pointer leaving or the focus leaving hides it. Only i buttons open their tip on a tap; other tooltips (such as the reinforcement button's) show on hover and focus.
     - After the sign-in the API sends the browser back to /settings?notion=connected or ?notion=failed. The page then opens the Requests toggle, shows "Notion could not be connected." as an alert on a failure, starts no build, and removes the value from the address without a reload.
+    - Each source is one request row (components/request_row), a group named after the source: the logo button with its name, the i button, the state and the sign-in alert, and the source's own lines under them.
+    - Under the Notion row is the Google Drive row: a Google Drive logo button with the text "Google Drive", named "Connect Google Drive", and the state "Not connected", "Connected: <email>" or "Connected", read with GetGoogleDriveConnection when the page opens. The button goes to the API's GoogleDriveConnect, also to reconnect. An "About Google Drive" i button shows the tooltip "Connect Google Drive images" like the Notion one. There is no Disconnect button yet.
+    - When Google Drive is connected, the row also says "No folder chosen", or "Folder chosen" with an "Open in Drive" link that opens the folder in a new tab, and has a "Choose folder" button. It opens the "Choose folder" pop-up (components/link_dialog, which Spotify's playlist link will reuse): a "Folder link" box, started with the saved folder's link, and a Save button with a save icon. Save (or Enter) calls UpdateGoogleDriveFolder; it is disabled while the box is empty or the save waits. A saved folder closes the pop-up and updates the row; a 400 shows "This is not a Google Drive folder link.", any other failure "The folder could not be saved.", both as an alert in the pop-up. Escape, the X or the backdrop closes it without saving.
+    - ?drive=connected or ?drive=failed works like ?notion: the toggle opens, a failure shows "Google Drive could not be connected." in the Google Drive row, and the value is removed from the address.
 
     -- schedule --
     - When user opens schedule page, data should be loaded by GetSchedule api with current month's start and end date-times.
@@ -189,8 +193,8 @@ This file is initializer instructor of my project.
   CreatedDate: timestamptz
 
   -- Settings --
-  One set of values for the whole app (no UserId column yet). It is created empty. There is no general Settings API; the Notion sign-in writes its rows.
-  Codes: NotionAccessToken, NotionRefreshToken (stored, not used yet) and NotionWorkspaceName. The RAG engine reads NotionAccessToken read-only.
+  One set of values for the whole app (no UserId column yet). It is created empty. There is no general Settings API; the Notion and Google Drive sign-ins and the Google Drive folder save write their rows.
+  Codes: NotionAccessToken, NotionRefreshToken (stored, not used yet), NotionWorkspaceName, GoogleDriveRefreshToken, GoogleDriveEmail and GoogleDriveFolderId. The RAG engine reads NotionAccessToken, GoogleDriveRefreshToken and GoogleDriveFolderId read-only.
   Id: Guid, primary_key
   Code: text, unique
   Value: text
@@ -258,6 +262,14 @@ This file is initializer instructor of my project.
     Notion sends the browser here with code and state. A known, unused state lets the API swap the code for the tokens (with the client secret, never sent to the browser or logged) and save them in the Settings table. It redirects to <FUXI_APP_URL>/settings?notion=connected, or ?notion=failed on any error.
   - GetNotionConnection
     It returns isConnected and workspaceName. The token is never returned.
+  - GoogleDriveConnect
+    It redirects the browser to Google's sign-in page (https://accounts.google.com/o/oauth2/v2/auth) with the client ID, the redirect URI, scope drive.readonly, access_type=offline, prompt=consent and a one-time state that lasts 10 minutes. A state belongs to one source: a Notion state is refused here and the other way round. Without the Google keys it redirects to <FUXI_APP_URL>/settings?drive=failed.
+  - GoogleDriveCallback
+    Google sends the browser here with code and state. A known, unused state lets the API swap the code for the tokens at https://oauth2.googleapis.com/token (with the client secret, never sent to the browser or logged). The answer must hold an access token, a refresh token and the drive.readonly scope. The access token is used once for Drive's about call (the account's email) and is not saved. GoogleDriveRefreshToken and GoogleDriveEmail are saved in one transaction; a different email than the saved one also empties GoogleDriveFolderId. It redirects to <FUXI_APP_URL>/settings?drive=connected, or ?drive=failed on any error.
+  - GetGoogleDriveConnection
+    It returns isConnected, email and folderId. The refresh token is never returned.
+  - UpdateGoogleDriveFolder
+    It takes folderLink: a https://drive.google.com/drive/folders/<id> link (also with /u/<n>/, a closing slash or a query) or a bare folder ID. Only the form is checked; Google is not called. It saves GoogleDriveFolderId and returns folderId. Anything else answers 400 "This is not a Google Drive folder link."; without a connected Google Drive it answers 409.
   - SavePushSubscription
     It takes Endpoint, P256dh and Auth. It adds a PushSubscription entry. If endpoint already exists, it is not added again.
 
@@ -311,11 +323,13 @@ This file is initializer instructor of my project.
       - Google Drive API will be used
       - Just images will be taken. Image name, content, date and path
       - Image's itself will be embedded.
-      - The engine signs in with a Google Cloud service account (drive.readonly). RAG_GOOGLE_SERVICE_ACCOUNT_FILE holds the path of its JSON key, kept in the git-ignored rag/secrets/ folder. google-auth signs in; httpx calls the Drive REST API.
-      - Every image the service account can see is read, subfolders included. The Learner shares a folder with the service account's email to add images.
+      - From Phase 6c the Learner connects their own Google account on the Settings page (scope drive.readonly) and chooses one folder. At each build the engine reads GoogleDriveRefreshToken and GoogleDriveFolderId from the Settings table (read-only) and gets an access token from https://oauth2.googleapis.com/token with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET from the root .env. The access token stays in memory and is asked again shortly before its hour ends. httpx calls the token endpoint and the Drive REST API; the service account and RAG_GOOGLE_SERVICE_ACCOUNT_FILE are gone.
+      - Not connected, or connected without a folder: Google Drive is skipped ("resource google_drive: not connected, skipped" or "no folder chosen, skipped") and the build is still complete. A missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET, or an unreadable Settings table, fails Google Drive.
+      - The Google app stays in Testing status, so Google ends its refresh tokens after 7 days. invalid_grant from the token endpoint, or a 401 from Drive, fails Google Drive with "Google Drive token rejected: connect Google Drive again on the Settings page"; the old collections are kept.
+      - Only the chosen folder and its subfolders are read, breadth first: each folder's images and subfolders that are not in the trash. A folder in two places is read once. A chosen ID that is not a Drive ID, a folder the account cannot see (403 or 404), a file or a trashed folder fails Google Drive with "Google Drive folder not found: choose the folder again on the Settings page".
       - Each image is downloaded as Drive's 512 px thumbnail; the full file is used only when there is no thumbnail. It becomes a JPEG of at most 512 px. A file Pillow cannot open is skipped and counted in the embedding log.
-      - The date is the photo's taken time when Drive has it, otherwise its created time. The path is the parent folder names; a folder the service account cannot see (403 or 404) ends the path.
-      - Errors and retries follow Notion and use the same shared retry code: a 429 (or Drive's 403 rateLimitExceeded / userRateLimitExceeded), a 5xx, a dropped connection or a timeout is tried again after 1, 2, 4 and 8 seconds (at most 5 attempts). Each read writes its summary to the embedding log.
+      - The date is the photo's taken time when Drive has it, otherwise its created time. The path starts at the chosen folder's name and goes down to the image's own folder; the folders above the chosen one are not part of it.
+      - Errors and retries follow Notion and use the same shared retry code: a 429 (or Drive's 403 rateLimitExceeded / userRateLimitExceeded), a 5xx, a dropped connection or a timeout is tried again after 1, 2, 4 and 8 seconds (at most 5 attempts). The token request uses the same rules. Each read writes its summary to the embedding log; its calls include the token request.
       - Images are downloaded and prepared in parallel by a few workers. CLIP decodes each batch from Base64, so memory stays bounded.
 
       # letterboxd, TMDB

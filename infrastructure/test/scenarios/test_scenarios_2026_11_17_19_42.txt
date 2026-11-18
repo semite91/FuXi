@@ -1,0 +1,168 @@
+FuXi - Phase 6c - Google Drive (Google Drive button, OAuth sign-in, folder link, refresh token in the Settings table)
+Test scenarios, shredded to atomic processes.
+Created: 2026-11-17 19:42 UTC
+Status: CONFIRMED BY THE LEARNER (2026-11-17)
+
+Every scenario has one purpose. "Given / When / Then" is used.
+Phase 6c is the third part of Phase 6 (ToDos.txt #45 to #48). It moves the Google Drive source from the service account
+in .env to the Learner's own Google account, with the token and the folder in the Settings table (#39 for Google Drive).
+Letterboxd and Spotify follow in 6d and 6e.
+
+Decisions taken by the Learner on 2026-11-17 (grilling rounds 1 to 3), on top of the Phase 6b decisions:
+- Q1 The engine reads only one folder the Learner chooses (with its subfolders), with the scope drive.readonly.
+- Q2 The engine gets a new access token from the refresh token at each build and keeps it only in memory; its Settings
+  connection stays read-only. The engine reads GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET from the root .env.
+- Q3 The Google app stays in Testing status; its refresh tokens end after 7 days and the Learner reconnects. An ended
+  token fails Google Drive with "connect Google Drive again on the Settings page" and keeps the old collections.
+- Q4 The row shows "Connected: <email>"; the email comes from Drive's about call (no extra scope) and is saved.
+- Q5 Once connected, a "Choose folder" button opens a pop-up with a folder-link box and a save button with an icon. The
+  pop-up is made so Spotify's playlist link (6e, #55) can reuse it.
+- Q6 Connected without a saved folder: Google Drive is skipped and the build is still complete.
+- Q7 Saving a folder checks only the link's form (a drive.google.com/drive/folders/<id> link or a bare ID); no Google
+  call. A wrong or unshared folder shows up at the next build as a Google Drive failure.
+- Q8 With a saved folder the row shows "Folder chosen" and a link that opens the folder in Drive in a new tab; without
+  one it shows "No folder chosen".
+- From 6b and the confirmation: the API owns the sign-in; a one-time state for 10 minutes; client ID, secret and callback
+  address are .env keys; a cancelled or failed sign-in keeps the old connection; no Disconnect button; no build is
+  started after connecting; the sign-in code Notion and Google share moves into one place; RAG_GOOGLE_SERVICE_ACCOUNT_FILE
+  and the service account code are removed. Every source button shows its logo with its name as text at its right.
+
+Proposed by Claude, to confirm with these scenarios:
+- The endpoints follow ApiRoutes: GET /api/GoogleDriveConnect, GET /api/GoogleDriveCallback,
+  GET /api/GetGoogleDriveConnection and POST /api/UpdateGoogleDriveFolder.
+- The .env keys are GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI (FUXI_APP_URL is shared with Notion).
+  GOOGLE_REDIRECT_URI is http://localhost:5000/api/GoogleDriveCallback until the hosting is decided (#21).
+- The sign-in goes to https://accounts.google.com/o/oauth2/v2/auth with scope drive.readonly, access_type=offline and
+  prompt=consent, so Google gives a refresh token on every sign-in, also a reconnect.
+- The Settings table holds three Google Drive rows: GoogleDriveRefreshToken, GoogleDriveEmail and GoogleDriveFolderId.
+  The access token of the sign-in is used once for the about call and is not saved.
+- When a sign-in connects a different email than the saved one, the saved folder is cleared, since the new account may
+  not see it.
+- The callback result reaches the page as ?drive=connected or ?drive=failed, read once and removed like ?notion.
+- The image path starts at the chosen folder's name (folders above it are not part of the path).
+- New components (the Google Drive row and the link pop-up) are asked before they are created (frontend standards).
+
+Marks:
+[FE]  frontend scenario, verified by a Vitest test.
+[BE]  backend scenario, verified by an xUnit test (against the PostgreSQL test database where it writes rows).
+[PY]  RAG engine scenario, verified by a pytest test.
+[RV]  verified by reading the code, running a command, a preview or a browser check.
+[LV]  live check against the real Google, run only after the Learner's go-ahead.
+
+==================================================
+A. SIGN-IN START (GET /api/GoogleDriveConnect)
+==================================================
+A1. [BE] Given GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI, when /api/GoogleDriveConnect is called, then it answers 302 to https://accounts.google.com/o/oauth2/v2/auth with client_id, response_type=code, redirect_uri, scope=https://www.googleapis.com/auth/drive.readonly, access_type=offline, prompt=consent and state.
+A2. [BE] Given two calls, when their redirect addresses are read, then each has its own random state value.
+A3. [BE] Given a state made by /api/GoogleDriveConnect, when its callback comes within 10 minutes, then it is accepted; after 10 minutes (fake clock) it is refused.
+A4. [BE] Given a state made by /api/NotionConnect, when it comes back to /api/GoogleDriveCallback, then it is refused (a state belongs to one source), and the other way round.
+A5. [BE] Given GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET or GOOGLE_REDIRECT_URI is empty, when the API starts, then one error naming only the empty keys is logged and the API still starts; /api/GoogleDriveConnect then redirects to <FUXI_APP_URL>/settings?drive=failed. Notion keeps working.
+
+==================================================
+B. SIGN-IN CALLBACK (GET /api/GoogleDriveCallback)
+==================================================
+B1. [BE] Given a callback with a code and a known state, when it is handled, then the code is sent to https://oauth2.googleapis.com/token as a form with grant_type=authorization_code, code, redirect_uri, client_id and client_secret.
+B2. [BE] Given Google answers with access_token, refresh_token and a scope that holds drive.readonly, when the callback goes on, then it calls https://www.googleapis.com/drive/v3/about?fields=user(emailAddress) with that access token.
+B3. [BE] Given the about call answers an email, when the callback ends, then the Settings table has GoogleDriveRefreshToken and GoogleDriveEmail with these values, written in one SaveChanges, and it answers 302 to <FUXI_APP_URL>/settings?drive=connected.
+B4. [BE] Given the rows already exist, when a new sign-in with the same email succeeds, then the rows are updated in place and GoogleDriveFolderId is kept.
+B5. [BE] Given a saved GoogleDriveFolderId and a new sign-in with a different email, when the callback ends, then GoogleDriveFolderId is emptied in the same SaveChanges.
+B6. [BE] Given a callback whose state is unknown, expired, missing or already used, when it is handled, then no call is sent to Google, no Settings row changes, and it answers 302 to ?drive=failed.
+B7. [BE] Given a callback with error=access_denied, also with a code, when it is handled, then no call is sent, no row changes, and it answers ?drive=failed.
+B8. [BE] Given Google answers the exchange with an error status, without access_token, without refresh_token, or with a scope that lacks drive.readonly (the Learner unticked Drive on the consent screen), when the callback ends, then no row changes and it answers ?drive=failed.
+B9. [BE] Given the about call fails (error status, timeout, unreadable answer), when the callback ends, then no row changes and it answers ?drive=failed.
+B10. [BE] Given any failure in B8 or B9, when it is logged, then the log names only the status or error type, never the code, a token or the client secret.
+
+==================================================
+C. CONNECTION STATE AND FOLDER (GET /api/GetGoogleDriveConnection, POST /api/UpdateGoogleDriveFolder)
+==================================================
+C1. [BE] Given no GoogleDriveRefreshToken row, or an empty one, when /api/GetGoogleDriveConnection is called, then it answers { isConnected: false, email: null, folderId: null }.
+C2. [BE] Given a refresh token, an email and a folder ID, when it is called, then it answers { isConnected: true, email: <email>, folderId: <id> }; an empty email or folder answers null for it.
+C3. [BE] Given any Settings rows, when the answer is read, then it holds no refresh token.
+C4. [BE] Given a connected Google Drive, when /api/UpdateGoogleDriveFolder gets { folderLink: "https://drive.google.com/drive/folders/<id>" } (also with ?usp=sharing or a /u/0/ part), then GoogleDriveFolderId is saved as <id> and it answers 200 with { folderId: <id> }.
+C5. [BE] Given a bare folder ID (letters, digits, - and _), when it is saved, then it is saved as it is.
+C6. [BE] Given an empty text, a file link (drive.google.com/file/d/...), another site's link or an ID with other characters, when it is saved, then it answers 400 with "This is not a Google Drive folder link." and no row changes.
+C7. [BE] Given Google Drive is not connected, when /api/UpdateGoogleDriveFolder is called, then it answers 409 and no row changes.
+C8. [BE] Given a saved folder, when another valid link is saved, then the row is updated in place.
+
+==================================================
+D. RAG ENGINE READS THE FOLDER WITH A FRESH TOKEN
+==================================================
+D1. [PY] Given GoogleDriveRefreshToken and GoogleDriveFolderId rows, when a build reads Google Drive, then the engine posts grant_type=refresh_token with the refresh token, GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to https://oauth2.googleapis.com/token and calls Drive with the access token it gets.
+D2. [PY] Given the engine, when it gets an access token, then the token is kept only in memory and nothing is written to the Settings table (the connection is read-only).
+D3. [PY] Given no refresh token row, or an empty one, when a build runs, then Google Drive is skipped with "resource google_drive: not connected, skipped" and the other sources build.
+D4. [PY] Given a refresh token but no folder, when a build runs, then Google Drive is skipped with "resource google_drive: no folder chosen, skipped".
+D5. [PY] Given Google Drive is skipped and every other source succeeds, when the build ends, then the build is complete.
+D6. [PY] Given the token endpoint answers 400 invalid_grant (the 7-day end or a revoked access), when a build reads Google Drive, then Google Drive fails with "Google Drive token rejected: connect Google Drive again on the Settings page", the build is not complete and the old collections are kept.
+D7. [PY] Given Drive answers 401 to a list or download call, when a build reads Google Drive, then it fails like D6.
+D8. [PY] Given GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is empty while a refresh token is saved, when a build reads Google Drive, then Google Drive fails naming only the empty key.
+D9. [PY] Given a chosen folder with images and subfolders (and subfolders of those), when a build reads Google Drive, then every image in the folder tree is read, and no image outside it.
+D10. [PY] Given an image in a subfolder, when its document is made, then its path starts at the chosen folder's name and goes down to its own folder.
+D11. [PY] Given the chosen folder answers 404 or 403 (wrong ID, or the account cannot see it), when a build reads Google Drive, then Google Drive fails with "Google Drive folder not found: choose the folder again on the Settings page".
+D12. [PY] Given a trashed image or folder in the tree, when the folder is read, then it is left out.
+D13. [PY] Given the existing image handling, when the related tests run, then thumbnails, the 512 px JPEG, the taken or created date, the skipped files count, retries and the summary line still pass.
+D14. [PY] Given settings.py, when it is read, then it has no RAG_GOOGLE_SERVICE_ACCOUNT_FILE and no service account code; google-auth is removed from rag/requirements.txt if nothing else uses it.
+D15. [PY] Given the database cannot be reached, when a build reads the Google Drive rows, then Google Drive fails (it is not skipped) and the error names only the error type.
+
+==================================================
+E. SETTINGS PAGE - GOOGLE DRIVE ROW
+==================================================
+E1. [FE] Given the open Requests toggle, when it is shown, then it holds a Google Drive row under the Notion row, with a button named "Connect Google Drive" that shows the Google Drive logo and the text "Google Drive" at its right.
+E2. [FE] Given the Google Drive logo, when it is drawn, then it is an inline SVG from image/icons hidden from screen readers.
+E3. [FE] Given the Settings page, when it opens, then /api/GetGoogleDriveConnection is called once by a service.
+E4. [FE] Given GetGoogleDriveConnection answers isConnected: false, when the row is shown, then it says "Not connected" and has no "Choose folder" button.
+E5. [FE] Given it answers isConnected: true with an email, when the row is shown, then it says "Connected: <email>"; without an email it says "Connected".
+E6. [FE] Given GetGoogleDriveConnection is still pending or fails, when the row is shown, then no state is shown while pending, "Not connected" after a failure, and the button still works.
+E7. [FE] Given the Google Drive button, when it is clicked, connected or not, then the browser goes to <VITE_FUXI_API_URL>/api/GoogleDriveConnect.
+E8. [FE] Given a connected Google Drive without a folder, when the row is shown, then it says "No folder chosen" and has a "Choose folder" button.
+E9. [FE] Given a connected Google Drive with a folder, when the row is shown, then it says "Folder chosen" with a link to https://drive.google.com/drive/folders/<id> that opens in a new tab (target=_blank, rel=noopener noreferrer).
+E10. [FE] Given the Settings page opened with ?drive=connected or ?drive=failed, when it loads, then the Requests toggle is open, a failure shows "Google Drive could not be connected." as an alert, no build is started, and the value is removed from the address without a reload.
+E11. [FE] Given ?notion and ?drive, when each is read, then each source shows only its own result.
+E12. [FE] Given the row, when it is read, then there is no Disconnect button.
+
+==================================================
+F. SETTINGS PAGE - FOLDER POP-UP
+==================================================
+F1. [FE] Given the "Choose folder" button, when it is clicked, then a pop-up titled "Choose folder" opens with a text box labelled "Folder link" and a save button named "Save" that shows a save icon.
+F2. [FE] Given a saved folder, when the pop-up opens, then the box holds https://drive.google.com/drive/folders/<id>.
+F3. [FE] Given a link in the box, when Save is clicked, then /api/UpdateGoogleDriveFolder is called once with { folderLink } and the save button is disabled while it waits.
+F4. [FE] Given the API answers 200, when the pop-up closes, then the row shows "Folder chosen" with the new folder's link.
+F5. [FE] Given the API answers 400, when the answer comes, then the pop-up stays open and shows "This is not a Google Drive folder link." as an alert; the row does not change.
+F6. [FE] Given any other failure, when the answer comes, then the pop-up stays open and shows "The folder could not be saved." as an alert.
+F7. [FE] Given an empty box, when the pop-up is shown, then Save is disabled.
+F8. [FE] Given the pop-up, when Escape, the X button or the backdrop is used, then it closes and nothing is saved (the Phase 6a dialog).
+F9. [FE] Given Enter in the box, when it is pressed, then it saves like Save.
+
+==================================================
+G. SETTINGS PAGE - THE i TOOLTIP
+==================================================
+G1. [FE] Given the Google Drive row, when it is shown, then an i button named "About Google Drive" is at the right of the Google Drive button.
+G2. [FE] Given the i button, when it is hovered, focused or tapped, then the tooltip "Connect Google Drive images" is shown with role tooltip and aria-describedby; a second tap, Escape, the pointer or focus leaving hides it; it opens to the right (placement start).
+
+==================================================
+H. SHARED SIGN-IN CODE, DOCUMENTATION AND STRUCTURE
+==================================================
+H1. [BE] Given the shared sign-in code, when the related tests run, then every Phase 6b Notion test still passes unchanged in what it checks.
+H2. [RV] Given the backend, when it is read, then the state store, the redirect back to the app and the key check are shared by Notion and Google Drive, not copied.
+H3. [RV] Given .env.example and .env.test.example, when they are read, then they have GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI without values and no RAG_GOOGLE_SERVICE_ACCOUNT_FILE; setup_environment.sh adds the new keys and no longer adds the old one.
+H4. [RV] Given project.md, when it is read, then the Google Drive part says the engine reads the chosen folder with a refresh token from the Settings table, the settings part describes the Google Drive row, the pop-up and the tooltip, the API part lists the four endpoints, and the Settings table part lists the three codes.
+H5. [RV] Given the client secret, when the code is read, then it is read only from .env (API and engine), never logged and never sent to the browser.
+H6. [RV] Given the new and changed components, when they are read, then styles use tokens in their own .less files, texts are in texts.ts and API calls are in services.
+H7. [RV] Given a new component, when it is created, then the Learner was asked before (frontend standards).
+H8. [BE] [PY] Given the related tests, when they run, then they pass without calling Google (fake servers).
+
+==================================================
+I. LIVE CHECKS (after the Learner's go-ahead)
+==================================================
+I1. [RV] Given the Google Cloud OAuth client (#47), when the Learner creates it (Testing status, the Learner as a test user, Drive API on, the callback address), then GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI are in .env.
+I2. [LV] Given the running API and app, when the Learner clicks the Google Drive button and allows access, then the row shows "Connected: <email>".
+I3. [LV] Given the connected account, when the Learner saves a folder link, then the row shows "Folder chosen" and its link opens that folder.
+I4. [LV] Given the chosen folder, when one build runs (asked first; the image count is estimated first), then the folder's images are read with a fresh token and the summary line is in logs/embedding/; its time is reported and any speed-up is a separate decision (#48).
+I5. [RV] Given the summary of I4, when the Learner looks at it, then RAG_IMAGE_THRESHOLD tuning (#16) can be done on the real images.
+
+==================================================
+J. OUT OF SCOPE CHECKS
+==================================================
+J1. [RV] Given the Requests toggle, when it is read, then it holds no Letterboxd or Spotify button (6d, 6e).
+J2. [RV] Given the RAG engine, when it is read, then Letterboxd - TMDB and Spotify still read their .env keys.
+J3. [RV] Given the Settings table, when it is read, then it has no UserId column (#40) and the tokens are plain text (#20).
+J4. [RV] Given the Google app, when it is read, then it stays in Testing status; no verification is requested (Q3).

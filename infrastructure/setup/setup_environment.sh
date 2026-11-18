@@ -26,6 +26,9 @@ readonly DEFAULT_RAG_URL="http://localhost:8000"
 readonly NOTION_SECRET_KEYS=("NOTION_CLIENT_ID" "NOTION_CLIENT_SECRET")
 readonly NOTION_REDIRECT_URI_KEY="NOTION_REDIRECT_URI"
 readonly DEFAULT_NOTION_REDIRECT_URI="${DEFAULT_API_URL}/api/NotionCallback"
+readonly GOOGLE_SECRET_KEYS=("GOOGLE_CLIENT_ID" "GOOGLE_CLIENT_SECRET")
+readonly GOOGLE_REDIRECT_URI_KEY="GOOGLE_REDIRECT_URI"
+readonly DEFAULT_GOOGLE_REDIRECT_URI="${DEFAULT_API_URL}/api/GoogleDriveCallback"
 readonly APP_URL_KEY="FUXI_APP_URL"
 readonly DEFAULT_APP_URL="${DEFAULT_CORS_ORIGINS}"
 readonly VAPID_PUBLIC_KEY_KEY="VAPID_PUBLIC_KEY"
@@ -40,9 +43,9 @@ readonly RAG_PYTHON="python3.13"
 readonly RAG_DIRECTORY="rag"
 readonly RAG_VENV=".venv"
 # Git-ignored folders readable by the developer only: the Google service account key and Letterboxd's watched.csv.
-readonly RAG_PRIVATE_DIRECTORIES=("secrets" "data" "data/letterboxd")
+readonly RAG_PRIVATE_DIRECTORIES=("data" "data/letterboxd")
 readonly PRIVATE_DIRECTORY_MODE=700
-readonly RAG_SECRET_KEYS=("RAG_GEMINI_API_KEY" "RAG_GOOGLE_SERVICE_ACCOUNT_FILE" "RAG_TMDB_TOKEN" "RAG_LETTERBOXD_WATCHED_FILE" "RAG_LIVE_TESTS")
+readonly RAG_SECRET_KEYS=("RAG_GEMINI_API_KEY" "RAG_TMDB_TOKEN" "RAG_LETTERBOXD_WATCHED_FILE" "RAG_LIVE_TESTS")
 readonly RAG_DEFAULT_SETTINGS=("RAG_GEMINI_MODEL=gemini-3.8-flash" "RAG_TEXT_THRESHOLD=0.5" "RAG_IMAGE_THRESHOLD=0.25" "RAG_BATCH_SIZE=16" "RAG_REBUILD_COOLDOWN_MINUTES=10")
 readonly PASSWORD_BYTES=24
 readonly PRIVATE_FILE_UMASK=077
@@ -115,7 +118,8 @@ create_env_files() {
     ensure_env_value "${file}" "${VAPID_SUBJECT_KEY}" "${DEFAULT_VAPID_SUBJECT}"
     ensure_vapid_keys "${file}"
     ensure_rag_keys "${file}"
-    ensure_notion_keys "${file}"
+    ensure_sign_in_keys "${file}" "${NOTION_REDIRECT_URI_KEY}" "${DEFAULT_NOTION_REDIRECT_URI}" "${NOTION_SECRET_KEYS[@]}"
+    ensure_sign_in_keys "${file}" "${GOOGLE_REDIRECT_URI_KEY}" "${DEFAULT_GOOGLE_REDIRECT_URI}" "${GOOGLE_SECRET_KEYS[@]}"
   done
   give_to_invoking_user "${env_file}" "${test_env_file}"
 }
@@ -191,19 +195,22 @@ ensure_rag_keys() {
   done
 }
 
-# Adds the Notion sign-in keys: the addresses get their local defaults, the client ID and secret stay empty.
-ensure_notion_keys() {
-  local env_file="$1" key
-  ensure_env_value "${env_file}" "${NOTION_REDIRECT_URI_KEY}" "${DEFAULT_NOTION_REDIRECT_URI}"
+# Adds one sign-in's keys (Notion, Google Drive): the callback and the app address get their local defaults,
+# the client ID and secret stay empty for the developer.
+# Arguments: env file, callback key, callback default, then the secret keys.
+ensure_sign_in_keys() {
+  local env_file="$1" redirect_key="$2" redirect_default="$3" key
+  shift 3
+  ensure_env_value "${env_file}" "${redirect_key}" "${redirect_default}"
   ensure_env_value "${env_file}" "${APP_URL_KEY}" "${DEFAULT_APP_URL}"
-  for key in "${NOTION_SECRET_KEYS[@]}"; do
+  for key in "$@"; do
     if ! grep -q -E "^${key}=" "${env_file}"; then
       append_env_line "${env_file}" "${key}="
     fi
   done
 }
 
-# Creates rag/secrets (Google service account key) and rag/data/letterboxd (watched.csv).
+# Creates rag/data/letterboxd (watched.csv).
 create_rag_private_directories() {
   local directory private_path
   for directory in "${RAG_PRIVATE_DIRECTORIES[@]}"; do
