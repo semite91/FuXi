@@ -65,6 +65,14 @@ def make_texts(count: int, words: int) -> list[str]:
     return [" ".join(WORDS[(index + step) % len(WORDS)] for step in range(words + index % 7)) for index in range(count)]
 
 
+def peak_memory_mb() -> int:
+    """Peak resident memory of this process. VmHWM starts fresh after exec; ru_maxrss would carry the parent's peak."""
+    for line in Path("/proc/self/status").read_text().splitlines():
+        if line.startswith("VmHWM:"):
+            return round(int(line.split()[1]) / 1024)
+    return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)  # not Linux; may include the parent's peak
+
+
 def run_one(args: argparse.Namespace) -> None:
     import torch
 
@@ -82,7 +90,7 @@ def run_one(args: argparse.Namespace) -> None:
         "load_s": round(load_seconds, 2),
         "embed_s": round(embed_seconds, 2),
         "docs_per_s": round(len(texts) / embed_seconds, 2),
-        "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024),
+        "peak_rss_mb": peak_memory_mb(),
         "dtype": sorted(str(dtype) for dtype in parameter_dtypes(model)),
         "dimension": int(vectors.shape[1]),
         "threads": torch.get_num_threads(),
