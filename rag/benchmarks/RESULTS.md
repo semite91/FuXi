@@ -3,47 +3,47 @@
 Run with `python benchmarks/benchmark_embedding.py --synthetic` (2026-11-21).
 
 - Hardware: 4 vCPU Intel Xeon @ 2.3 GHz with `amx_bf16`, `amx_int8`, `avx512_bf16`, `avx512_vnni`; 16 GB RAM; no GPU.
-- Model: Qwen3-0.6B architecture (28 layers, hidden 1024, vector size 1024) with **random weights** saved in BF16,
-  because Hugging Face is not reachable from this environment. Speed and memory equal the real model's;
-  retrieval quality could not be measured.
+- Models: the architectures of Qwen3-Embedding-0.6B (28 layers, hidden 1024) and multilingual-e5-small
+  (BERT, 12 layers, hidden 384, 250k vocabulary) with **random weights**, because Hugging Face is not reachable from
+  this environment. Speed and memory match the real models; **retrieval quality was not measured**.
 - Workload: 48 documents of about 150 tokens, one warm-up call, each configuration in its own process.
+- Peak memory is `VmHWM` of the process. (An earlier run used `ru_maxrss`, which carries the parent's peak
+  across fork and showed wrong numbers; it was replaced.)
 
-| Configuration | Load s | Embed s | Docs/s | Peak RSS MB | Parameter dtype |
-|---|---:|---:|---:|---:|---|
-| before: bf16, batch 16, max length 32768 | 4.19 | 8.13 | **5.90** | 3308 | bfloat16 |
-| fp32, batch 8, max length 512 | 5.91 | 19.65 | 2.44 | 4194 | float32 |
-| fp32, batch 16, max length 512 | 4.76 | 20.32 | 2.36 | 4194 | float32 |
-| fp32, batch 32, max length 512 | 4.54 | 20.94 | 2.29 | 4195 | float32 |
+| Configuration | Load s | Embed s | Docs/s | Peak MB | Vector |
+|---|---:|---:|---:|---:|---:|
+| Qwen3-0.6B, bf16, batch 16, len 32768 (**before**) | 4.39 | 7.17 | 6.69 | 1809 | 1024 |
+| Qwen3-0.6B, fp32, batch 8, len 512 | 5.27 | 23.05 | 2.08 | 4195 | 1024 |
+| **e5-small, fp32, batch 8, len 512 (new default)** | 4.02 | 1.36 | **35.3** | **928** | 384 |
+| e5-small, fp32, batch 16, len 512 | 4.65 | 1.17 | 40.9 | 968 | 384 |
+| e5-small, bf16, batch 8, len 512 | 3.75 | 0.56 | 85.7 | 1455 | 384 |
 
-Vector size is 1024 in every configuration.
+## Versus the existing system (Qwen3, BF16, as it ran before this work)
 
-## What the numbers say
+- **Speed:** e5-small in FP32 is about **5.3x faster** (35.3 vs 6.7 docs/s); e5-small in BF16 is about **12.8x faster**.
+- **Memory:** e5-small FP32 peaks at 928 MB, about half of the old 1809 MB (and a quarter of Qwen FP32's 4195 MB).
+  BF16 e5 peaks higher than FP32 (1455 MB) because the FP32 checkpoint is converted while loading.
+- **Vector size:** 384 instead of 1024, so the stored vectors are 2.7x smaller. They are not compatible with the old
+  ones; the text collection is rebuilt once (the engine detects this by the embedder fingerprint).
+- **Load time:** similar here, but this is loaded from a local, cached directory. The real Qwen checkpoint is about
+  1.2 GB and e5-small about 470 MB, so a cold download and load is faster for e5.
 
-- **On this CPU, FP32 is 2.4x slower than BF16**, the opposite of the usual assumption. The CPU has AMX-BF16 and
-  AVX512-BF16, so PyTorch runs BF16 matmuls on dedicated tiles. BF16 also uses about 900 MB less memory.
-  FP32 is the faster and more compatible choice only on CPUs without those instructions (for example most
-  AVX2-only desktops, and older Xeons), where BF16 is emulated. That was not measured here.
-- **Batch size 8, 16 and 32 differ by under 7 percent** with documents of similar length. Sorting by length inside
-  `encode` already removes most padding; batch size 8 is kept as the default because it bounds peak memory.
-- The 512-token limit does not change speed for 150-token documents; it matters for long ones, which are now split
-  into windows instead of being truncated or run at up to 32768 tokens.
+## What this does not show
 
-## Recommendation
-
-`RAG_EMBEDDING_PRECISION=fp32` stays the default, because it is safe on every CPU and was the requirement.
-On a CPU whose `lscpu` flags list `amx_bf16` or `avx512_bf16`, set `RAG_EMBEDDING_PRECISION=bf16`:
-re-run this benchmark on the target machine to confirm before changing it.
-The vectors of the two precisions differ by rounding only (not measured here with real weights),
-so a switch does not re-embed existing documents (see project.md).
+- **Retrieval quality.** A 118M-parameter model is generally weaker than a 600M one, especially for subtle or
+  cross-language matches. There is no labelled query set in the repository and the real weights are unreachable
+  here, so nothing here proves e5-small retrieves as well. Measure it on your own Notion notes, movies and songs.
+- **`RAG_TEXT_THRESHOLD`.** 0.5 was chosen for Qwen scores. E5 cosine scores are higher and closer together, so
+  0.5 will likely let almost everything through (top_k 20 then does the limiting). Tune it on real queries.
+- **Other CPUs.** BF16 is fast here only because of AMX/AVX512-BF16. FP32 stays the default because it is safe
+  everywhere; check `lscpu` flags and rerun the script before setting `RAG_EMBEDDING_PRECISION=bf16`.
+- Batch 16 was 16 percent faster than batch 8 for e5-small on this workload. The default stays at 8 (the value
+  requested); raise `RAG_BATCH_SIZE` if memory allows.
 
 ## ONNX Runtime INT8 and OpenVINO: not evaluated, not introduced
 
-- `onnxruntime` 1.31 is installed, but exporting and quantizing Qwen3 needs `optimum` (and `openvino` needs its own
-  package). Both are new dependencies.
-- Hugging Face is unreachable here, so an INT8 model could not be checked against real-weight retrieval quality,
-  and INT8 without that check is not acceptable.
-- The BF16 path above is already AMX-accelerated on this hardware, which leaves INT8 little headroom to prove.
-- They stay out of the project. To evaluate them on the target machine: add a configuration to `CONFIGS` that loads
-  with `SentenceTransformer(..., backend="onnx")`, compare docs/s, peak memory and the cosine of each vector
-  against the PyTorch vector of the same text, and adopt only a clear, measured win.
-The PyTorch path remains the only one and therefore the fallback.
+- Exporting and quantizing needs `optimum` and `openvino`, which are new dependencies, and an INT8 model cannot be
+  accepted without a real-weight quality check. The e5-small repository ships `onnx` and `openvino` variants, so this is
+  worth testing on a machine with Hugging Face access.
+- e5-small in FP32 or BF16 on PyTorch is already 5 to 13 times faster than the previous setup, which leaves little to
+  prove. The PyTorch path remains the only one and the fallback.
