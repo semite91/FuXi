@@ -16,8 +16,8 @@ from fastapi.responses import JSONResponse
 from pydantic import AfterValidator, BaseModel, Field
 
 import chroma_store
-from base import Resource
-from embedders import ImageEmbedder, TextEmbedder
+from base import Resource, ResourceKind
+from embedders import ImageEmbedder, ModelCache, TextEmbedder
 from embedding_pipeline import DEFAULT_LOGS_DIR, Embedders, Mode, PipelineResult, run
 from llm_client import LlmClient
 from rag_client import RagClient, Word
@@ -125,10 +125,11 @@ def default_resources(settings: Settings) -> list[Resource]:
 
 def default_dependencies(settings: Settings | None = None) -> EngineDependencies:
     settings = settings or load_settings()
+    model_cache = ModelCache(settings=settings.embedding)
     return EngineDependencies(
         settings=settings,
         chroma_client_factory=chroma_store.create_chroma_client,
-        embedders=Embedders(text=TextEmbedder(), image=ImageEmbedder()),
+        embedders=Embedders(text=TextEmbedder(model_cache), image=ImageEmbedder(model_cache)),
         resource_factory=default_resources,
         llm_client=LlmClient(settings),
     )
@@ -226,7 +227,7 @@ class RagEngine:
         """Ready when the last build completed; empty within the cooldown after a failed build; otherwise build."""
         if self.is_building():
             return BUILDING_STATUS
-        if chroma_store.is_build_complete(self.chroma_client()):
+        if chroma_store.is_build_complete(self.chroma_client(), self._dependencies.embedders.fingerprint(ResourceKind.TEXT)):
             self.rag_client.init()
             return READY_STATUS
         if self._in_rebuild_cooldown():

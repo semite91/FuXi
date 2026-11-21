@@ -46,7 +46,7 @@ This file is initializer instructor of my project.
   - RAG technologies will be defined at next parts.
   - Phase 5 is split: 5a builds the engine core with Notion; Google Drive (5b), letterboxd - TMDB (5c) and Spotify (5d) follow one by one.
   - The engine runs on the Learner's Windows laptop with Python 3.13 and CPU-only PyTorch. It is started from /rag with: uvicorn engine:app --port 8000
-  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_GEMINI_API_KEY, RAG_TMDB_TOKEN, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
+  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_GEMINI_API_KEY, RAG_TMDB_TOKEN, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_EMBEDDING_DEVICE, RAG_EMBEDDING_PRECISION, RAG_MAX_SEQ_LENGTH, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
 
   -- Words --
   - Words will be added to database manually by the Learner. There is no add word page or api.
@@ -376,7 +376,16 @@ This file is initializer instructor of my project.
     - ChromaDB will be used for vector embedding database
     - ChromaDB will use HNSW indexing with cosine distance. Collections are fuxi_text and fuxi_image, stored in rag/chroma_data.
     - ChromaDB is used embedded (PersistentClient) with embeddings computed by FuXi and anonymized telemetry off. No ChromaDB server is run, because ChromaDB 1.5.9 has open CVEs in its HTTP server.
-    - Documents are embedded in batches of RAG_BATCH_SIZE (16).
+    - Documents are embedded in batches of RAG_BATCH_SIZE (8).
+    - The text model is intfloat/multilingual-e5-small (Qwen3-Embedding-0.6B before 2026-11-21): 384 numbers per vector, 512 tokens, multilingual, mean pooling and normalized by the model. Documents are embedded as "passage: <text>" and queries as "query: <text>", as E5 was trained. Vectors of the old model have another size, so a text collection without the e5 fingerprint is not ready: Init_RAG builds it again.
+    - RAG_TEXT_THRESHOLD (0.5) was chosen for Qwen similarity scores; E5 scores are higher and closer together, so the threshold must be tuned on real queries after the first build (see rag/benchmarks/RESULTS.md).
+    - Embedding speed settings (all read in rag/settings.py, EmbeddingSettings):
+      + RAG_EMBEDDING_DEVICE: auto (default), cpu or cuda. auto and cuda use the GPU only when torch reports CUDA, the torch build has kernels for the GPU's architecture and a test kernel runs; otherwise the CPU is used (cuda logs a warning). An installed NVIDIA driver alone is not enough.
+      + RAG_EMBEDDING_PRECISION: fp32 (default), bf16 or fp16. The weights are loaded with this dtype explicitly (the checkpoint is BF16, which is slow on the CPU) and every parameter's dtype is verified after loading. fp16 is not used on the CPU (fp32 is used instead).
+      + RAG_MAX_SEQ_LENGTH: 512 (default) tokens per text document. A text document longer than this is split into overlapping token windows (10 percent overlap), one stored document per window with the same metadata, so nothing is truncated. The vector size (1024) and the Chroma schema do not change.
+      + RAG_BATCH_SIZE: documents per embedding call and per Chroma add.
+    - Unchanged documents are not embedded again: each live collection stores the embedder fingerprint (model and RAG_MAX_SEQ_LENGTH) in its metadata; the next build reuses the stored vector of every document whose text is unchanged, and embeds only the rest. A collection without a fingerprint (built before this) is embedded in full once. Identical texts in one batch are embedded once. Changing the precision or the device alone does not re-embed (the vectors differ only by rounding); change RAG_MAX_SEQ_LENGTH or delete the collections to force it.
+    - ONNX Runtime INT8 and OpenVINO are not used: see rag/benchmarks/RESULTS.md. The PyTorch path is the only one.
     - All steps will be logged manually to text file. It will be under /logs/embedding path with yyyy_MM_dd_HH_mm date formatted file name.
     - If data is image. Image's embeds will be stored second collection.
     - Plain data will be used as one of the parameter while adding to collection. If data is image, image will be converted to Base64 and it will be used as collection's data.
@@ -412,7 +421,7 @@ This file is initializer instructor of my project.
           timestamp
         }
         chunk type: per song. One document per song, no splitter.
-        transformer: Qwen3-Embedding-0.6B
+        transformer: multilingual-e5-small
       + letterboxd, TMDB
         metadata: {
           name,
@@ -423,7 +432,7 @@ This file is initializer instructor of my project.
           type: text
         }
         chunk type: per movie. One document per movie, no splitter.
-        transformer: Qwen3-Embedding-0.6B
+        transformer: multilingual-e5-small
       + Notion
         metadata: {
           name,
@@ -433,7 +442,7 @@ This file is initializer instructor of my project.
         }
         chunk type: per note. Only long notes are split: notes over 2000 characters, with 200 characters overlap.
         chunk tool: LangChainTextSplitter
-        transformer: Qwen3-Embedding-0.6B
+        transformer: multilingual-e5-small
 
     # rag_client
       - Functions described as below
@@ -447,10 +456,10 @@ This file is initializer instructor of my project.
             similarity threshold: one per collection, RAG_TEXT_THRESHOLD (0.5) and RAG_IMAGE_THRESHOLD (0.25). Similarity is 1 - cosine distance.
           /prompts/retrieval.txt file's content is sent to Gemini with { "word", "meaning" }; Gemini writes the search query. If its answer is invalid, "<word>: <meaning>" is used.
           The query will be embedded twice:
-            Text collection: sentence-transformers library and Qwen3-Embedding-0.6B.
+            Text collection: sentence-transformers library and multilingual-e5-small (the query gets the "query: " prefix).
             Image collection: CLIP's text encoder.
           Using singleton collection object's query method with each embedded query, it will get related data
-          It will retrieve embeds from both image (CLIP's), text (Qwen's) collection. It will return 2 collections.
+          It will retrieve embeds from both image (CLIP's), text (e5's) collection. It will return 2 collections.
 
         + generate
           It will take words as parameter

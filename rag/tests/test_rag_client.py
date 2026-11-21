@@ -89,7 +89,7 @@ def test_parallel_init_opens_collections_once(chroma_path, embedders):
     assert len(calls) == 1
 
 
-def test_query_is_embedded_with_qwen_and_clip(chroma_path, embedders):
+def test_query_is_embedded_with_the_text_model_and_clip(chroma_path, embedders):
     # F2
     make_client(chroma_path, embedders).retrieve("lucky coincidences")
 

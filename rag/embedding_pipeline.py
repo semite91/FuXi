@@ -19,9 +19,10 @@ from chroma_store import (
     delete_collections,
     mark_build_complete,
     open_collection,
+    read_embeddings,
     rename_collection,
 )
-from embedders import PictureDataError, Vector, decode_picture
+from embedders import PictureDataError, Vector, decode_picture, text_digest
 from settings import REPO_ROOT
 
 DEFAULT_LOGS_DIR = REPO_ROOT / "logs" / "embedding"
@@ -37,6 +38,8 @@ OLD_NAMES = list(OLD_COLLECTION_BY_KIND.values())
 Clock = Callable[[], datetime]
 CollectionNames = dict[ResourceKind, str]
 EmbedFunction = Callable[[list[Document]], list[Vector]]
+# Vectors of the previous live build by text_digest of the document's text; only for unchanged documents.
+ReusableVectors = dict[ResourceKind, dict[str, Vector]]
 
 
 class Mode(StrEnum):
@@ -46,8 +49,14 @@ class Mode(StrEnum):
 
 @dataclass(frozen=True)
 class Embedders:
-    text: Any  # TextEmbedder-like: embed_documents, embed_query
-    image: Any  # ImageEmbedder-like: embed_images, embed_text
+    # TextEmbedder-like: embed_documents, embed_query; optional split_text (token-aware chunking) and fingerprint
+    text: Any
+    # ImageEmbedder-like: embed_images, embed_text; optional fingerprint
+    image: Any
+
+    def fingerprint(self, kind: ResourceKind) -> str | None:
+        """Identifies the model settings of a kind's vectors; None means its vectors are never reused."""
+        return getattr(self.image if kind is ResourceKind.IMAGE else self.text, "fingerprint", None)
 
 
 @dataclass
@@ -109,8 +118,11 @@ def _build(
     log: EmbeddingLog,
 ) -> PipelineResult:
     _clean_leftovers(chroma_client, log)
+    reusable = _load_reusable(chroma_client, embedders, log)
     try:
-        result = _embed_all(resources, embedders, chroma_client, batch_size, log, STAGING_COLLECTION_BY_KIND)
+        result = _embed_all(
+            resources, embedders, chroma_client, batch_size, log, STAGING_COLLECTION_BY_KIND, reusable
+        )
     except Exception:
         delete_collections(chroma_client, STAGING_NAMES)
         raise
@@ -118,8 +130,22 @@ def _build(
         delete_collections(chroma_client, STAGING_NAMES)
         log.write(f"{mode} failed, the old collections are kept")
         return result
-    _swap(chroma_client, log)
+    _swap(chroma_client, log, embedders)
     return result
+
+
+def _load_reusable(chroma_client: ClientAPI, embedders: Embedders, log: EmbeddingLog) -> ReusableVectors:
+    """Vectors of the live collections, so an unchanged document is not embedded again.
+
+    Only collections stored with the same embedder fingerprint are used; an older collection without one is not.
+    """
+    reusable: ReusableVectors = {}
+    for kind in COLLECTION_BY_KIND:
+        fingerprint = embedders.fingerprint(kind)
+        stored = read_embeddings(chroma_client, kind, fingerprint) if fingerprint else {}
+        reusable[kind] = {text_digest(text): vector for text, vector in stored.items()}
+        log.write(f"{COLLECTION_BY_KIND[kind]}: {len(stored)} stored vectors can be reused")
+    return reusable
 
 
 def _clean_leftovers(chroma_client: ClientAPI, log: EmbeddingLog) -> None:
@@ -134,7 +160,7 @@ def _clean_leftovers(chroma_client: ClientAPI, log: EmbeddingLog) -> None:
         log.write(f"deleted leftover collections: {deleted}")
 
 
-def _swap(chroma_client: ClientAPI, log: EmbeddingLog) -> None:
+def _swap(chroma_client: ClientAPI, log: EmbeddingLog, embedders: Embedders) -> None:
     """Live to *_old, staging to live, marker, then *_old and any other collection are deleted."""
     existing = collection_names(chroma_client)
     moved: list[ResourceKind] = []
@@ -145,7 +171,7 @@ def _swap(chroma_client: ClientAPI, log: EmbeddingLog) -> None:
                 moved.append(kind)
         for kind, name in COLLECTION_BY_KIND.items():
             rename_collection(chroma_client, STAGING_COLLECTION_BY_KIND[kind], name)
-        _mark_complete(chroma_client, log)
+        _mark_complete(chroma_client, log, embedders)
     except Exception:
         _restore(chroma_client, existing, moved)
         log.write("swap failed, the old collections are restored")
@@ -165,8 +191,9 @@ def _restore(chroma_client: ClientAPI, existing: set[str], moved: list[ResourceK
     delete_collections(chroma_client, STAGING_NAMES)
 
 
-def _mark_complete(chroma_client: ClientAPI, log: EmbeddingLog) -> None:
-    mark_build_complete(chroma_client)
+def _mark_complete(chroma_client: ClientAPI, log: EmbeddingLog, embedders: Embedders) -> None:
+    fingerprints = {kind: fingerprint for kind in COLLECTION_BY_KIND if (fingerprint := embedders.fingerprint(kind))}
+    mark_build_complete(chroma_client, fingerprints)
     log.write("build marked complete")
 
 
@@ -177,6 +204,7 @@ def _embed_all(
     batch_size: int,
     log: EmbeddingLog,
     collection_names: CollectionNames,
+    reusable: ReusableVectors,
 ) -> PipelineResult:
     for name in collection_names.values():
         open_collection(chroma_client, name)
@@ -185,7 +213,7 @@ def _embed_all(
     for resource in resources:
         try:
             result.added_documents += _embed_resource(
-                resource, embedders, chroma_client, batch_size, log, collection_names[resource.kind]
+                resource, embedders, chroma_client, batch_size, log, collection_names[resource.kind], reusable[resource.kind]
             )
         except ResourceSkipped as skipped:
             log.write(f"resource {resource.name}: {skipped}, skipped")
@@ -203,18 +231,40 @@ def _embed_resource(
     batch_size: int,
     log: EmbeddingLog,
     collection_name: str,
+    reusable: dict[str, Vector],
 ) -> int:
     log.write(f"resource {resource.name}: reading")
     documents = resource.read_documents()
     log.write(f"resource {resource.name}: {len(documents)} documents read")
     _log_read_summary(resource, log)
+    if resource.kind is ResourceKind.TEXT:
+        documents = _fit_documents(documents, embedders.text, log, resource.name)
     collection = open_collection(chroma_client, collection_name)
     embed = _embed_function(resource.kind, embedders)
     for batch_number, start in enumerate(range(0, len(documents), batch_size), start=1):
         batch = documents[start:start + batch_size]
-        _add_batch(collection, batch, embed)
-        log.write(f"resource {resource.name}: batch {batch_number} added {len(batch)} documents to {collection_name}")
+        reused = _add_batch(collection, batch, embed, reusable)
+        log.write(
+            f"resource {resource.name}: batch {batch_number} added {len(batch)} documents to {collection_name}"
+            f" ({reused} reused, {len(batch) - reused} embedded)"
+        )
     return len(documents)
+
+
+def _fit_documents(documents: list[Document], embedder: Any, log: EmbeddingLog, resource_name: str) -> list[Document]:
+    """A document longer than the model's token limit becomes several documents with the same metadata.
+
+    Without this the model would silently truncate it and its tail could never be found.
+    """
+    split_text = getattr(embedder, "split_text", None)
+    if split_text is None:
+        return documents
+    fitted: list[Document] = []
+    for document in documents:
+        fitted.extend(Document(text=piece, metadata=document.metadata) for piece in split_text(document.text))
+    if len(fitted) != len(documents):
+        log.write(f"resource {resource_name}: {len(documents)} documents became {len(fitted)} to fit the token limit")
+    return fitted
 
 
 def _log_read_summary(resource: Resource, log: EmbeddingLog) -> None:
@@ -238,10 +288,16 @@ def _picture(document: Document) -> Any:
         raise PictureDataError(f"document {name!r} is not Base64 picture data") from error
 
 
-def _add_batch(collection: Any, batch: list[Document], embed: EmbedFunction) -> None:
+def _add_batch(collection: Any, batch: list[Document], embed: EmbedFunction, reusable: dict[str, Vector]) -> int:
+    """Adds the batch; only documents without a reusable vector are embedded. Returns how many were reused."""
+    digests = [text_digest(document.text) for document in batch]
+    missing = [document for document, digest in zip(batch, digests) if digest not in reusable]
+    fresh = iter(embed(missing) if missing else [])
+    embeddings = [reusable[digest] if digest in reusable else next(fresh) for digest in digests]
     collection.add(
         ids=[str(uuid4()) for _ in batch],
         documents=[document.text for document in batch],
-        embeddings=embed(batch),
+        embeddings=embeddings,
         metadatas=[document.metadata for document in batch],
     )
+    return len(batch) - len(missing)

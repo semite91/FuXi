@@ -4,6 +4,7 @@ Embeddings are always precomputed: no Chroma embedding function and no Chroma se
 """
 
 from collections.abc import Collection as Names
+from collections.abc import Mapping
 from pathlib import Path
 
 import chromadb
@@ -29,6 +30,8 @@ OLD_COLLECTION_BY_KIND = {kind: f"{name}{OLD_SUFFIX}" for kind, name in COLLECTI
 # fuxi_text carries this metadata only after a build reached its end with documents and no failed resource.
 BUILD_MARKER_KEY = "fuxi_build"
 BUILD_COMPLETE_VALUE = "complete"
+# Every live collection carries the fingerprint of the embedder that made its vectors (collection metadata, not schema).
+EMBEDDING_FINGERPRINT_KEY = "fuxi_embedding"
 COSINE_SPACE = "cosine"
 COLLECTION_CONFIGURATION = {"hnsw": {"space": COSINE_SPACE}}
 
@@ -66,13 +69,37 @@ def rename_collection(client: ClientAPI, name: str, new_name: str) -> None:
     open_collection(client, name).modify(name=new_name)
 
 
-def mark_build_complete(client: ClientAPI) -> None:
-    open_collection(client, TEXT_COLLECTION_NAME).modify(metadata={BUILD_MARKER_KEY: BUILD_COMPLETE_VALUE})
+def mark_build_complete(client: ClientAPI, fingerprints: Mapping[ResourceKind, str] | None = None) -> None:
+    """Writes the fingerprints, then the marker last: a collection is ready only when the marker is there."""
+    for kind, fingerprint in (fingerprints or {}).items():
+        collection = open_collection(client, COLLECTION_BY_KIND[kind])
+        collection.modify(metadata={**(collection.metadata or {}), EMBEDDING_FINGERPRINT_KEY: fingerprint})
+    text = open_collection(client, TEXT_COLLECTION_NAME)
+    text.modify(metadata={**(text.metadata or {}), BUILD_MARKER_KEY: BUILD_COMPLETE_VALUE})
 
 
-def is_build_complete(client: ClientAPI) -> bool:
-    """Ready means the last build reached its end; a build that stopped partway has no marker."""
+def read_embeddings(client: ClientAPI, kind: ResourceKind, fingerprint: str) -> dict[str, list[float]]:
+    """The stored (text, vector) pairs of a live collection whose vectors came from this fingerprint; else empty."""
+    name = COLLECTION_BY_KIND[kind]
+    if name not in collection_names(client):
+        return {}
+    collection = open_collection(client, name)
+    if (collection.metadata or {}).get(EMBEDDING_FINGERPRINT_KEY) != fingerprint:
+        return {}
+    stored = collection.get(include=["documents", "embeddings"])
+    return {text: list(vector) for text, vector in zip(stored["documents"], stored["embeddings"])}
+
+
+def is_build_complete(client: ClientAPI, fingerprint: str | None = None) -> bool:
+    """Ready means the last build reached its end; a build that stopped partway has no marker.
+
+    With a fingerprint, the text vectors must also come from that embedder: a collection built by another model
+    (other vector size) or by an older version without a fingerprint is not ready and is built again.
+    """
     for collection in client.list_collections():
         if collection.name == TEXT_COLLECTION_NAME:
-            return (collection.metadata or {}).get(BUILD_MARKER_KEY) == BUILD_COMPLETE_VALUE
+            metadata = collection.metadata or {}
+            if fingerprint is not None and metadata.get(EMBEDDING_FINGERPRINT_KEY) != fingerprint:
+                return False
+            return metadata.get(BUILD_MARKER_KEY) == BUILD_COMPLETE_VALUE
     return False
