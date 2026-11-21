@@ -5,7 +5,6 @@ import numpy as np
 import pytest
 
 from embedders import (
-    CPU_DEVICE,
     IMAGE_MODEL_ID,
     QUERY_PROMPT_NAME,
     TEXT_MODEL_ID,
@@ -31,11 +30,11 @@ class FakeModel:
 
 class RecordingLoader:
     def __init__(self):
-        self.loads: list[tuple[str, str]] = []
+        self.loads: list[tuple] = []
         self.models: dict[str, FakeModel] = {}
 
-    def __call__(self, model_id: str, device: str) -> FakeModel:
-        self.loads.append((model_id, device))
+    def __call__(self, model_id: str, device: str, precision: str, max_seq_length) -> FakeModel:
+        self.loads.append((model_id, device, precision, max_seq_length))
         return self.models.setdefault(model_id, FakeModel())
 
 
@@ -50,7 +49,7 @@ def test_query_uses_the_query_prompt_and_documents_use_no_prompt():
     model = loader.models[TEXT_MODEL_ID]
     assert model.calls[0] == (["lucky coincidences"], {"prompt_name": QUERY_PROMPT_NAME})
     assert QUERY_PROMPT_NAME == "query"
-    assert model.calls[1] == (["first note", "second note"], {})
+    assert model.calls[1] == (["first note", "second note"], {"batch_size": 8})
     assert query_vector == [1.0] * VECTOR_SIZE
     assert document_vectors == [[1.0] * VECTOR_SIZE] * 2
 
@@ -61,13 +60,13 @@ def test_image_embedder_embeds_text_with_clip():
 
     vector = ImageEmbedder(ModelCache(loader)).embed_text("a red umbrella in the rain")
 
-    assert loader.loads == [(IMAGE_MODEL_ID, CPU_DEVICE)]
+    assert loader.loads == [(IMAGE_MODEL_ID, "auto", "fp32", None)]
     assert IMAGE_MODEL_ID == "sentence-transformers/clip-ViT-B-32"
     assert loader.models[IMAGE_MODEL_ID].calls == [(["a red umbrella in the rain"], {})]
     assert vector == [1.0] * VECTOR_SIZE
 
 
-def test_models_load_lazily_on_the_cpu_and_only_once():
+def test_models_load_lazily_and_only_once():
     # D3
     loader = RecordingLoader()
     cache = ModelCache(loader)
@@ -78,8 +77,8 @@ def test_models_load_lazily_on_the_cpu_and_only_once():
     second.embed_documents(["b"])
     first.embed_documents(["c"])
 
-    assert loader.loads == [(TEXT_MODEL_ID, CPU_DEVICE)]
-    assert (TEXT_MODEL_ID, CPU_DEVICE) == ("Qwen/Qwen3-Embedding-0.6B", "cpu")
+    assert loader.loads == [(TEXT_MODEL_ID, "auto", "fp32", 512)]
+    assert TEXT_MODEL_ID == "Qwen/Qwen3-Embedding-0.6B"
 
 
 def test_parallel_first_use_loads_once():

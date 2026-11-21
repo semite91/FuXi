@@ -17,7 +17,7 @@ from pydantic import AfterValidator, BaseModel, Field
 
 import chroma_store
 from base import Resource
-from embedders import ImageEmbedder, TextEmbedder
+from embedders import ImageEmbedder, ModelCache, TextEmbedder
 from embedding_pipeline import DEFAULT_LOGS_DIR, Embedders, Mode, PipelineResult, run
 from llm_client import LlmClient
 from rag_client import RagClient, Word
@@ -125,10 +125,11 @@ def default_resources(settings: Settings) -> list[Resource]:
 
 def default_dependencies(settings: Settings | None = None) -> EngineDependencies:
     settings = settings or load_settings()
+    model_cache = ModelCache(settings=settings.embedding)
     return EngineDependencies(
         settings=settings,
         chroma_client_factory=chroma_store.create_chroma_client,
-        embedders=Embedders(text=TextEmbedder(), image=ImageEmbedder()),
+        embedders=Embedders(text=TextEmbedder(model_cache), image=ImageEmbedder(model_cache)),
         resource_factory=default_resources,
         llm_client=LlmClient(settings),
     )

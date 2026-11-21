@@ -69,7 +69,7 @@ def test_missing_numbers_use_defaults(tmp_path):
 
     assert settings.text_threshold == DEFAULT_TEXT_THRESHOLD == 0.5
     assert settings.image_threshold == DEFAULT_IMAGE_THRESHOLD == 0.25
-    assert settings.batch_size == DEFAULT_BATCH_SIZE == 16
+    assert settings.batch_size == DEFAULT_BATCH_SIZE == 8
     assert settings.rebuild_cooldown_minutes == DEFAULT_REBUILD_COOLDOWN_MINUTES == 10  # H18
 
 
