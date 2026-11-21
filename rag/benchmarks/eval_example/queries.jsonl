@@ -1,0 +1,5 @@
+{"query": "lucky coincidence", "relevant": ["n1", "n2"]}
+{"query": "şans eseri karşılaşma", "relevant": ["n2", "n1"]}
+{"query": "had + past participle tense", "relevant": ["n3"]}
+{"query": "French movie about kindness", "relevant": ["m1"]}
+{"query": "Turkish song about waiting", "relevant": ["s1"]}
