@@ -90,9 +90,16 @@ def read_embeddings(client: ClientAPI, kind: ResourceKind, fingerprint: str) -> 
     return {text: list(vector) for text, vector in zip(stored["documents"], stored["embeddings"])}
 
 
-def is_build_complete(client: ClientAPI) -> bool:
-    """Ready means the last build reached its end; a build that stopped partway has no marker."""
+def is_build_complete(client: ClientAPI, fingerprint: str | None = None) -> bool:
+    """Ready means the last build reached its end; a build that stopped partway has no marker.
+
+    With a fingerprint, the text vectors must also come from that embedder: a collection built by another model
+    (other vector size) or by an older version without a fingerprint is not ready and is built again.
+    """
     for collection in client.list_collections():
         if collection.name == TEXT_COLLECTION_NAME:
-            return (collection.metadata or {}).get(BUILD_MARKER_KEY) == BUILD_COMPLETE_VALUE
+            metadata = collection.metadata or {}
+            if fingerprint is not None and metadata.get(EMBEDDING_FINGERPRINT_KEY) != fingerprint:
+                return False
+            return metadata.get(BUILD_MARKER_KEY) == BUILD_COMPLETE_VALUE
     return False

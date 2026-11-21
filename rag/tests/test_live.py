@@ -16,7 +16,7 @@ from resources.letterboxd_tmdb_resource import LetterboxdTmdbResource
 from resources.notion_resource import create_notion_resource
 from settings import TEST_ENV_PATH, load_settings
 
-QWEN_VECTOR_SIZE = 1024
+TEXT_VECTOR_SIZE = 384
 CLIP_VECTOR_SIZE = 512
 # A public domain photo of a dog on Wikimedia Commons.
 DOG_PICTURE_URL = "https://upload.wikimedia.org/wikipedia/commons/2/26/YellowLabradorLooking_new.jpg"
@@ -39,9 +39,9 @@ def test_real_notion_returns_documents():
     assert len(documents) >= 1
 
 
-def test_real_qwen_vector_has_1024_numbers():
+def test_real_text_vector_has_384_numbers():
     # D4
-    assert len(TextEmbedder().embed_query("serendipity")) == QWEN_VECTOR_SIZE
+    assert len(TextEmbedder().embed_query("serendipity")) == TEXT_VECTOR_SIZE
 
 
 def test_real_clip_vector_has_512_numbers():

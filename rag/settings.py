@@ -86,7 +86,7 @@ class DatabaseSettings:
 
 @dataclass(frozen=True)
 class EmbeddingSettings:
-    """How the Qwen3 text model runs; every value comes from a RAG_EMBEDDING_* / RAG_MAX_SEQ_LENGTH / RAG_BATCH_SIZE key."""
+    """How the text embedding model runs; every value comes from a RAG_EMBEDDING_* / RAG_MAX_SEQ_LENGTH / RAG_BATCH_SIZE key."""
 
     device: str = DEFAULT_EMBEDDING_DEVICE
     precision: str = DEFAULT_EMBEDDING_PRECISION

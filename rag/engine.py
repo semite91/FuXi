@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import AfterValidator, BaseModel, Field
 
 import chroma_store
-from base import Resource
+from base import Resource, ResourceKind
 from embedders import ImageEmbedder, ModelCache, TextEmbedder
 from embedding_pipeline import DEFAULT_LOGS_DIR, Embedders, Mode, PipelineResult, run
 from llm_client import LlmClient
@@ -227,7 +227,7 @@ class RagEngine:
         """Ready when the last build completed; empty within the cooldown after a failed build; otherwise build."""
         if self.is_building():
             return BUILDING_STATUS
-        if chroma_store.is_build_complete(self.chroma_client()):
+        if chroma_store.is_build_complete(self.chroma_client(), self._dependencies.embedders.fingerprint(ResourceKind.TEXT)):
             self.rag_client.init()
             return READY_STATUS
         if self._in_rebuild_cooldown():

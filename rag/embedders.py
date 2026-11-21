@@ -1,4 +1,4 @@
-"""Text (Qwen3) and image (CLIP) embedders. Models load lazily, once per process.
+"""Text (multilingual-e5-small) and image (CLIP) embedders. Models load lazily, once per process.
 
 The device and precision come from EmbeddingSettings: CUDA is used only when torch can really run on the GPU,
 the weights are loaded in the configured precision (FP32 by default) and the loaded dtype is verified.
@@ -26,14 +26,15 @@ from settings import (
 
 logger = logging.getLogger(__name__)
 
-TEXT_MODEL_ID = "Qwen/Qwen3-Embedding-0.6B"
+TEXT_MODEL_ID = "intfloat/multilingual-e5-small"
+# 384 dimensions, 12 layers, 512 tokens. E5 was trained with these prefixes; without them quality drops.
+QUERY_PREFIX = "query: "
+DOCUMENT_PREFIX = "passage: "
+TEXT_VECTOR_SIZE = 384
 IMAGE_MODEL_ID = "sentence-transformers/clip-ViT-B-32"
 CPU_DEVICE = DEVICE_CPU
 # Token windows of a long text overlap by this share of the window, so a sentence cut at a border is in both.
 CHUNK_OVERLAP_SHARE = 0.1
-# Room kept for the special tokens the tokenizer adds (Qwen3 appends one end-of-text token).
-SPECIAL_TOKEN_MARGIN = 2
-QUERY_PROMPT_NAME = "query"
 RGB_MODE = "RGB"
 # Pillow raises these for data it cannot open (UnidentifiedImageError is an OSError); bad Base64 is a ValueError.
 PICTURE_ERRORS = (OSError, ValueError, Image.DecompressionBombError)
@@ -130,7 +131,7 @@ def load_sentence_transformer(
     target_device = resolve_device(device, torch)
     target_precision = resolve_precision(precision, target_device)
     dtype = _torch_dtype(torch, target_precision)
-    # dtype is passed explicitly: without it the checkpoint's own dtype (BF16 for Qwen3) is loaded, which is slow on the CPU.
+    # dtype is passed explicitly: without it the checkpoint's own dtype (a model may be stored in BF16) is loaded, which is slow on the CPU.
     model = SentenceTransformer(model_id, device=target_device, model_kwargs={"dtype": dtype})
     if parameter_dtypes(model) != {dtype}:
         model.to(dtype)
@@ -179,16 +180,21 @@ class TextEmbedder:
         return f"{TEXT_MODEL_ID}|max_seq_length={self._model_cache.settings.max_seq_length}"
 
     def embed_query(self, text: str) -> Vector:
-        return _encode(self._model_cache.get(TEXT_MODEL_ID), [text], prompt_name=QUERY_PROMPT_NAME)[0]
+        return _encode(
+            self._model_cache.get(TEXT_MODEL_ID), [QUERY_PREFIX + text], normalize_embeddings=True
+        )[0]
 
     def embed_documents(self, texts: list[str]) -> list[Vector]:
         """Vectors in the order of texts; a text that appears more than once is embedded once.
 
-        Qwen3's own pipeline normalizes (unit length), so the vectors fit the cosine collections as before.
+        Documents get the "passage: " prefix; vectors are normalized to unit length for the cosine collections.
         """
         unique = list(dict.fromkeys(texts))
         vectors = _encode(
-            self._model_cache.get(TEXT_MODEL_ID), unique, batch_size=self._model_cache.settings.batch_size
+            self._model_cache.get(TEXT_MODEL_ID),
+            [DOCUMENT_PREFIX + text for text in unique],
+            batch_size=self._model_cache.settings.batch_size,
+            normalize_embeddings=True,
         )
         by_text = dict(zip(unique, vectors))
         return [list(by_text[text]) for text in texts]
@@ -198,9 +204,12 @@ class TextEmbedder:
 
         Long texts are cut into overlapping token windows instead of being truncated, so no content is lost.
         """
-        model = self._model_cache.get(TEXT_MODEL_ID)
-        limit = self._model_cache.settings.max_seq_length - SPECIAL_TOKEN_MARGIN
-        return split_by_tokens(text, model.tokenizer, limit)
+        tokenizer = self._model_cache.get(TEXT_MODEL_ID).tokenizer
+        # Every embedded document is "passage: " + window, plus the tokenizer's special tokens: measure both.
+        special_tokens = len(tokenizer("")["input_ids"])
+        prefix_tokens = len(tokenizer(DOCUMENT_PREFIX, add_special_tokens=False)["input_ids"])
+        limit = self._model_cache.settings.max_seq_length - special_tokens - prefix_tokens
+        return split_by_tokens(text, tokenizer, limit)
 
 
 def split_by_tokens(text: str, tokenizer: Any, limit: int) -> list[str]:

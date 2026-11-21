@@ -377,6 +377,8 @@ This file is initializer instructor of my project.
     - ChromaDB will use HNSW indexing with cosine distance. Collections are fuxi_text and fuxi_image, stored in rag/chroma_data.
     - ChromaDB is used embedded (PersistentClient) with embeddings computed by FuXi and anonymized telemetry off. No ChromaDB server is run, because ChromaDB 1.5.9 has open CVEs in its HTTP server.
     - Documents are embedded in batches of RAG_BATCH_SIZE (8).
+    - The text model is intfloat/multilingual-e5-small (Qwen3-Embedding-0.6B before 2026-11-21): 384 numbers per vector, 512 tokens, multilingual, mean pooling and normalized by the model. Documents are embedded as "passage: <text>" and queries as "query: <text>", as E5 was trained. Vectors of the old model have another size, so a text collection without the e5 fingerprint is not ready: Init_RAG builds it again.
+    - RAG_TEXT_THRESHOLD (0.5) was chosen for Qwen similarity scores; E5 scores are higher and closer together, so the threshold must be tuned on real queries after the first build (see rag/benchmarks/RESULTS.md).
     - Embedding speed settings (all read in rag/settings.py, EmbeddingSettings):
       + RAG_EMBEDDING_DEVICE: auto (default), cpu or cuda. auto and cuda use the GPU only when torch reports CUDA, the torch build has kernels for the GPU's architecture and a test kernel runs; otherwise the CPU is used (cuda logs a warning). An installed NVIDIA driver alone is not enough.
       + RAG_EMBEDDING_PRECISION: fp32 (default), bf16 or fp16. The weights are loaded with this dtype explicitly (the checkpoint is BF16, which is slow on the CPU) and every parameter's dtype is verified after loading. fp16 is not used on the CPU (fp32 is used instead).
@@ -419,7 +421,7 @@ This file is initializer instructor of my project.
           timestamp
         }
         chunk type: per song. One document per song, no splitter.
-        transformer: Qwen3-Embedding-0.6B
+        transformer: multilingual-e5-small
       + letterboxd, TMDB
         metadata: {
           name,
@@ -430,7 +432,7 @@ This file is initializer instructor of my project.
           type: text
         }
         chunk type: per movie. One document per movie, no splitter.
-        transformer: Qwen3-Embedding-0.6B
+        transformer: multilingual-e5-small
       + Notion
         metadata: {
           name,
@@ -440,7 +442,7 @@ This file is initializer instructor of my project.
         }
         chunk type: per note. Only long notes are split: notes over 2000 characters, with 200 characters overlap.
         chunk tool: LangChainTextSplitter
-        transformer: Qwen3-Embedding-0.6B
+        transformer: multilingual-e5-small
 
     # rag_client
       - Functions described as below
@@ -454,10 +456,10 @@ This file is initializer instructor of my project.
             similarity threshold: one per collection, RAG_TEXT_THRESHOLD (0.5) and RAG_IMAGE_THRESHOLD (0.25). Similarity is 1 - cosine distance.
           /prompts/retrieval.txt file's content is sent to Gemini with { "word", "meaning" }; Gemini writes the search query. If its answer is invalid, "<word>: <meaning>" is used.
           The query will be embedded twice:
-            Text collection: sentence-transformers library and Qwen3-Embedding-0.6B.
+            Text collection: sentence-transformers library and multilingual-e5-small (the query gets the "query: " prefix).
             Image collection: CLIP's text encoder.
           Using singleton collection object's query method with each embedded query, it will get related data
-          It will retrieve embeds from both image (CLIP's), text (Qwen's) collection. It will return 2 collections.
+          It will retrieve embeds from both image (CLIP's), text (e5's) collection. It will return 2 collections.
 
         + generate
           It will take words as parameter

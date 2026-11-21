@@ -6,7 +6,8 @@ import pytest
 
 from embedders import (
     IMAGE_MODEL_ID,
-    QUERY_PROMPT_NAME,
+    DOCUMENT_PREFIX,
+    QUERY_PREFIX,
     TEXT_MODEL_ID,
     ImageEmbedder,
     ModelCache,
@@ -38,7 +39,7 @@ class RecordingLoader:
         return self.models.setdefault(model_id, FakeModel())
 
 
-def test_query_uses_the_query_prompt_and_documents_use_no_prompt():
+def test_query_and_documents_get_their_e5_prefixes_and_are_normalized():
     # D1
     loader = RecordingLoader()
     embedder = TextEmbedder(ModelCache(loader))
@@ -47,9 +48,12 @@ def test_query_uses_the_query_prompt_and_documents_use_no_prompt():
     document_vectors = embedder.embed_documents(["first note", "second note"])
 
     model = loader.models[TEXT_MODEL_ID]
-    assert model.calls[0] == (["lucky coincidences"], {"prompt_name": QUERY_PROMPT_NAME})
-    assert QUERY_PROMPT_NAME == "query"
-    assert model.calls[1] == (["first note", "second note"], {"batch_size": 8})
+    assert model.calls[0] == (["query: lucky coincidences"], {"normalize_embeddings": True})
+    assert (QUERY_PREFIX, DOCUMENT_PREFIX) == ("query: ", "passage: ")
+    assert model.calls[1] == (
+        ["passage: first note", "passage: second note"],
+        {"batch_size": 8, "normalize_embeddings": True},
+    )
     assert query_vector == [1.0] * VECTOR_SIZE
     assert document_vectors == [[1.0] * VECTOR_SIZE] * 2
 
@@ -78,7 +82,7 @@ def test_models_load_lazily_and_only_once():
     first.embed_documents(["c"])
 
     assert loader.loads == [(TEXT_MODEL_ID, "auto", "fp32", 512)]
-    assert TEXT_MODEL_ID == "Qwen/Qwen3-Embedding-0.6B"
+    assert TEXT_MODEL_ID == "intfloat/multilingual-e5-small"
 
 
 def test_parallel_first_use_loads_once():

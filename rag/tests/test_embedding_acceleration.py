@@ -191,7 +191,7 @@ class CountingModel:
 
     def encode(self, inputs, **kwargs):
         self.encoded.append(list(inputs))
-        return np.array([[float(len(text)), 1.0] for text in inputs], dtype=np.float32)
+        return np.array([[float(len(text.removeprefix('passage: '))), 1.0] for text in inputs], dtype=np.float32)
 
 
 def test_identical_texts_in_one_call_are_embedded_once_and_keep_their_order():
@@ -200,7 +200,7 @@ def test_identical_texts_in_one_call_are_embedded_once_and_keep_their_order():
 
     vectors = TextEmbedder(cache).embed_documents(["aa", "b", "aa"])
 
-    assert model.encoded == [["aa", "b"]]
+    assert model.encoded == [["passage: aa", "passage: b"]]
     assert vectors == [[2.0, 1.0], [1.0, 1.0], [2.0, 1.0]]
 
 
@@ -296,3 +296,43 @@ def test_a_document_over_the_token_limit_becomes_several_documents_with_the_same
     stored = open_collection(client, TEXT_COLLECTION_NAME).get()
     assert sorted(stored["documents"], key=len) == ["x" * 5, "x" * 10, "x" * 10]
     assert {metadata["name"] for metadata in stored["metadatas"]} == {"x" * 25}
+
+
+# --- switching the model: stale collections are rebuilt, windows leave room for the prefix ----------------------
+
+
+def test_a_collection_built_by_another_model_is_not_ready_and_is_built_again(tmp_path):
+    from chroma_store import is_build_complete
+
+    client = create_chroma_client(tmp_path / "chroma")
+    build(tmp_path, client, ["one", "two"], FingerprintedEmbedder("Qwen/Qwen3-Embedding-0.6B"))
+
+    assert is_build_complete(client, "Qwen/Qwen3-Embedding-0.6B")
+    assert not is_build_complete(client, "intfloat/multilingual-e5-small")
+    assert is_build_complete(client)  # without a fingerprint the old rule applies
+
+
+def test_a_collection_without_a_fingerprint_is_not_ready_for_a_fingerprinted_embedder(tmp_path):
+    from chroma_store import is_build_complete
+
+    client = create_chroma_client(tmp_path / "chroma")
+    build(tmp_path, client, ["one"], FakeEmbedder())  # no fingerprint is stored, like a build before this change
+
+    assert not is_build_complete(client, "intfloat/multilingual-e5-small")
+
+
+def test_a_window_with_the_passage_prefix_still_fits_the_token_limit(tiny_qwen):
+    model = load_sentence_transformer(tiny_qwen, "cpu", "fp32", 64)
+    cache = ModelCache(settings=EmbeddingSettings("cpu", "fp32", 64, 8))
+    cache._models[embedders.TEXT_MODEL_ID] = model
+    text = " ".join(f"fox{index}" for index in range(300))
+
+    for piece in TextEmbedder(cache).split_text(text):
+        with_prefix = embedders.DOCUMENT_PREFIX + piece
+        assert len(model.tokenizer(with_prefix)["input_ids"]) <= 64  # special tokens included
+
+
+def test_the_text_embedder_fingerprint_names_the_model_and_the_limit():
+    cache = ModelCache(settings=EmbeddingSettings("cpu", "fp32", 256, 8))
+
+    assert TextEmbedder(cache).fingerprint == "intfloat/multilingual-e5-small|max_seq_length=256"
