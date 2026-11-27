@@ -1,7 +1,7 @@
 // The logic of the Flashcard carousel: loading the cards, the Word Content flow,
 // the answers, the Reinforced Word flag, the Word History and the moves.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { errorMessageOf } from '../services/api_client';
+import { ApiError, errorMessageOf } from '../services/api_client';
 import { getWordContent, type WordMeaning } from '../services/rag_service';
 import {
   getCardWords,
@@ -39,8 +39,10 @@ const toFlashcard = (word: CardWord): Flashcard => ({
   contentStatus: isEmptyContent(word.content) ? 'loading' : 'ready',
 });
 
-/** GetWordContent is asked for this many Words at a time, one group after another. */
+/** GetWordContent is asked for this many Words at a time. */
 const CONTENT_GROUP_SIZE = 5;
+/** Groups in flight together, so the cards ahead of the Learner fill before they are reached. */
+const CONTENT_PARALLEL_GROUPS = 3;
 
 const isWaiting = (card: Flashcard): boolean => card.contentStatus === 'loading';
 
@@ -64,15 +66,33 @@ const uniqueMeanings = (waiting: readonly Flashcard[]): WordMeaning[] => {
 const toGroups = <T>(items: readonly T[], size: number): T[][] =>
   Array.from({ length: Math.ceil(items.length / size) }, (_, group) => items.slice(group * size, (group + 1) * size));
 
-/** The generated contents by meaning key. A failed request gives none, so its Words show that content is not available. */
-const askContent = async (group: readonly WordMeaning[]): Promise<Map<string, string>> => {
-  try {
-    const generated = await getWordContent(group);
+/** The engine answers 503 while it builds or updates its collections; the Words keep waiting, they are not failed. */
+const ENGINE_BUSY_STATUS = 503;
+/** The wait before a group is asked again while the engine is busy. */
+export const ENGINE_BUSY_RETRY_MILLISECONDS = 10_000;
 
-    return new Map(generated.map((item) => [meaningKey(item), item.content]));
-  } catch {
-    return new Map();
+const wait = (milliseconds: number) => new Promise<void>((done) => setTimeout(done, milliseconds));
+
+/**
+ * The generated contents by meaning key. While the engine is busy the group is asked again, until the deck closes.
+ * Any other failure gives none, so its Words show that content is not available.
+ */
+const askContent = async (group: readonly WordMeaning[], isCurrent: () => boolean): Promise<Map<string, string>> => {
+  while (isCurrent()) {
+    try {
+      const generated = await getWordContent(group);
+
+      return new Map(generated.map((item) => [meaningKey(item), item.content]));
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === ENGINE_BUSY_STATUS)) {
+        return new Map();
+      }
+
+      await wait(ENGINE_BUSY_RETRY_MILLISECONDS);
+    }
   }
+
+  return new Map();
 };
 
 /** Sets each generated content on the waiting cards of the group with the same name and translation. A Word without one gets none. */
@@ -125,21 +145,29 @@ export const useFlashcardDeck = (wordIds: string | null) => {
   useEffect(() => {
     let isCurrent = true;
 
-    /** Groups are asked one after another, so the first cards fill first. A closed deck sends no more groups. */
+    /** Groups are taken in card order by a few workers at once, so the first cards fill first. A closed deck sends no more groups. */
     const loadContent = async (loaded: Flashcard[]) => {
       const waiting = loaded.filter(isWaiting);
+      const groups = toGroups(uniqueMeanings(waiting), CONTENT_GROUP_SIZE);
+      let nextGroup = 0;
 
-      for (const group of toGroups(uniqueMeanings(waiting), CONTENT_GROUP_SIZE)) {
-        const contentByMeaning = await askContent(group);
+      const work = async () => {
+        while (isCurrent && nextGroup < groups.length) {
+          const group = groups[nextGroup];
+          nextGroup += 1;
+          const contentByMeaning = await askContent(group, () => isCurrent);
 
-        if (!isCurrent) {
-          return;
+          if (!isCurrent) {
+            return;
+          }
+
+          const groupKeys = new Set(group.map(meaningKey));
+          setCards((current) => mergeContent(current, groupKeys, contentByMeaning));
+          storeContent(waiting, groupKeys, contentByMeaning);
         }
+      };
 
-        const groupKeys = new Set(group.map(meaningKey));
-        setCards((current) => mergeContent(current, groupKeys, contentByMeaning));
-        storeContent(waiting, groupKeys, contentByMeaning);
-      }
+      await Promise.all(Array.from({ length: CONTENT_PARALLEL_GROUPS }, work));
     };
 
     const load = async () => {
@@ -191,7 +219,9 @@ export const useFlashcardDeck = (wordIds: string | null) => {
     }
   }, []);
 
+  /** A card reached by a move always opens on its front side, even when it was answered before. */
   const moveTo = (nextIndex: number) => {
+    setCards((current) => current.map((item, position) => (position === nextIndex ? { ...item, isAnswered: false } : item)));
     setIndex(nextIndex);
     setIsHistoryOpen(false);
     setActionError('');

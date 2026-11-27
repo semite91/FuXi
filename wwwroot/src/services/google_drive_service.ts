@@ -1,7 +1,7 @@
 // Google Drive sign-in and folder: the API holds the secret and the refresh token; the browser reads the state,
 // goes to the sign-in and saves the folder link.
 import { API_URL_KEY, createApiClient } from './api_client';
-import { moveTo } from './page_location';
+import { openInNewTab } from './page_location';
 
 const GET_GOOGLE_DRIVE_CONNECTION = '/api/GetGoogleDriveConnection';
 const GOOGLE_DRIVE_CONNECT = '/api/GoogleDriveConnect';
@@ -22,8 +22,8 @@ const client = createApiClient(API_URL_KEY);
 
 export const getGoogleDriveConnection = (): Promise<GoogleDriveConnection> => client.get(GET_GOOGLE_DRIVE_CONNECTION);
 
-/** Leaves the app for the Google sign-in; the API sends the browser back to /settings?drive=connected|failed. */
-export const connectGoogleDrive = (): void => moveTo(client.url(GOOGLE_DRIVE_CONNECT));
+/** Opens the Google sign-in in a new tab; the API sends the browser back to /settings?drive=connected|failed. */
+export const connectGoogleDrive = (): void => openInNewTab(client.url(GOOGLE_DRIVE_CONNECT));
 
 /** Saves the folder the RAG engine reads. The API only checks the link's form. */
 export const updateGoogleDriveFolder = async (folderLink: string): Promise<string> =>

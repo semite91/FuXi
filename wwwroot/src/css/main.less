@@ -12,6 +12,37 @@ body,
   height: 100%;
 }
 
+// --p is how far a parchment sheet is unrolled, from 0 to 1. It is a number, so the browser can animate it.
+@property --p {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+
+@keyframes parchment-unroll {
+  from {
+    --p: 0;
+  }
+
+  to {
+    --p: 1;
+  }
+}
+
+// The ink-wash landscape behind every page. It starts below the header and fades in, so the logo keeps its own background.
+body::before {
+  content: '';
+  position: fixed;
+  top: 68px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: url('/src/image/ink_landscape.jpg') center bottom / cover no-repeat;
+  mask-image: linear-gradient(180deg, transparent 0, #000 46px);
+}
+
 body {
   margin: 0;
   font-family: @font-family-base;

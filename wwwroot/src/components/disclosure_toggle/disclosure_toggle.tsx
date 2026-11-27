@@ -29,6 +29,7 @@ const ICON_CLASSES = {
 /**
  * A text button with a down arrow that turns when open, and the content it shows.
  * The content is drawn only while open, so aria-controls names it only then; it never points to a missing element.
+ * It opens like a parchment unrolling, with a rolled edge that travels down with the sheet.
  */
 const DisclosureToggle = ({ label, isOpen, onToggle, children, isFlush = false }: DisclosureToggleProps) => {
   const contentId = useId();
@@ -52,7 +53,8 @@ const DisclosureToggle = ({ label, isOpen, onToggle, children, isFlush = false }
       </button>
       {isOpen && (
         <div id={contentId} className="disclosure-toggle__content">
-          {children}
+          <div className="disclosure-toggle__sheet">{children}</div>
+          <div className="disclosure-toggle__roll" aria-hidden="true" />
         </div>
       )}
     </div>

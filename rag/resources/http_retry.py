@@ -56,6 +56,14 @@ class ReadStats:
     seconds: float = 0.0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
+    def add(self, other: "ReadStats") -> None:
+        """Adds the counts of one call's own statistics (kept apart while many threads read)."""
+        with self._lock:
+            self.calls += other.calls
+            self.rate_limit_waits += other.rate_limit_waits
+            self.rate_limit_seconds += other.rate_limit_seconds
+            self.network_retries += other.network_retries
+
     def count_call(self) -> None:
         with self._lock:
             self.calls += 1

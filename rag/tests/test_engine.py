@@ -53,12 +53,12 @@ class FakeLlm:
         self.words: list[str] = []
         self.pairs: list[tuple[str, str]] = []
 
-    def build_search_query(self, word, meaning):
+    def build_search_queries(self, word, meaning, method=None):
         self.words.append(word)
         self.pairs.append((word, meaning))
-        return word
+        return [word]
 
-    def generate(self, word, meaning, text_results, image_results):
+    def generate(self, word, meaning, text_results, image_results, retrieve_for_method=None):
         if self.error:
             raise self.error
         return self.contents.get((word, meaning), self.contents.get(word))
@@ -81,15 +81,15 @@ class BlockingLlm(FakeLlm):
         self.entered = threading.Event()
         self.release = threading.Event()
 
-    def build_search_query(self, word, meaning):
+    def build_search_queries(self, word, meaning, method=None):
         if not self.entered.is_set():
             self.entered.set()
             assert self.release.wait(BUILD_WAIT_SECONDS)
-        return super().build_search_query(word, meaning)
+        return super().build_search_queries(word, meaning, method)
 
-    def generate(self, word, meaning, text_results, image_results):
+    def generate(self, word, meaning, text_results, image_results, retrieve_for_method=None):
         self.events.append(f"content {word}")
-        return super().generate(word, meaning, text_results, image_results)
+        return super().generate(word, meaning, text_results, image_results, retrieve_for_method)
 
 
 def wait_until(condition: Callable[[], bool]) -> None:
@@ -110,7 +110,8 @@ def in_thread(call: Callable[[], object]) -> tuple[threading.Thread, list]:
 
 class Harness:
     def __init__(
-        self, tmp_path, resource=None, llm=None, settings=None, resource_factory=None, clock=None, failing_renames=None
+        self, tmp_path, resource=None, llm=None, settings=None, resource_factory=None, clock=None, failing_renames=None,
+        embedders=None,
     ):
         self.resource = resource or NotesResource()
         self.factory_calls = 0
@@ -126,7 +127,7 @@ class Harness:
             chroma_client_factory=lambda: RenameFailingClient(
                 create_chroma_client(self.chroma_path), self.failing_renames
             ),
-            embedders=Embedders(text=FakeEmbedder(), image=FakeEmbedder()),
+            embedders=embedders or Embedders(text=FakeEmbedder(), image=FakeEmbedder()),
             resource_factory=resource_factory or resources,
             llm_client=llm or FakeLlm(),
             logs_dir=tmp_path / "logs",
@@ -630,7 +631,7 @@ def test_drive_photo_data_url_is_answered_unchanged(tmp_path):
     assert answer.json() == [{"name": "serendipity", "translation": "şans", "content": content}]
 
 
-def test_missing_google_client_setting_fails_update_with_a_generic_message_and_keeps_old_collections(tmp_path):
+def test_missing_google_client_setting_is_reported_without_the_name_and_the_update_goes_on(tmp_path):
     # Phase 5b H2, Phase 6c D8
     resources: list[Resource] = [NotesResource()]
     harness = Harness(tmp_path, resource_factory=lambda settings: list(resources))
@@ -640,16 +641,22 @@ def test_missing_google_client_setting_fails_update_with_a_generic_message_and_k
 
     answer = harness.client.post("/Update_Collections")
 
-    assert answer.status_code == 502
-    assert answer.json() == {"detail": "The RAG collections could not be updated. The old collections are kept."}
+    assert answer.status_code == 200
+    assert answer.json()["failed_resources"] == ["google_drive"]
     assert "GOOGLE_CLIENT_ID" not in answer.text
-    assert harness.stored_documents() == ["note 1"]
+    assert harness.stored_documents() == ["note 2"]  # rebuilt from the sources that worked
     assert harness.client.post("/Init_RAG").json() == {"status": "ready"}
+
+
+def movies_without_a_token(settings: Settings) -> LetterboxdTmdbResource:
+    """A movies resource that has an uploaded list (it is read first) but no TMDB token."""
+    csv_text = "Date,Name,Year,Letterboxd URI\n2026-01-05,The Matrix,1999,https://boxd.it/2a1m\n"
+    return LetterboxdTmdbResource(liked_films_factory=lambda: csv_text, token_factory=settings.require_tmdb_token)
 
 
 def test_engine_starts_without_the_movie_settings_and_names_the_key_when_the_movies_are_read(tmp_path):
     # Phase 5c B3
-    harness = Harness(tmp_path, settings=Settings(), resource_factory=engine.default_resources)
+    harness = Harness(tmp_path, settings=Settings(), resource_factory=lambda settings: [movies_without_a_token(settings)])
 
     assert harness.client.post("/Init_RAG").status_code == 202
     harness.wait_for_build()
@@ -674,19 +681,43 @@ def test_engine_names_the_database_key_when_only_the_token_is_set(tmp_path):
     assert SECRET not in log
 
 
-def test_missing_tmdb_token_fails_update_with_a_generic_message_and_names_the_token_only_in_the_log(tmp_path):
+def test_missing_tmdb_token_is_reported_without_the_name_and_the_update_goes_on(tmp_path):
     # Phase 5c F4
     resources: list[Resource] = [NotesResource()]
     harness = Harness(tmp_path, resource_factory=lambda settings: list(resources))
     harness.build_ready()
-    resources.append(create_letterboxd_tmdb_resource(harness.dependencies.settings))
+    resources.append(movies_without_a_token(harness.dependencies.settings))
 
     answer = harness.client.post("/Update_Collections")
 
-    assert answer.status_code == 502
-    assert answer.json() == {"detail": "The RAG collections could not be updated. The old collections are kept."}
+    assert answer.status_code == 200
+    assert answer.json()["failed_resources"] == ["letterboxd_tmdb"]
     assert "RAG_TMDB_TOKEN" not in answer.text
     log = "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "logs").iterdir())
     assert "resource letterboxd_tmdb failed: MissingSettingError: RAG_TMDB_TOKEN is not set" in log
-    assert harness.stored_documents() == ["note 1"]
+    assert harness.stored_documents() == ["note 2"]  # rebuilt from the sources that worked
     assert harness.client.post("/Init_RAG").json() == {"status": "ready"}
+
+
+class NamedFakeEmbedder(FakeEmbedder):
+    def __init__(self, identity: str, vector: list[float] | None = None):
+        super().__init__(vector)
+        self.identity = identity
+
+
+def test_init_builds_again_when_the_stored_vectors_come_from_another_text_model(tmp_path):
+    # Phase 8 text model choice: the stored vectors could not be searched with the new model (another size)
+    old = Harness(tmp_path, embedders=Embedders(text=NamedFakeEmbedder("model-a"), image=FakeEmbedder()))
+    old.build_ready()
+    assert old.client.post("/Init_RAG").json() == {"status": "ready"}
+    new = Harness(
+        tmp_path, embedders=Embedders(text=NamedFakeEmbedder("model-b", [2.0] * 16), image=FakeEmbedder())
+    )
+
+    answer = new.client.post("/Init_RAG")
+
+    assert answer.status_code == 202
+    assert answer.json() == {"status": "building"}
+    new.wait_for_build()
+    assert new.factory_calls == 1
+    assert new.client.post("/Init_RAG").json() == {"status": "ready"}

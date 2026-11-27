@@ -1,42 +1,44 @@
 // Colors used in the project: the Soft Clay template (chosen by the Learner, Phase 6a).
 // Usage: .color-mode(light); or .color-mode(dark);
+// The accent is terracotta (#b8623f), chosen by the Learner in Phase 6b; the parchment tokens give the pages their paper.
 // main.less applies light only. Dark holds the Soft Clay dark values and keeps the file parametric.
 // The light background is the background of the FuXi logo, so the logo has no visible box.
 
 .color-mode(light) {
   --color-background: #fcfaee;
-  --color-surface: #ffffff;
+  --color-surface: #fffaf0;
   --color-text: #262352;
   --color-text-muted: #5f5c80;
   --color-text-soft: #57547a;
   --color-text-value: #3a3766;
-  --color-border: #e2def3;
-  --color-border-soft: #ecebf8;
-  --color-border-input: #c9c4e6;
-  --color-accent: #4f46e5;
-  --color-accent-hover: #4338ca;
+  --color-border: #dccbaa;
+  --color-border-soft: #e8dcc1;
+  --color-border-input: #c9b48a;
+  --color-accent: #b8623f;
+  --color-accent-hover: #9c4f31;
   --color-on-accent: #ffffff;
-  --color-hover: #f1f0fb;
+  --color-hover: #efe2c3;
   --color-yes: #15803d;
   --color-yes-hover: #166534;
   --color-no: #dc2626;
   --color-no-hover: #b91c1c;
-  --color-chip: #ecebfd;
-  --color-chip-hover: #dcd9fb;
-  --color-chip-text: #3730a3;
-  --color-info: #4f46e5;
+  --color-chip: #ecd5bd;
+  --color-chip-hover: #e4c6a8;
+  --color-chip-text: #7a3a1f;
+  --color-info: #b8623f;
   --color-warning: #b45309;
-  --color-dot: #d8d5ee;
-  --color-sort-idle: #9a97bd;
-  --color-skeleton: #efedf9;
-  --color-skeleton-shine: #f7f6fd;
-  --color-scrim: rgba(38, 35, 82, 0.4);
-  --color-shadow-soft: rgba(79, 70, 229, 0.1);
-  --color-shadow: rgba(79, 70, 229, 0.1);
-  --color-shadow-menu: rgba(79, 70, 229, 0.16);
-  --color-shadow-dialog: rgba(38, 35, 82, 0.24);
+  --color-dot: #d8c9a8;
+  --color-sort-idle: #a89a7c;
+  --color-skeleton: #efe3c7;
+  --color-skeleton-shine: #f7eed8;
+  --color-scrim: rgba(60, 40, 15, 0.4);
+  --color-shadow-soft: rgba(70, 45, 10, 0.12);
+  --color-shadow: rgba(70, 45, 10, 0.2);
+  --color-shadow-menu: rgba(70, 45, 10, 0.28);
+  --color-shadow-dialog: rgba(60, 40, 15, 0.32);
   --color-shadow-yes: rgba(21, 128, 61, 0.28);
   --color-shadow-no: rgba(220, 38, 38, 0.28);
+  .parchment-tokens();
 }
 
 .color-mode(dark) {
@@ -73,4 +75,17 @@
   --color-shadow-dialog: rgba(0, 0, 0, 0.5);
   --color-shadow-yes: rgba(21, 128, 61, 0.28);
   --color-shadow-no: rgba(220, 38, 38, 0.28);
+  .parchment-tokens();
+}
+
+// One parchment gradient: the page card, the sheets, the menu and the filters all use it.
+.parchment-tokens() {
+  --parch-rgb: 247, 238, 212;
+  --parch: linear-gradient(180deg, rgba(var(--parch-rgb), 0.93) 0, rgba(var(--parch-rgb), 0.82) 50%, rgba(var(--parch-rgb), 0.5) 100%);
+  // The same gradient on a solid base, for sheets that must hide what is behind them.
+  --parch-sheet: linear-gradient(180deg, rgba(var(--parch-rgb), 0.93) 0, rgba(var(--parch-rgb), 0.82) 50%, rgba(var(--parch-rgb), 0.5) 100%), #f1e3bd;
+  --parch-stains: radial-gradient(90px 70px at 18% 22%, rgba(168, 120, 40, 0.18), transparent 70%),
+    radial-gradient(120px 90px at 82% 38%, rgba(150, 100, 30, 0.14), transparent 70%),
+    radial-gradient(110px 90px at 30% 78%, rgba(168, 120, 40, 0.16), transparent 70%);
+  --parch-edge: inset 0 0 30px 4px rgba(130, 90, 35, 0.3), inset 0 0 5px rgba(90, 55, 10, 0.4);
 }

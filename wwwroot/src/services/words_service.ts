@@ -5,6 +5,7 @@ const GET_WORDS_BY_ACTIVE = '/api/GetWordsByActive';
 const GET_WORD_HISTORY = '/api/GetWordHistory';
 const GET_WORDS_BY_FILTER = '/api/GetWordsByFilter';
 const UPDATE_WORD_CONTENT = '/api/UpdateWordContent';
+const CLEAR_WORD_CONTENT = '/api/ClearWordContent';
 const UPDATE_WORD_KNOWN_STATUS = '/api/UpdateWordKnownStatus';
 const UPDATE_IS_REINFORCEMENT = '/api/UpdateIsReinforcement';
 
@@ -65,6 +66,8 @@ export const getWordsByFilter = (filter: WordFilter): Promise<FilteredWord[]> =>
 
 export const updateWordContent = (id: string, content: string): Promise<void> =>
   client.post(UPDATE_WORD_CONTENT, { id, content });
+
+export const clearWordContent = (): Promise<void> => client.post(CLEAR_WORD_CONTENT);
 
 export const updateWordKnownStatus = (wordId: string, isKnown: boolean): Promise<void> =>
   client.post(UPDATE_WORD_KNOWN_STATUS, { wordId, isKnown });

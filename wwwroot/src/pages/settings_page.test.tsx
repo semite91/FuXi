@@ -1,12 +1,13 @@
 // Section P: the Settings page.
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { expect, onTestFinished, test, vi } from 'vitest';
-import { moveTo } from '../services/page_location';
+import { afterEach, expect, onTestFinished, test, vi } from 'vitest';
+import { openInNewTab } from '../services/page_location';
+import { clearToasts } from '../services/toast_store';
 import { API_URL, deferred, mockApi, type ApiMock, networkFailure, problem } from '../test/api_mock';
 import { LOCATION_TEST_ID, renderApp } from '../test/render_app';
 
 // jsdom cannot leave the page; the Notion button's move is recorded instead.
-vi.mock('../services/page_location', () => ({ moveTo: vi.fn() }));
+vi.mock('../services/page_location', () => ({ moveTo: vi.fn(), openInNewTab: vi.fn(), closeThisTab: vi.fn() }));
 
 const NOT_CONNECTED_ANSWER = { body: { isConnected: false, workspaceName: null } };
 const DRIVE_NOT_CONNECTED_ANSWER = { body: { isConnected: false, email: null, folderId: null } };
@@ -16,6 +17,7 @@ const SPOTIFY_NOT_CONNECTED_ANSWER = { body: { isConnected: false, name: null, p
 const openSettings = (route = {}, path = '/settings') => {
   const api = mockApi({
     'POST /Update_Collections': { status: 204 },
+    'POST /api/ClearWordContent': { status: 204 },
     'GET /api/GetNotionConnection': NOT_CONNECTED_ANSWER,
     'GET /api/GetGoogleDriveConnection': DRIVE_NOT_CONNECTED_ANSWER,
     'GET /api/GetLetterboxdLikes': LETTERBOXD_NO_UPLOAD_ANSWER,
@@ -100,6 +102,8 @@ const PUSH_ROUTES = {
 const enableNotifications = async () => act(async () => fireEvent.click(button('Enable notifications')));
 
 
+afterEach(() => clearToasts());
+
 test('P1 the page shows its title and link without a call', () => {
   const api = openSettings();
 
@@ -126,26 +130,49 @@ test('P3 the link asks "Are you sure?" without a call', () => {
   expect(callsBesidesConnectionStates(api)).toHaveLength(0);
 });
 
-test('P4 Yes calls Update_Collections once, P6 even when clicked twice, P5 then shows the result', async () => {
+test('P4 Yes calls Update_Collections once, P6 even when clicked twice, P5 shows a progress toast, then the result', async () => {
   const pending = deferred();
   const api = openSettings({ 'POST /Update_Collections': () => pending.promise });
   fireEvent.click(button('Update embeddings'));
 
   fireEvent.click(button('Yes'));
-  fireEvent.click(button('Yes'));
+
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByText('Updating embeddings. This can take a while.')).toBeInTheDocument();
   await act(async () => pending.resolve({ status: 204 }));
 
   expect(api.callsTo('Update_Collections')).toHaveLength(1);
-  expect(screen.getByRole('dialog', { name: 'Embeddings updated' })).toBeInTheDocument();
+  expect(screen.getByText('Embeddings updated')).toBeInTheDocument();
+  expect(screen.queryByText('Updating embeddings. This can take a while.')).not.toBeInTheDocument();
 });
 
-test('P7 a failed call shows "Embeddings could not be updated."', async () => {
+test('P7 a failed call changes the same toast to "Embeddings could not be updated." until it is closed', async () => {
   openSettings({ 'POST /Update_Collections': networkFailure });
   fireEvent.click(button('Update embeddings'));
 
   fireEvent.click(button('Yes'));
 
-  expect(await screen.findByRole('dialog', { name: 'Embeddings could not be updated.' })).toBeInTheDocument();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Embeddings could not be updated.');
+  expect(screen.getAllByRole('alert')).toHaveLength(1);
+  fireEvent.click(button('Close dialog'));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('P9 a successful update calls ClearWordContent once, P10 a failed update does not', async () => {
+  const api = openSettings({ 'POST /api/ClearWordContent': { status: 204 } });
+  fireEvent.click(button('Update embeddings'));
+  fireEvent.click(button('Yes'));
+  expect(await screen.findByText('Embeddings updated')).toBeInTheDocument();
+  expect(api.callsTo('ClearWordContent')).toHaveLength(1);
+  cleanup();
+  clearToasts();
+
+  const failing = openSettings({ 'POST /Update_Collections': networkFailure, 'POST /api/ClearWordContent': { status: 204 } });
+  fireEvent.click(button('Update embeddings'));
+  fireEvent.click(button('Yes'));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Embeddings could not be updated.');
+  expect(failing.callsTo('ClearWordContent')).toHaveLength(0);
 });
 
 test('P8 the backdrop and Escape close the dialogs', async () => {
@@ -155,7 +182,6 @@ test('P8 the backdrop and Escape close the dialogs', async () => {
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
   fireEvent.click(button('Update embeddings'));
-  await act(async () => fireEvent.click(button('Yes')));
   fireEvent.click(button('Close dialog'));
 
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -462,16 +488,12 @@ test('I14 the timeout is cleared when the service worker is ready', async () => 
 const SYNC_TEXT = 'Your info will be synced';
 const warningIcon = (dialog: HTMLElement) => dialog.querySelector('.embeddings-update__warning');
 
-test('6a C9 the confirm and the result dialogs each show the close button', async () => {
+test('6a C9 the confirm dialog shows the close button', () => {
   openSettings();
   fireEvent.click(button('Update embeddings'));
   const confirm = screen.getByRole('dialog', { name: 'Are you sure?' });
+
   expect(within(confirm).getByRole('button', { name: 'Close dialog' })).toHaveClass('dialog__close');
-
-  await act(async () => fireEvent.click(button('Yes')));
-
-  const result = screen.getByRole('dialog', { name: 'Embeddings updated' });
-  expect(within(result).getByRole('button', { name: 'Close dialog' })).toHaveClass('dialog__close');
 });
 
 test('6a D2 the confirm pop-up shows a big round-bordered amber i icon above its title', () => {
@@ -509,20 +531,6 @@ test('6a D6 the confirm button still calls Update_Collections', async () => {
   expect(api.callsTo('Update_Collections')).toHaveLength(1);
 });
 
-test.each([
-  ['updated', { status: 204 }, 'Embeddings updated'],
-  ['failed', networkFailure, 'Embeddings could not be updated.'],
-] as const)('6a D7 the %s result dialog has no amber icon and no sync text', async (_, answer, title) => {
-  openSettings({ 'POST /Update_Collections': answer });
-  fireEvent.click(button('Update embeddings'));
-
-  await act(async () => fireEvent.click(button('Yes')));
-
-  const result = await screen.findByRole('dialog', { name: title });
-  expect(warningIcon(result)).toBeNull();
-  expect(within(result).queryByText(SYNC_TEXT)).not.toBeInTheDocument();
-});
-
 test('6a D8 the amber icon is hidden from screen readers and the dialog keeps its title as its name', () => {
   openSettings();
   fireEvent.click(button('Update embeddings'));
@@ -532,22 +540,13 @@ test('6a D8 the amber icon is hidden from screen readers and the dialog keeps it
   expect(dialog).toHaveAccessibleName('Are you sure?');
 });
 
-test('6a C13 the confirm and the result dialog titles come from Dialog and they draw no title of their own', async () => {
+test('6a C13 the confirm dialog title comes from Dialog and draws no title of its own', () => {
   openSettings();
   fireEvent.click(button('Update embeddings'));
+
   const confirmTitles = screen.getByRole('dialog', { name: 'Are you sure?' }).querySelectorAll('h2');
   expect(confirmTitles).toHaveLength(1);
   expect(confirmTitles[0]).toHaveClass('dialog__title');
-
-  await act(async () => fireEvent.click(button('Yes')));
-
-  const result = screen.getByRole('dialog', { name: 'Embeddings updated' });
-  const resultTitles = result.querySelectorAll('h2');
-  expect(resultTitles).toHaveLength(1);
-  expect(resultTitles[0]).toHaveClass('dialog__title');
-  // The title keeps its heading role and is announced through the status block around it.
-  expect(resultTitles[0]).not.toHaveAttribute('role');
-  expect(resultTitles[0].closest('[role="status"]')).not.toBeNull();
 });
 
 // Phase 6a section E: the Requests toggle.
@@ -677,7 +676,7 @@ test.each([
 const NOTION_CONNECT_URL = `${API_URL}/api/NotionConnect`;
 
 const clickConnect = () => {
-  vi.mocked(moveTo).mockClear();
+  vi.mocked(openInNewTab).mockClear();
   fireEvent.click(button(CONNECT_NOTION));
 };
 
@@ -685,13 +684,13 @@ test.each([
   ['E7', 'Not connected', notionAnswer(false, null)],
   ['E8 (reconnect)', 'Connected: Study Notes', notionAnswer(true, 'Study Notes')],
   ['E10 when GetNotionConnection fails', 'Not connected', { 'GET /api/GetNotionConnection': networkFailure }],
-])('6b %s the row reads "%s" and the Notion button moves the browser to the API sign-in start', async (_, text, route) => {
+])('6b %s the row reads "%s" and the Notion button opens the API sign-in start in a new tab', async (_, text, route) => {
   openRequests(route);
   expect(await within(rowOf('Notion')).findByText(text)).toBeInTheDocument();
 
   clickConnect();
 
-  expect(moveTo).toHaveBeenCalledExactlyOnceWith(NOTION_CONNECT_URL);
+  expect(openInNewTab).toHaveBeenCalledExactlyOnceWith(NOTION_CONNECT_URL);
 });
 
 test('6b E4-E6 while GetNotionConnection is pending the row shows no state, so a connected Notion never reads "Not connected"', async () => {
@@ -931,14 +930,14 @@ test.each([
   ['E7', driveAnswer(false), 'Not connected'],
   ['E7 (reconnect)', driveAnswer(true, EMAIL, FOLDER_ID), `Connected: ${EMAIL}`],
   ['E6 after a failed read', { 'GET /api/GetGoogleDriveConnection': networkFailure }, 'Not connected'],
-])('6c %s the row reads "%s" and the Google Drive button moves the browser to the API sign-in start', async (_, route, text) => {
+])('6c %s the row reads "%s" and the Google Drive button opens the API sign-in start in a new tab', async (_, route, text) => {
   openRequests(route);
   await within(driveRow()).findByText(text);
-  vi.mocked(moveTo).mockClear();
+  vi.mocked(openInNewTab).mockClear();
 
   fireEvent.click(button(CONNECT_DRIVE));
 
-  expect(moveTo).toHaveBeenCalledExactlyOnceWith(DRIVE_CONNECT_URL);
+  expect(openInNewTab).toHaveBeenCalledExactlyOnceWith(DRIVE_CONNECT_URL);
 });
 
 test('6c E8 connected without a folder, the row says "No folder chosen" and has a "Choose folder" button', async () => {
@@ -1459,20 +1458,20 @@ test('6e H6 while GetSpotifyConnection is pending the row shows no state', async
 test.each([
   ['H7', spotifyAnswer(false), 'Not connected'],
   ['H6 after a failed read', { 'GET /api/GetSpotifyConnection': networkFailure }, 'Not connected'],
-])('6e %s not connected (%s), the Spotify button moves the browser to the API sign-in start', async (_, route, text) => {
+])('6e %s not connected (%s), the Spotify button opens the API sign-in start in a new tab', async (_, route, text) => {
   openRequests(route);
   await within(spotifyRow()).findByText(text);
-  vi.mocked(moveTo).mockClear();
+  vi.mocked(openInNewTab).mockClear();
 
   fireEvent.click(button(CONNECT_SPOTIFY));
 
-  expect(moveTo).toHaveBeenCalledExactlyOnceWith(SPOTIFY_CONNECT_URL);
+  expect(openInNewTab).toHaveBeenCalledExactlyOnceWith(SPOTIFY_CONNECT_URL);
 });
 
 const openPlaylistDialog = async (route = {}, answer = spotifyAnswer(true, SPOTIFY_NAME)) => {
   const api = openRequests({ ...answer, ...route });
   await within(spotifyRow()).findByText(`Connected: ${SPOTIFY_NAME}`);
-  vi.mocked(moveTo).mockClear();
+  vi.mocked(openInNewTab).mockClear();
   fireEvent.click(button(CONNECT_SPOTIFY));
 
   return api;
@@ -1482,17 +1481,17 @@ test('6e H8 connected, the Spotify button opens the playlist pop-up and does not
   await openPlaylistDialog();
 
   expect(screen.getByRole('dialog', { name: 'Choose playlist' })).toBeInTheDocument();
-  expect(moveTo).not.toHaveBeenCalled();
+  expect(openInNewTab).not.toHaveBeenCalled();
 });
 
-test('6e H8 connected, "Connect again" moves the browser to the API sign-in start', async () => {
+test('6e H8 connected, "Connect again" opens the API sign-in start in a new tab', async () => {
   openRequests(spotifyAnswer(true, SPOTIFY_NAME));
   await within(spotifyRow()).findByText(`Connected: ${SPOTIFY_NAME}`);
-  vi.mocked(moveTo).mockClear();
+  vi.mocked(openInNewTab).mockClear();
 
   fireEvent.click(within(spotifyRow()).getByRole('button', { name: 'Connect again' }));
 
-  expect(moveTo).toHaveBeenCalledExactlyOnceWith(SPOTIFY_CONNECT_URL);
+  expect(openInNewTab).toHaveBeenCalledExactlyOnceWith(SPOTIFY_CONNECT_URL);
 });
 
 test('6e H9 connected without a playlist, the row says "No playlist chosen"', async () => {

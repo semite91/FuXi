@@ -3,34 +3,71 @@
 .word-content-music {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: @space-small;
 }
 
+// One line: a note, the title and the artist, and an arrow out. The whole line is the link.
+.word-content-music__link {
+  .focus-ring();
+  display: flex;
+  align-items: center;
+  gap: @space-small;
+  height: @size-control;
+  padding: 0 @space-medium 0 @space-xsmall;
+  border: @border-default;
+  border-radius: @border-radius-pill;
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color @transition-fast;
+
+  &:hover {
+    background: var(--color-hover);
+  }
+}
+
+.word-content-music__note {
+  flex: none;
+  width: @size-control-small;
+  height: @size-control-small;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: @border-radius-round;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.word-content-music__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .word-content-music__title {
-  margin: 0;
-  font-size: var(--font-size-large);
-  line-height: @line-height-heading;
+  font-size: var(--font-size-text);
   font-weight: @font-weight-bold;
-  letter-spacing: @letter-spacing-title;
 }
 
 .word-content-music__artist {
-  margin: 0;
+  font-size: var(--font-size-small);
   font-weight: @font-weight-medium;
+  color: var(--color-text-muted);
+
+  &::before {
+    content: '\00b7\00a0';
+  }
+}
+
+.word-content-music__out {
+  flex: none;
   color: var(--color-text-muted);
 }
 
 .word-content-music__excerpt {
+  margin: 0;
   font-style: italic;
   white-space: pre-line;
-}
-
-.word-content-music__link {
-  .secondary-button();
-  display: inline-flex;
-  align-items: center;
-  margin-top: @space-xsmall;
-  color: var(--color-text);
-  text-decoration: none;
 }

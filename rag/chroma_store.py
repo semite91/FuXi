@@ -29,6 +29,10 @@ OLD_COLLECTION_BY_KIND = {kind: f"{name}{OLD_SUFFIX}" for kind, name in COLLECTI
 # fuxi_text carries this metadata only after a build reached its end with documents and no failed resource.
 BUILD_MARKER_KEY = "fuxi_build"
 BUILD_COMPLETE_VALUE = "complete"
+# A collection carries the model that made its vectors (EmbeddingCache and the update check read it).
+EMBEDDING_KEY = "fuxi_embedding"
+# Vectors of a build in progress, by the hash of their text; a successful swap deletes it with the other leftovers.
+PROGRESS_COLLECTION_NAME = "fuxi_progress"
 COSINE_SPACE = "cosine"
 COLLECTION_CONFIGURATION = {"hnsw": {"space": COSINE_SPACE}}
 
@@ -66,8 +70,24 @@ def rename_collection(client: ClientAPI, name: str, new_name: str) -> None:
     open_collection(client, name).modify(name=new_name)
 
 
+def _add_metadata(collection: Collection, items: dict[str, str]) -> None:
+    collection.modify(metadata={**(collection.metadata or {}), **items})
+
+
 def mark_build_complete(client: ClientAPI) -> None:
-    open_collection(client, TEXT_COLLECTION_NAME).modify(metadata={BUILD_MARKER_KEY: BUILD_COMPLETE_VALUE})
+    _add_metadata(open_collection(client, TEXT_COLLECTION_NAME), {BUILD_MARKER_KEY: BUILD_COMPLETE_VALUE})
+
+
+def set_embedding_identity(client: ClientAPI, name: str, identity: str) -> None:
+    _add_metadata(open_collection(client, name), {EMBEDDING_KEY: identity})
+
+
+def embedding_identity(client: ClientAPI, name: str) -> str | None:
+    """The model that made the vectors of the collection, or None when it was not recorded."""
+    for collection in client.list_collections():
+        if collection.name == name:
+            return (collection.metadata or {}).get(EMBEDDING_KEY)
+    return None
 
 
 def is_build_complete(client: ClientAPI) -> bool:

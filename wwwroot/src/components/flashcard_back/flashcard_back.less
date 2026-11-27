@@ -1,34 +1,77 @@
 @import (reference) '../../css/tokens.less';
 
+// Wide enough to touch with a thumb, narrow enough to leave the content free.
+@edge-width: 16%;
+
 .flashcard-back {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  margin: 0 -@space-xsmall;
+  overflow-y: auto;
+  padding: @space-section @space-xsmall @space-small;
 }
 
 .flashcard-back__reinforcement {
   position: absolute;
   top: @space-large;
   right: @space-large;
+  z-index: 3;
 }
 
-.flashcard-back__main {
-  flex: 1 0 auto;
+// The edges lie over the card from top to bottom. They show nothing until the pointer or the keyboard is on them.
+.flashcard-back__edge {
+  .control-reset();
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: @edge-width;
+  min-width: @size-control;
   display: flex;
   align-items: center;
-  gap: @space-xsmall;
-  padding-top: @space-section;
-}
+  color: var(--color-text);
 
-.flashcard-back__arrow-space {
-  flex: none;
-  width: @size-control;
+  svg {
+    opacity: 0;
+    transition: opacity @transition-fast;
+  }
+
+  &--previous {
+    left: 0;
+    justify-content: flex-start;
+    padding-left: @space-small;
+
+    &:hover,
+    &:focus-visible {
+      background: linear-gradient(90deg, rgba(120, 85, 30, 0.14), transparent);
+    }
+  }
+
+  &--next {
+    right: 0;
+    justify-content: flex-end;
+    padding-right: @space-small;
+
+    &:hover,
+    &:focus-visible {
+      background: linear-gradient(270deg, rgba(120, 85, 30, 0.14), transparent);
+    }
+  }
+
+  &:hover svg,
+  &:focus-visible svg {
+    opacity: 1;
+  }
+
+  &:focus-visible {
+    outline: @focus-outline;
+    outline-offset: -@focus-outline-offset;
+  }
 }
 
 .flashcard-back__body {
-  flex: 1;
+  flex: none;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -43,6 +86,25 @@
   line-height: 1.12;
   font-weight: @font-weight-bold;
   letter-spacing: @letter-spacing-title;
+  overflow-wrap: anywhere;
+}
+
+// A hand-drawn ink line under the translation, with a thin red line beneath it.
+.flashcard-back__translation::after {
+  content: '';
+  display: block;
+  width: 150px;
+  height: 14px;
+  margin: @space-small auto 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 14' fill='none'%3E%3Cpath d='M3 9c20-6 42-7 70-5 24 2 48 1 74-2' stroke='%23262352' stroke-width='3.2' stroke-linecap='round' opacity='.85'/%3E%3Cpath d='M12 11c30-3 60-3 100-2' stroke='%23c4302b' stroke-width='1.6' stroke-linecap='round' opacity='.7'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+.flashcard-back__name {
+  margin: @space-xsmall 0 0;
+  font-size: var(--font-size-small);
+  line-height: 1.3;
+  color: var(--color-text-muted);
   overflow-wrap: anywhere;
 }
 
@@ -62,34 +124,10 @@
   }
 }
 
-.flashcard-back__dots {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: @space-small;
-  margin-top: @space-page;
-}
-
-.flashcard-back__dot {
-  width: @size-dot;
-  height: @size-dot;
-  border-radius: @border-radius-round;
-  background: var(--color-dot);
-
-  &--current {
-    background: var(--color-accent);
-  }
-}
-
-.flashcard-back__done {
-  .primary-button();
-  margin-top: @space-xlarge;
-}
-
+// The History follows the content directly; the rest of the card stays empty.
 .flashcard-back__history {
-  flex: 1 1 0;
-  min-height: @size-control;
-  overflow-y: auto;
+  flex: none;
+  margin-top: @space-large;
   display: flex;
   flex-direction: column;
 }

@@ -23,6 +23,12 @@ public static class WordEndpoints
             return TypedResults.NoContent();
         });
 
+        routes.MapPost(ApiRoutes.CLEAR_WORD_CONTENT, async (WordService service, CancellationToken cancellationToken) =>
+        {
+            await service.ClearWordContentAsync(cancellationToken);
+            return TypedResults.NoContent();
+        });
+
         routes.MapPost(ApiRoutes.UPDATE_WORD_KNOWN_STATUS, async (UpdateWordKnownStatusRequest request, WordService service, CancellationToken cancellationToken) =>
         {
             await service.UpdateWordKnownStatusAsync(request.WordId, request.IsKnown, cancellationToken);

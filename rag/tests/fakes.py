@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from notion_client import APIResponseError
 from PIL import Image
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -92,6 +93,17 @@ class _FakePages:
         if error is not None:
             raise error
         return self.owner.recorded["pages"][page_id]
+
+    def retrieve_markdown(self, page_id: str, **kwargs: Any) -> dict[str, Any]:
+        """The recorded markdown of the page (recorded["markdown"][id]); without one Notion says 404, so the page is
+        read block by block."""
+        self.owner._record("pages.retrieve_markdown", {"page_id": page_id})
+        answer = self.owner.recorded.get("markdown", {}).get(page_id)
+        if answer is None:
+            raise APIResponseError(
+                code="object_not_found", status=404, message="no markdown", headers=httpx.Headers(), raw_body_text=""
+            )
+        return answer
 
 
 class FakeDriveApi:

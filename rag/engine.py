@@ -3,8 +3,8 @@
 import logging
 import threading
 import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
@@ -17,7 +17,9 @@ from pydantic import AfterValidator, BaseModel, Field
 
 import chroma_store
 from base import Resource
-from embedders import ImageEmbedder, TextEmbedder
+from embedders import EmbeddingConfig, ImageEmbedder, ModelCache, TextEmbedder, TokenCounter
+from embedding_cache import same_embedding
+from error_log import install_error_log
 from embedding_pipeline import DEFAULT_LOGS_DIR, Embedders, Mode, PipelineResult, run
 from llm_client import LlmClient
 from rag_client import RagClient, Word
@@ -116,7 +118,7 @@ class EngineDependencies:
 
 def default_resources(settings: Settings) -> list[Resource]:
     return [
-        create_notion_resource(settings),
+        create_notion_resource(settings, token_counter=TokenCounter(settings.text_model)),
         create_google_drive_resource(settings),
         create_letterboxd_tmdb_resource(settings),
         create_spotify_resource(settings),
@@ -125,10 +127,17 @@ def default_resources(settings: Settings) -> list[Resource]:
 
 def default_dependencies(settings: Settings | None = None) -> EngineDependencies:
     settings = settings or load_settings()
+    model_cache = ModelCache(config=EmbeddingConfig(
+        device=settings.embedding_device,
+        dtype=settings.embedding_dtype,
+        max_seq_length=settings.max_seq_length,
+        batch_size=settings.batch_size,
+        text_model=settings.text_model,
+    ))
     return EngineDependencies(
         settings=settings,
         chroma_client_factory=chroma_store.create_chroma_client,
-        embedders=Embedders(text=TextEmbedder(), image=ImageEmbedder()),
+        embedders=Embedders(text=TextEmbedder(model_cache), image=ImageEmbedder(model_cache)),
         resource_factory=default_resources,
         llm_client=LlmClient(settings),
     )
@@ -226,7 +235,7 @@ class RagEngine:
         """Ready when the last build completed; empty within the cooldown after a failed build; otherwise build."""
         if self.is_building():
             return BUILDING_STATUS
-        if chroma_store.is_build_complete(self.chroma_client()):
+        if chroma_store.is_build_complete(self.chroma_client()) and self._text_model_is_current():
             self.rag_client.init()
             return READY_STATUS
         if self._in_rebuild_cooldown():
@@ -243,6 +252,12 @@ class RagEngine:
             return self._build(Mode.UPDATE)
         finally:
             self._guard.stop_writing()
+
+    def _text_model_is_current(self) -> bool:
+        """False when the stored text vectors come from another model than the configured one: they could not be
+        searched (other size), so the engine builds again."""
+        identity = getattr(self._dependencies.embedders.text, "identity", None)
+        return same_embedding(self.chroma_client(), identity)
 
     def _in_rebuild_cooldown(self) -> bool:
         if self._failed_build_at is None:
@@ -290,9 +305,17 @@ class RagEngine:
 
 
 def create_app(dependencies: EngineDependencies | None = None) -> FastAPI:
+    writes_error_log = dependencies is None
     dependencies = dependencies or default_dependencies()
     rag_engine = RagEngine(dependencies)
-    app = FastAPI(title="FuXi RAG engine")
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        if writes_error_log:  # at server start: importing the module (tests) writes no file
+            install_error_log()
+        yield
+
+    app = FastAPI(title="FuXi RAG engine", lifespan=lifespan)
     app.state.engine = rag_engine
     app.add_middleware(
         CORSMiddleware,

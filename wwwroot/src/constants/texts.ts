@@ -28,7 +28,6 @@ export const FLASHCARD_TEXTS = {
   next: 'Next word',
   contentUnavailable: 'Content is not available.',
   loadingContent: 'Loading content',
-  listen: 'Listen',
 } as const;
 
 export const HISTORY_TEXTS = {
@@ -111,6 +110,7 @@ export const SETTINGS_TEXTS = {
   tip: 'It will update to your current data.',
   confirm: 'Are you sure?',
   syncNotice: 'Your info will be synced',
+  updating: 'Updating embeddings. This can take a while.',
   updated: 'Embeddings updated',
   failed: 'Embeddings could not be updated.',
 } as const;

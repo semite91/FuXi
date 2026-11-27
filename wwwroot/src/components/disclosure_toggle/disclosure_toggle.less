@@ -36,6 +36,19 @@
 }
 
 .disclosure-toggle__content {
+  .unroll-sheet(~'min(60vh, 440px)');
   margin-top: @space-small;
-  padding: 0 @space-small;
+}
+
+.disclosure-toggle__sheet {
+  box-sizing: border-box;
+  max-height: inherit;
+  overflow-y: auto;
+  padding: @space-small;
+  background: var(--parch-sheet);
+  box-shadow: 0 0 0 1px var(--color-border);
+}
+
+.disclosure-toggle__roll {
+  .unroll-roll();
 }

@@ -1,3 +1,4 @@
+import itertools
 import copy
 
 import httpx
@@ -21,6 +22,7 @@ from settings_store import SettingsStoreError
 
 PAGE_A = "1a2b3c4d-0001-4000-8000-00000000000a"
 PAGE_C = "1a2b3c4d-0003-4000-8000-00000000000c"
+PAGE_LISBON = "1a2b3c4d-0002-4000-8000-00000000000b"
 PAGE_D = "1a2b3c4d-0004-4000-8000-00000000000d"
 RATE_LIMITED_STATUS = 429
 
@@ -108,6 +110,7 @@ def test_document_metadata_has_name_path_type_and_timestamp():
         "path": "",
         "type": "text",
         "timestamp": "2026-10-01T09:30:00.000Z",
+        "page_id": PAGE_A,
     }
     assert documents["Lisbon"].metadata["path"] == "Travel Notes"
     assert documents["Poems"].metadata["path"] == "Archive"
@@ -393,17 +396,81 @@ def test_timeout_or_dropped_connection_is_still_tried_again_after_1_2_4_and_8_se
     assert len(client.calls) == MAX_ATTEMPTS
 
 
+def test_database_rows_are_skipped_without_a_call_and_counted():
+    # Phase 8 #66, #70
+    data = recorded()
+    row = next(page for result in data["search"].values() for page in result["results"] if page["id"] == PAGE_LISBON)
+    row["parent"] = {"type": "data_source_id", "data_source_id": "source-1"}
+    client = FakeNotionClient(data)
+    resource = make_resource(client)
+
+    documents = resource.read_documents()
+
+    read_pages = [kwargs["block_id"] for name, kwargs in client.calls if name == "blocks.children.list"]
+    assert PAGE_LISBON not in read_pages
+    assert "Lisbon" not in by_name(documents)
+    assert "1 database rows skipped without a call" in resource.read_summary()
+
+
+def test_page_with_markdown_is_read_with_one_call_and_empty_blocks_are_dropped():
+    # Phase 8 #67
+    data = recorded()
+    data["markdown"] = {PAGE_C: {"markdown": "- one\n<empty-block/>\n- two", "truncated": False, "unknown_block_ids": []}}
+    client = FakeNotionClient(data)
+
+    documents = by_name(make_resource(client).read_documents())
+
+    assert documents["Poems"].text == "- one\n- two"
+    assert PAGE_C not in [kwargs["block_id"] for name, kwargs in client.calls if name == "blocks.children.list"]
+
+
+@pytest.mark.parametrize("answer", [
+    {"markdown": "cut", "truncated": True, "unknown_block_ids": []},
+    {"markdown": "cut", "truncated": False, "unknown_block_ids": ["block-1"]},
+])
+def test_cut_markdown_falls_back_to_reading_the_blocks(answer):
+    # Phase 8 #67
+    data = recorded()
+    data["markdown"] = {PAGE_C: answer}
+    client = FakeNotionClient(data)
+
+    documents = by_name(make_resource(client).read_documents())
+
+    assert documents["Poems"].text != "cut"
+    assert PAGE_C in [kwargs["block_id"] for name, kwargs in client.calls if name == "blocks.children.list"]
+
+
+def iter_clock():
+    """A clock that moves 1.5 s at each reading."""
+    readings = itertools.count(step=1.5)
+    return lambda: next(readings)
+
+
 def test_read_summary_counts_pages_calls_waits_and_time():
     # C14
-    ticks = iter([100.0, 107.5])
+    clock = iter_clock()
     client = FakeNotionClient(recorded(), errors=[rate_limited("3"), httpx.ReadError("connection reset")])
-    resource = NotionResource(client_factory=lambda: client, sleep=lambda _: None, clock=lambda: next(ticks))
+    resource = NotionResource(client_factory=lambda: client, sleep=lambda _: None, clock=clock)
 
     resource.read_documents()
 
-    assert resource.read_summary() == (
-        f"4 pages, {len(client.calls)} calls, 1 rate limit waits (3.0 s), 1 network retries, 7.5 s"
-    )
+    summary = resource.read_summary()
+    assert summary.startswith("4 pages, 0 database rows skipped without a call, 0 unchanged pages reused")
+    assert f"{len(client.calls)} calls, 1 rate limit waits (3.0 s), 1 network retries, " in summary
+
+
+def test_read_summary_splits_calls_and_seconds_by_phase_and_names_the_slowest_pages():
+    # Phase 8 #44
+    resource = NotionResource(client_factory=lambda: FakeNotionClient(recorded()), sleep=lambda _: None, clock=iter_clock())
+
+    resource.read_documents()
+
+    summary = resource.read_summary()
+    for phase in ("search ", "blocks ", "parents "):
+        assert f"{phase}" in summary
+    assert "slowest pages: " in summary
+    page_calls = resource._phases["markdown"].calls + resource._phases["blocks"].calls
+    assert sum(cost.calls for cost in resource._page_costs) == page_calls
 
 
 def test_read_summary_is_kept_when_the_read_fails():
@@ -416,3 +483,154 @@ def test_read_summary_is_kept_when_the_read_fails():
 
     assert f"{MAX_ATTEMPTS} calls" in resource.read_summary()
     assert f"{MAX_ATTEMPTS - 1} network retries" in resource.read_summary()
+
+
+def stored_from(documents):
+    return [Document(d.text, dict(d.metadata), stored_id=f"stored-{index}") for index, d in enumerate(documents)]
+
+
+def test_unchanged_pages_are_reused_without_any_page_call_and_changed_ones_are_read_again():
+    # Phase 8 #68
+    first = make_resource(FakeNotionClient(recorded())).read_documents()
+    data = recorded()
+    for result in data["search"].values():
+        for page in result["results"]:
+            if page["id"] == PAGE_LISBON:
+                page["last_edited_time"] = "2026-11-18T08:00:00.000Z"
+    client = FakeNotionClient(data)
+    resource = make_resource(client)
+    resource.use_stored(stored_from(first))
+
+    documents = by_name(resource.read_documents())
+
+    read = {kwargs["page_id"] for name, kwargs in client.calls if name == "pages.retrieve_markdown"}
+    read |= {kwargs["block_id"] for name, kwargs in client.calls if name == "blocks.children.list"}
+    assert PAGE_LISBON in read and PAGE_A not in read and PAGE_C not in read
+    assert documents["Travel Notes"].stored_id is not None
+    assert documents["Lisbon"].stored_id is None
+    assert documents["Lisbon"].metadata["timestamp"] == "2026-11-18T08:00:00.000Z"
+    assert "2 unchanged pages reused" in resource.read_summary()
+
+
+def test_deleted_pages_are_not_kept_from_the_stored_documents():
+    # Phase 8 #68
+    first = make_resource(FakeNotionClient(recorded())).read_documents()
+    data = recorded()
+    for result in data["search"].values():
+        result["results"] = [page for page in result["results"] if page["id"] != PAGE_C]
+    resource = make_resource(FakeNotionClient(data))
+    resource.use_stored(stored_from(first))
+
+    assert "Poems" not in by_name(resource.read_documents())
+
+
+def test_stored_documents_are_forgotten_after_one_read():
+    # Phase 8 #68
+    first = make_resource(FakeNotionClient(recorded())).read_documents()
+    resource = make_resource(FakeNotionClient(recorded()))
+    resource.use_stored(stored_from(first))
+    resource.read_documents()
+
+    resource.read_documents()
+
+    assert "0 unchanged pages reused" in resource.read_summary()
+
+
+def test_parallel_reading_gives_the_same_documents_and_counts_every_call():
+    # Phase 8 #69
+    sequential_client = FakeNotionClient(recorded())
+    parallel_client = FakeNotionClient(recorded())
+    sequential = make_resource(sequential_client).read_documents()
+    resource = NotionResource(client_factory=lambda: parallel_client, sleep=lambda _: None, workers=4)
+
+    parallel = resource.read_documents()
+
+    assert [(d.text, d.metadata) for d in parallel] == [(d.text, d.metadata) for d in sequential]
+    assert f"{len(parallel_client.calls)} calls" in resource.read_summary()
+
+
+def test_a_rate_limit_holds_back_the_other_workers_for_the_same_time():
+    # Phase 8 #69
+    now = [100.0]
+    sleeps = []
+    resource = NotionResource(
+        client_factory=lambda: None, sleep=sleeps.append, clock=lambda: now[0], workers=4
+    )
+
+    resource._gated_retry_wait(rate_limited("5"), 0)
+    resource._gate.wait_turn()
+
+    assert sleeps == [pytest.approx(5.0)]
+
+
+def count_words(text: str) -> int:
+    return len(text.split())
+
+
+def test_long_page_is_cut_by_tokens_so_no_chunk_is_longer_than_the_model_reads():
+    # Phase 8 embedding speed
+    words = [f"word{index}" for index in range(400)]
+    data = recorded()
+    data["markdown"] = {PAGE_C: {"markdown": " ".join(words), "truncated": False, "unknown_block_ids": []}}
+    resource = NotionResource(
+        client_factory=lambda: FakeNotionClient(data), sleep=lambda _: None, token_counter=count_words, max_tokens=102
+    )
+
+    chunks = [d for d in resource.read_documents() if d.metadata["name"] == "Poems"]
+
+    assert len(chunks) > 1
+    assert all(count_words(chunk.text) <= 100 for chunk in chunks)
+    assert {word for chunk in chunks for word in chunk.text.split()} == set(words)  # nothing lost
+
+
+def test_stored_chunk_longer_than_the_model_reads_is_read_and_cut_again():
+    # Phase 8 embedding speed
+    first = make_resource(FakeNotionClient(recorded())).read_documents()
+    long_text = " ".join(f"w{index}" for index in range(300))
+    stored = [Document(long_text, dict(d.metadata), stored_id=f"s{index}") for index, d in enumerate(first)]
+    client = FakeNotionClient(recorded())
+    resource = NotionResource(
+        client_factory=lambda: client, sleep=lambda _: None, token_counter=count_words, max_tokens=102
+    )
+    resource.use_stored(stored)
+
+    resource.read_documents()
+
+    assert "0 unchanged pages reused" in resource.read_summary()
+
+
+def test_token_chunks_do_not_overlap_so_no_token_is_embedded_twice():
+    # Phase 8 embedding speed
+    words = [f"word{index}" for index in range(400)]
+    data = recorded()
+    data["markdown"] = {PAGE_C: {"markdown": " ".join(words), "truncated": False, "unknown_block_ids": []}}
+    resource = NotionResource(
+        client_factory=lambda: FakeNotionClient(data), sleep=lambda _: None, token_counter=count_words, max_tokens=102
+    )
+
+    chunks = [d for d in resource.read_documents() if d.metadata["name"] == "Poems"]
+
+    assert sum(count_words(chunk.text) for chunk in chunks) == 400
+
+
+def test_page_with_hardly_any_text_is_not_embedded_and_is_counted():
+    # Phase 8 embedding speed
+    data = recorded()
+    data["markdown"] = {PAGE_C: {"markdown": "  Hi  ", "truncated": False, "unknown_block_ids": []}}
+    resource = make_resource(FakeNotionClient(data))
+
+    documents = resource.read_documents()
+
+    assert "Poems" not in by_name(documents)
+    assert "1 near-empty pages not embedded" in resource.read_summary()
+
+
+def test_chunks_leave_room_for_what_the_text_model_adds_to_each_text():
+    # Phase 8 text model choice
+    qwen = create_notion_resource(
+        Settings(text_model="Qwen/Qwen3-Embedding-0.6B"), read_token=lambda settings: "t", token_counter=count_words
+    )
+    e5 = create_notion_resource(Settings(), read_token=lambda settings: "t", token_counter=count_words)  # the default
+
+    assert qwen._chunk_size == 510  # 512 minus the end token
+    assert e5._chunk_size == 506  # and minus the "passage: " prefix

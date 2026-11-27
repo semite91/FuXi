@@ -223,10 +223,10 @@ class LetterboxdTmdbResource(Resource):
         )
 
     def _read_documents(self) -> list[Document]:
-        token = self._token_factory()
         csv_text = self._liked_films_factory()
         if csv_text is None:
             raise ResourceSkipped(NO_LIKED_MOVIES)
+        token = self._token_factory()
         self._liked = read_liked_list(csv_text)
         with self._http_client_factory() as client:
             tmdb = _TmdbSession(client, token, self._stats, self._sleep)

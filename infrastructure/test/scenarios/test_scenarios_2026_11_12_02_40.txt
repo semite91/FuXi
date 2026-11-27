@@ -92,7 +92,7 @@ F. FLASHCARD - BACK SIDE
 F1. [FE] Given a back side, when it is shown, then the Word's Translation is the large text.
 F2. [FE] Given a Word with Content, when its back side is shown, then the Content is shown as plain text.
 F3. [FE] Given Content that contains HTML tags, when it is shown, then the tags are shown as text and no element is created from them.
-F4. [FE] Given a back side, when it is shown, then one dot per card is shown and the dot of the current card is marked.
+F4. [FE] Given a back side, when it is shown, then no dot is shown, however many cards there are. (Amended 2026-11-27: the dots were removed.)
 F5. [FE] Given a back side, when it is shown, then the caption line, the image area and the link of the design are not shown (Word Content is plain text in this phase).
 F6. [FE] Given a back side, when it is shown, then the reinforcement button is at the top right with the accessible name "Is reinforcement".
 F7. [FE] Given the reinforcement button, when it is hovered or focused, then the tooltip "Is reinforcement" is visible.
@@ -124,8 +124,11 @@ H3. [FE] Given the back side of the first card, when it is shown, then the previ
 H4. [FE] Given the back side of a later card, when the previous arrow is clicked, then the previous Word's back side is shown.
 H5. [FE] Given a previous Word shown again, when it is shown, then its Yes and No buttons cannot be reached.
 H6. [FE] Given a previous Word shown again, when the next arrow is clicked, then the following card is shown on the side it had (back when answered, front when not).
-H7. [FE] Given the back side of the last card, when it is shown, then the next arrow is hidden and a "Done" button is visible.
-H8. [FE] Given the last card, when "Done" is clicked, then the Done screen with the text "Done" is shown and no card is visible.
+H7. [FE] Given the back side of the last card, when it is shown, then no "Done" button is visible. (Amended 2026-11-27.)
+H8. [FE] Given the last card, when its next edge is clicked, then the Done screen with the text "Done" is shown and no card is visible. (Amended 2026-11-27.)
+H9. [FE] Given a back side, when the Learner swipes 60 pixels or more to the left, then the next card is shown, and a swipe to the right shows the previous card.
+H10. [FE] Given a back side, when the Learner swipes less than 60 pixels, then the card does not change.
+H11. [FE] Given a back side, when the History toggle is opened, then the history opens as an unrolling parchment sheet with a roll at its bottom edge.
 H9. [FE] Given a card change, when it happens, then no UpdateWordKnownStatus call is sent by the move itself.
 
 ==================================================
@@ -262,6 +265,8 @@ P5. [FE] Given a successful call, when it returns, then the dialog "Embeddings u
 P6. [FE] Given a pending call, when Yes is clicked again, then no second call is sent.
 P7. [FE] Given a failed call, when it returns, then "Embeddings could not be updated." is shown.
 P8. [FE] Given any of the dialogs, when the backdrop or Escape is used, then it closes.
+P9. [FE] Given a successful Update_Collections, when it returns, then ClearWordContent is called once (amended 2026-11-27).
+P10. [FE] Given a failed Update_Collections, when it returns, then ClearWordContent is not called.
 
 ==================================================
 Q. ACCESSIBILITY AND DIALOGS

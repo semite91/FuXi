@@ -20,14 +20,16 @@ Decisions taken by the Learner on 2026-11-13 (grilling rounds 1 and 2):
 - Word Content is structured JSON stored as a string in Words.Content (no migration). The card renders text, picture and
   music layouts, built from the existing card style. An old plain-text Content is shown as a story.
 - The code picks one of the 5 methods at random (story, quote, film reference, photo, music) and sends it to Gemini as
-  "available_methods": ["<chosen>"]. photo and music use prompts/llm_web.txt with the google_search tool; the others use
+  "available_methods": ["<chosen>"]. photo and music use prompts/llm_suggest.txt without tools (amended 2026-11-27); the others use
   prompts/llm.txt. The prompt files are not changed. On insufficient_context one other random method is tried once.
-- prompts/retrieval.txt is sent to Gemini with the word and its meaning; Gemini writes the search query; the query is
-  embedded with Qwen (text collection) and CLIP (image collection).
+- prompts/retrieval.txt is sent to Gemini with the word and its meaning; Gemini writes 3 to 4 search queries (amended 2026-11-27);
+  each query is embedded with Qwen (text collection) and CLIP (image collection), and the results are merged. A result
+  below the threshold stays when it is within 0.02 of the best one (not below threshold - 0.08). When the first method
+  fails, retrieve runs again with queries written for the second method.
 - The frontend sends each Word with its Translation as the meaning: POST /GetWordContent { "words": [{ "name", "translation" }] }.
 - The frontend calls Init_RAG on every app open. It is cheap when collections have data and starts one background build when
   they are empty. While a build runs, GetWordContent answers "not ready".
-- In 5a, photo means a web image found by Google Search. When Drive comes (5b), Gemini may choose the Learner's own image.
+- Photo is the Learner's own Drive image or a web image from Openverse for a phrase Gemini writes; music is a song Gemini names, found on Spotify (amended 2026-11-27: Gemini no longer searches the web, the free tier refuses google_search with 429).
 - Similarity threshold is one setting per collection: text 0.5 and image 0.25 to start, tuned on real data.
 - Gemini uses gemini-3.8-flash on the free tier; when grounding is refused the fallback rule applies.
 - Notion: every page shared with the integration. Notes longer than 2000 characters are split with a 200-character overlap.
@@ -71,7 +73,7 @@ A8. [RV] Given the setup script on Ubuntu, when it runs, then it creates rag/.ve
 B. SETTINGS
 ==================================================
 B1. [PY] Given a .env with every RAG_ key, when the settings are read, then each value is parsed (thresholds as numbers, batch size as an integer).
-B2. [PY] Given a missing RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD or RAG_BATCH_SIZE, when the settings are read, then 0.5, 0.25 and 16 are used.
+B2. [PY] Given a missing RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD or RAG_BATCH_SIZE, when the settings are read, then 0.5, 0.25 and 8 are used.
 B3. [PY] Given a missing RAG_GEMINI_MODEL, when the settings are read, then gemini-3.8-flash is used.
 B4. [PY] Given a threshold outside 0 to 1 or a batch size below 1, when the settings are read, then an error names the key.
 B5. [PY] Given a missing RAG_NOTION_TOKEN or RAG_GEMINI_API_KEY, when the engine starts, then it starts and the error names the key only when that key is used.
@@ -133,16 +135,19 @@ F5. [PY] Given image results, when the image threshold is 0.25, then results bel
 F6. [PY] Given retrieve, when it returns, then it gives two lists: text results and image results, each with document, metadata and similarity.
 F7. [PY] Given empty collections, when retrieve runs, then both lists are empty and no error is raised.
 F8. [PY] Given an update, when Update_Collections ends, then the singleton points to the new collections.
+F9. [PY] Given several queries, when retrieve_many runs, then each is embedded, the results are merged by stored item (the best similarity stays) and at most 20 are kept.
+F10. [PY] Given a best result just below the threshold, when its query is read, then results within 0.02 of it are kept, but never below the threshold minus 0.08.
+F11. [PY] Given a first method that failed, when the retry runs, then retrieve is run again with queries written for the retry's method.
 
 ==================================================
 G. LLM CLIENT
 ==================================================
-G1. [PY] Given a word and its meaning, when the search query is asked, then prompts/retrieval.txt is sent with {"word","meaning"} as input.
-G2. [PY] Given Gemini's retrieval answer {"query": "..."}, when it is read, then that query is used for retrieve.
-G3. [PY] Given an invalid retrieval answer, when it is read, then "<word>: <meaning>" is used as the query.
+G1. [PY] Given a word and its meaning, when the search queries are asked, then prompts/retrieval.txt is sent with {"word","meaning"} as input; for a retry it also holds "target_method".
+G2. [PY] Given Gemini's retrieval answer {"queries": ["...", ...]}, when it is read, then up to 4 distinct queries are used for retrieve (a single "query" text is accepted too).
+G3. [PY] Given an invalid or empty retrieval answer, when it is read, then "<word>: <meaning>" is used as the only query.
 G4. [PY] Given a fixed random source, when the method is chosen, then it is one of story, quote, film reference, photo and music.
 G5. [PY] Given the chosen method story, quote or film reference, when Gemini is called, then prompts/llm.txt is used without tools.
-G6. [PY] Given the chosen method photo or music, when Gemini is called, then prompts/llm_web.txt is used with the google_search tool.
+G6. [PY] Given the chosen method photo or music, when Gemini is called, then prompts/llm_suggest.txt is used without tools.
 G7. [PY] Given a call, when its input is built, then it holds word, meaning, available_methods ["<chosen>"] and the retrieved text and image results.
 G8. [PY] Given a call, when it is made, then the model is RAG_GEMINI_MODEL.
 G9. [PY] Given a success answer for a text method, when it is read, then the content JSON is {"method","title","content","source_reference"}.
@@ -151,11 +156,24 @@ G11. [PY] Given a success answer for music, when it is read, then the content JS
 G12. [PY] Given an image_url or song_url that is not an https URL, when it is read, then the answer counts as insufficient_context.
 G13. [PY] Given an answer with status insufficient_context, invalid JSON or empty text, when it is read, then one other random method is tried once.
 G14. [PY] Given the second method also fails, when it is read, then the word gets no content.
-G15. [PY] Given Gemini refuses the google_search tool, when it answers with an error, then it counts as a failed method and the fallback rule applies.
+G15. [PY] Given a Gemini error for a photo or music call, when it answers, then it counts as a failed method and the fallback rule applies.
 G16. [PY] Given a Gemini error for one word, when generate runs for 3 words, then the other words still get content.
 G18. [PY] Given several calls, when prompts are used, then each prompt file is read once.
+G21. [PY] Given a photo answer {"image_query": "..."}, when it is read, then the Content image_url is the https image the finder found for that phrase; no image found is a failed method.
+G22. [PY] Given a music answer {"song_title","artist"}, when it is read, then the Content holds Spotify's title, artist and link, lyrics_excerpt is null; a song Spotify does not have is a failed method.
+G20. [PY] Given the first method failed, when the second method is tried, then its call holds the context found for that method, not the first one.
 G19. [PY] Given a missing web prompt file, when a text method is generated, then it still works.
 G17. [LIVE] Given the real Gemini key, when one word is generated, then the answer is a valid content JSON or no content, without an error.
+
+==================================================
+L. WEB FINDERS (amended 2026-11-27)
+==================================================
+L1. [PY] Given a song Gemini named, when SpotifySongFinder runs, then it searches track:"<title>" artist:"<artist>" with a client-credentials token and returns Spotify's title, artist and web link.
+L2. [PY] Given results for another song or artist, or without an open.spotify.com link, when it runs, then none is returned; accents and case do not matter.
+L3. [PY] Given two searches, when the token has not ended, then the token is asked once.
+L4. [PY] Given no SPOTIFY_CLIENT_ID, when a song is searched, then the error names the key.
+L5. [PY] Given a phrase, when OpenverseImageFinder runs, then the first https image of the results is returned.
+L6. [PY] Given no results or no https url, when it runs, then none is returned.
 
 ==================================================
 H. ENGINE API

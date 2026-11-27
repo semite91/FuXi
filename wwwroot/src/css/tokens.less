@@ -106,3 +106,38 @@
   font-weight: @font-weight-bold;
   letter-spacing: @letter-spacing-title;
 }
+
+// The torn edge of a parchment sheet: a polygon whose points sit at fixed percentages and move a few pixels.
+@torn-edge: ~"polygon(0% 1.5px, 4% 1.9px, 8% 3.1px, 12% 1.6px, 16% 1.7px, 20% 2.0px, 24% 0.6px, 28% 1.7px, 32% 2.1px, 36% 2.7px, 40% 0.3px, 44% 1.0px, 48% 0.3px, 52% 2.8px, 56% 2.4px, 60% 0.1px, 64% 3.3px, 68% 3.3px, 72% 2.2px, 76% 2.1px, 80% 0.5px, 84% 0.1px, 88% 1.8px, 92% 0.2px, 96% 0.6px, 100% 0.8px, calc(100% - 0.1px) 4%, calc(100% - 1.6px) 7%, calc(100% - 1.5px) 10%, calc(100% - 2.9px) 13%, calc(100% - 1.8px) 16%, calc(100% - 2.2px) 19%, calc(100% - 1.7px) 22%, calc(100% - 2.3px) 25%, calc(100% - 1.6px) 28%, calc(100% - 0.9px) 31%, calc(100% - 3.4px) 34%, calc(100% - 3.4px) 37%, calc(100% - 2.9px) 40%, calc(100% - 2.4px) 43%, calc(100% - 1.1px) 46%, calc(100% - 0.8px) 49%, calc(100% - 1.0px) 52%, calc(100% - 0.2px) 55%, calc(100% - 2.6px) 58%, calc(100% - 1.4px) 61%, calc(100% - 2.9px) 64%, calc(100% - 1.3px) 67%, calc(100% - 3.3px) 70%, calc(100% - 2.9px) 73%, calc(100% - 0.0px) 76%, calc(100% - 0.7px) 79%, calc(100% - 3.1px) 82%, calc(100% - 1.6px) 85%, calc(100% - 3.3px) 88%, calc(100% - 1.4px) 91%, calc(100% - 0.2px) 94%, 100% calc(100% - 2.1px), 96% calc(100% - 2.6px), 92% calc(100% - 0.9px), 88% calc(100% - 0.3px), 84% calc(100% - 1.1px), 80% calc(100% - 3.3px), 76% calc(100% - 2.6px), 72% calc(100% - 0.4px), 68% calc(100% - 0.8px), 64% calc(100% - 0.3px), 60% calc(100% - 0.2px), 56% calc(100% - 2.7px), 52% calc(100% - 0.6px), 48% calc(100% - 1.9px), 44% calc(100% - 1.5px), 40% calc(100% - 0.6px), 36% calc(100% - 2.5px), 32% calc(100% - 0.4px), 28% calc(100% - 2.2px), 24% calc(100% - 0.4px), 20% calc(100% - 1.4px), 16% calc(100% - 0.7px), 12% calc(100% - 0.9px), 8% calc(100% - 3.3px), 4% calc(100% - 2.7px), 0% calc(100% - 1.0px), 3.0px 96%, 0.7px 93%, 1.3px 90%, 2.9px 87%, 2.2px 84%, 0.3px 81%, 3.4px 78%, 0.7px 75%, 0.9px 72%, 2.6px 69%, 1.1px 66%, 1.0px 63%, 0.2px 60%, 0.3px 57%, 2.0px 54%, 0.8px 51%, 2.0px 48%, 1.3px 45%, 1.5px 42%, 3.3px 39%, 1.6px 36%, 2.0px 33%, 2.9px 30%, 0.6px 27%, 0.5px 24%, 3.1px 21%, 2.8px 18%, 0.8px 15%, 0.6px 12%, 2.5px 9%, 3.2px 6%)";
+
+.torn-edge() {
+  clip-path: @torn-edge;
+}
+
+// Paper: the parchment gradient over stains and grain, with a burnt edge inside.
+.parchment-paper() {
+  background: var(--parch), var(--parch-stains), url('/src/image/parchment_grain.svg');
+  box-shadow: var(--parch-edge);
+}
+
+// A sheet that unrolls: its height follows --p from 0 to 1 and a rolled edge travels with the bottom.
+// Put an .unroll-roll() element last inside the sheet's wrapper.
+.unroll-sheet(@max) {
+  --unroll-max: @max;
+  position: relative;
+  max-height: calc(var(--p) * var(--unroll-max));
+  animation: parchment-unroll 0.7s cubic-bezier(0.3, 0.7, 0.25, 1) both;
+}
+
+.unroll-roll() {
+  position: absolute;
+  left: -7px;
+  right: -7px;
+  bottom: -10px;
+  height: 20px;
+  border-radius: 10px;
+  z-index: 5;
+  pointer-events: none;
+  background: linear-gradient(180deg, #fbf3da 0, #efe0b4 30%, #d8c18a 62%, #b99b5e 100%);
+  box-shadow: 0 3px 6px rgba(70, 45, 10, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -2px 3px rgba(90, 60, 20, 0.35);
+}

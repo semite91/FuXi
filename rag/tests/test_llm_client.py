@@ -19,6 +19,7 @@ from fakes import (
     picture_text,
 )
 from llm_client import METHODS, PROMPTS_DIR, LlmClient
+from web_finders import FoundSong
 from resources.google_drive_resource import MAX_PICTURE_SIDE
 from settings import MissingSettingError, Settings
 
@@ -49,10 +50,41 @@ def prompt(name: str) -> str:
     return (PROMPTS_DIR / name).read_text(encoding="utf-8")
 
 
-def make_client(answers, choices=None, settings=SETTINGS):
+EXAMPLE_IMAGE_URL = "https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg"
+EXAMPLE_SONG = FoundSong("Serendipity", "BTS", "https://open.spotify.com/track/4d8b0ZFHJaGG4H3CSHfSwV")
+
+
+class FakeSongFinder:
+    def __init__(self, song=EXAMPLE_SONG):
+        self.song = song
+        self.calls = []
+
+    def find_song(self, title, artist):
+        self.calls.append((title, artist))
+        return self.song
+
+
+class FakeImageFinder:
+    def __init__(self, url=EXAMPLE_IMAGE_URL):
+        self.url = url
+        self.calls = []
+
+    def find_image(self, query):
+        self.calls.append(query)
+        return self.url
+
+
+def make_client(answers, choices=None, settings=SETTINGS, song_finder=None, image_finder=None):
     gemini = FakeGeminiClient(answers)
     random_source = ScriptedRandom(choices or [])
-    client = LlmClient(settings, gemini_client_factory=lambda: gemini, random_source=random_source)
+    client = LlmClient(
+        settings,
+        gemini_client_factory=lambda: gemini,
+        random_source=random_source,
+        sleep=lambda _: None,
+        song_finder=song_finder or FakeSongFinder(),
+        image_finder=image_finder or FakeImageFinder(),
+    )
     return client, gemini, random_source
 
 
@@ -60,15 +92,11 @@ def generate(client):
     return client.generate(WORD, MEANING, TEXT_RESULTS, [])
 
 
-def grounded(config) -> bool:
-    return bool(config.tools) and config.tools[0].google_search is not None
-
-
 def test_search_query_sends_retrieval_prompt_with_word_and_meaning():
     # G1
     client, gemini, _ = make_client([RECORDED["retrieval_query"]])
 
-    client.build_search_query(WORD, MEANING)
+    client.build_search_queries(WORD, MEANING)
 
     call = gemini.calls[0]
     assert call["config"].system_instruction == prompt("retrieval.txt")
@@ -79,15 +107,15 @@ def test_search_query_uses_geminis_query():
     # G2
     client, _, _ = make_client([RECORDED["retrieval_query"]])
 
-    assert client.build_search_query(WORD, MEANING).startswith("unexpected discoveries")
+    assert client.build_search_queries(WORD, MEANING)[0].startswith("unexpected discoveries")
 
 
-@pytest.mark.parametrize("answer", [RECORDED["retrieval_invalid"], "", '{"query": ""}', errors.ServerError(503, {})])
+@pytest.mark.parametrize("answer", [RECORDED["retrieval_invalid"], "", '{"query": ""}', '{"queries": []}', errors.ServerError(503, {})])
 def test_invalid_search_answer_falls_back_to_word_and_meaning(answer):
     # G3
     client, _, _ = make_client([answer])
 
-    assert client.build_search_query(WORD, MEANING) == f"{WORD}: {MEANING}"
+    assert client.build_search_queries(WORD, MEANING) == [f"{WORD}: {MEANING}"]
 
 
 def test_method_is_chosen_from_the_five_methods():
@@ -118,15 +146,15 @@ def test_text_methods_use_llm_prompt_without_tools(method, answer):
 
 
 @pytest.mark.parametrize("method", ["photo", "music"])
-def test_web_methods_use_web_prompt_with_google_search(method):
+def test_web_methods_use_the_suggest_prompt_without_tools(method):
     # G6
     client, gemini, _ = make_client([RECORDED[f"{method}_success"]], [method])
 
     generate(client)
 
     config = gemini.calls[0]["config"]
-    assert config.system_instruction == prompt("llm_web.txt")
-    assert grounded(config)
+    assert config.system_instruction == prompt("llm_suggest.txt")
+    assert not config.tools
 
 
 def test_call_input_holds_word_meaning_method_and_context():
@@ -150,7 +178,7 @@ def test_model_is_the_configured_model():
     # G8
     client, gemini, _ = make_client([RECORDED["retrieval_query"], RECORDED["story_success"]], ["story"])
 
-    client.build_search_query(WORD, MEANING)
+    client.build_search_queries(WORD, MEANING)
     generate(client)
 
     assert [call["model"] for call in gemini.calls] == ["gemini-test-model"] * 2
@@ -188,31 +216,52 @@ def test_different_returned_method_is_a_failure():
     assert len(gemini.calls) == 2
 
 
-def test_photo_success_gives_image_url_content():
+def test_photo_success_gives_the_web_image_found_for_the_suggested_phrase():
     # G10
-    client, _, _ = make_client([RECORDED["photo_success"]], ["photo"])
+    finder = FakeImageFinder()
+    client, _, _ = make_client([RECORDED["photo_success"]], ["photo"], image_finder=finder)
 
-    assert json.loads(generate(client)) == {
-        "method": "photo",
-        "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg",
-    }
+    assert json.loads(generate(client)) == {"method": "photo", "image_url": EXAMPLE_IMAGE_URL}
+    assert finder.calls == ["umbrella in the rain"]
 
 
-def test_music_success_gives_song_content():
+def test_a_phrase_with_no_image_found_is_a_failed_method():
+    # G10
+    client, gemini, _ = make_client(
+        [RECORDED["photo_success"], RECORDED["story_success"]], ["photo", "story"], image_finder=FakeImageFinder(url=None)
+    )
+
+    assert json.loads(generate(client))["method"] == "story"
+    assert len(gemini.calls) == 2
+
+
+def test_music_success_gives_the_song_spotify_found_and_no_lyrics():
     # G11
-    client, _, _ = make_client([RECORDED["music_success"]], ["music"])
+    finder = FakeSongFinder()
+    client, _, _ = make_client([RECORDED["music_success"]], ["music"], song_finder=finder)
 
     assert json.loads(generate(client)) == {
         "method": "music",
         "song_title": "Serendipity",
         "artist": "BTS",
         "song_url": "https://open.spotify.com/track/4d8b0ZFHJaGG4H3CSHfSwV",
-        "lyrics_excerpt": "All of this is serendipity",
+        "lyrics_excerpt": None,
     }
+    assert finder.calls == [("Serendipity", "BTS")]
 
 
-@pytest.mark.parametrize(("method", "answer"), [("photo", "photo_http_url"), ("music", "music_bad_url")])
-def test_non_https_url_counts_as_insufficient_context(method, answer):
+def test_a_song_spotify_does_not_have_is_a_failed_method():
+    # G11
+    client, gemini, _ = make_client(
+        [RECORDED["music_success"], RECORDED["story_success"]], ["music", "story"], song_finder=FakeSongFinder(song=None)
+    )
+
+    assert json.loads(generate(client))["method"] == "story"
+    assert len(gemini.calls) == 2
+
+
+@pytest.mark.parametrize(("method", "answer"), [("photo", "photo_http_url"), ("music", "music_incomplete")])
+def test_an_answer_without_what_the_finder_needs_counts_as_insufficient_context(method, answer):
     # G12
     client, gemini, _ = make_client([RECORDED[answer], RECORDED["story_success"]], [method, "story"])
 
@@ -242,11 +291,9 @@ def test_second_failure_gives_no_content():
     assert len(gemini.calls) == 2
 
 
-def test_refused_google_search_counts_as_failed_method():
+def test_a_gemini_error_for_a_web_method_counts_as_failed_method():
     # G15
-    refused = errors.ClientError(
-        400, {"error": {"code": 400, "message": "Search Grounding is not supported.", "status": "INVALID_ARGUMENT"}}
-    )
+    refused = errors.ClientError(400, {"error": {"code": 400, "message": "Not supported.", "status": "INVALID_ARGUMENT"}})
     client, gemini, _ = make_client([refused, RECORDED["story_success"]], ["photo", "story"])
 
     assert json.loads(generate(client))["method"] == "story"
@@ -257,7 +304,7 @@ def test_missing_gemini_key_gives_no_content_and_names_the_key(caplog):
     # B5
     client = LlmClient(Settings(), random_source=ScriptedRandom(["story", "quote"]))
 
-    assert client.build_search_query(WORD, MEANING) == f"{WORD}: {MEANING}"
+    assert client.build_search_queries(WORD, MEANING) == [f"{WORD}: {MEANING}"]
     assert generate(client) is None
     assert "RAG_GEMINI_API_KEY" in caplog.text
 
@@ -272,7 +319,7 @@ def test_missing_key_error_is_raised_only_when_the_client_is_used():
 
 def test_each_prompt_file_is_read_once_over_several_calls(monkeypatch, tmp_path):
     # G18
-    for name in ("retrieval.txt", "llm.txt", "llm_web.txt"):
+    for name in ("retrieval.txt", "llm.txt", "llm_suggest.txt"):
         (tmp_path / name).write_text(f"prompt {name}", encoding="utf-8")
     reads: list[str] = []
     read_text = Path.read_text
@@ -289,15 +336,16 @@ def test_each_prompt_file_is_read_once_over_several_calls(monkeypatch, tmp_path)
         gemini_client_factory=lambda: gemini,
         random_source=ScriptedRandom(["story", "story", "photo"]),
         prompts_dir=tmp_path,
+        image_finder=FakeImageFinder(),
     )
 
     for _ in range(2):
-        client.build_search_query(WORD, MEANING)
+        client.build_search_queries(WORD, MEANING)
         generate(client)
     generate(client)
 
-    assert sorted(reads) == ["llm.txt", "llm_web.txt", "retrieval.txt"]
-    assert gemini.calls[-1]["config"].system_instruction == "prompt llm_web.txt"
+    assert sorted(reads) == ["llm.txt", "llm_suggest.txt", "retrieval.txt"]
+    assert gemini.calls[-1]["config"].system_instruction == "prompt llm_suggest.txt"
 
 
 def test_missing_web_prompt_does_not_break_text_methods_or_the_search_query(tmp_path):
@@ -309,10 +357,10 @@ def test_missing_web_prompt_does_not_break_text_methods_or_the_search_query(tmp_
         SETTINGS, gemini_client_factory=lambda: gemini, random_source=ScriptedRandom(["story"]), prompts_dir=tmp_path
     )
 
-    query = client.build_search_query(WORD, MEANING)
+    query = client.build_search_queries(WORD, MEANING)
     content = generate(client)
 
-    assert query.startswith("unexpected discoveries")
+    assert query[0].startswith("unexpected discoveries")
     assert json.loads(content)["method"] == "story"
     assert [call["config"].system_instruction for call in gemini.calls] == ["prompt retrieval.txt", "prompt llm.txt"]
 
@@ -351,7 +399,7 @@ def test_https_image_url_is_kept_with_drive_images_present():
 
     content = json.loads(generate_with_images(client))
 
-    assert content["image_url"] == "https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg"
+    assert content["image_url"] == EXAMPLE_IMAGE_URL
 
 
 def test_unknown_drive_reference_counts_as_insufficient_context():
@@ -385,7 +433,7 @@ def test_photo_without_image_results_works_as_before():
 
     content = json.loads(generate_with_images(client, images=[]))
 
-    assert content == {"method": "photo", "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg"}
+    assert content == {"method": "photo", "image_url": EXAMPLE_IMAGE_URL}
     assert json.loads(gemini.calls[0]["contents"])["retrieved_context"]["images"] == []
 
 
@@ -430,3 +478,86 @@ def test_movie_result_is_sent_as_a_text_context_item_with_its_document_and_name(
         {"document": movie.document, "name": "The Lantern Keeper", "path": ""},
     ]
     assert context["images"] == []
+
+
+def unavailable():
+    return errors.ServerError(
+        503, {"error": {"code": 503, "message": "This model is currently experiencing high demand.", "status": "UNAVAILABLE"}}
+    )
+
+
+def test_search_query_retries_a_503_and_uses_geminis_query():
+    client, gemini, _ = make_client([unavailable(), unavailable(), RECORDED["retrieval_query"]])
+
+    assert client.build_search_queries(WORD, MEANING) != [f"{WORD}: {MEANING}"]
+    assert len(gemini.calls) == 3
+
+
+def test_search_query_falls_back_when_503_lasts():
+    client, gemini, _ = make_client([unavailable()] * 5)
+
+    assert client.build_search_queries(WORD, MEANING) == [f"{WORD}: {MEANING}"]
+    assert len(gemini.calls) == 5
+
+
+def test_a_closed_gemini_client_is_replaced_and_the_search_query_is_asked_again():
+    closed = RuntimeError("Cannot send a request, as the client has been closed.")
+    clients = [FakeGeminiClient([closed]), FakeGeminiClient([RECORDED["retrieval_query"]])]
+    made = iter(clients)
+    client = LlmClient(
+        SETTINGS, gemini_client_factory=lambda: next(made), random_source=ScriptedRandom([]), sleep=lambda _: None
+    )
+
+    assert client.build_search_queries(WORD, MEANING) != [f"{WORD}: {MEANING}"]
+    assert [len(c.calls) for c in clients] == [1, 1]
+
+
+def test_another_runtime_error_is_not_retried():
+    client, gemini, _ = make_client([RuntimeError("something else")])
+
+    assert client.build_search_queries(WORD, MEANING) == [f"{WORD}: {MEANING}"]
+    assert len(gemini.calls) == 1
+
+
+def test_queries_are_distinct_trimmed_and_at_most_four():
+    # G1
+    answer = json.dumps({"queries": ["  a  ", "a", "", 5, "b", "c", "d", "e"]})
+    client, _, _ = make_client([answer])
+
+    assert client.build_search_queries(WORD, MEANING) == ["a", "b", "c", "d"]
+
+
+def test_a_single_query_text_is_still_accepted():
+    # G2
+    client, _, _ = make_client(['{"query": "lucky surprises"}'])
+
+    assert client.build_search_queries(WORD, MEANING) == ["lucky surprises"]
+
+
+def test_queries_for_a_method_send_the_target_method():
+    # G1
+    client, gemini, _ = make_client([RECORDED["retrieval_query"]])
+
+    client.build_search_queries(WORD, MEANING, "quote")
+
+    assert json.loads(gemini.calls[0]["contents"]) == {"word": WORD, "meaning": MEANING, "target_method": "quote"}
+
+
+def test_the_retry_sends_the_context_found_for_its_own_method():
+    # G20
+    other = [RetrievedItem(document="A line from a film.", metadata={"name": "Film Notes", "path": ""}, similarity=0.8)]
+    asked = []
+
+    def retrieve_for_method(method):
+        asked.append(method)
+        return other, []
+
+    client, gemini, _ = make_client([RECORDED["insufficient_context"], RECORDED["quote_success"]], ["story", "quote"])
+
+    content = client.generate(WORD, MEANING, TEXT_RESULTS, [], retrieve_for_method)
+
+    assert asked == ["quote"]
+    assert json.loads(content)["method"] == "quote"
+    first, second = (json.loads(call["contents"])["retrieved_context"]["texts"] for call in gemini.calls)
+    assert [text["name"] for text in first] == ["Travel Notes"]
+    assert [text["name"] for text in second] == ["Film Notes"]

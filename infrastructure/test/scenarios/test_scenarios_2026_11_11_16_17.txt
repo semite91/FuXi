@@ -132,6 +132,9 @@ H4. [DB] Given content with quotes and SQL keywords, when the API is called, the
 H5. [DB] Given a Word id that does not exist, when the API is called, then the answer is 404.
 H6. [NOW] Given an id that is not a Guid, when the API is called, then the answer is 400.
 H7. [NOW] Given empty or missing content, when the API is called, then the answer is 400.
+H8. [DB] Given Words with Content, when ClearWordContent is called, then the answer is 204 and the Content of every Word is empty (amended 2026-11-27).
+H9. [DB] Given ClearWordContent, when it runs, then no other column of any Word changes.
+H10. [DB] Given Words without Content, when ClearWordContent is called, then they stay as they are.
 
 ==================================================
 I. UPDATEISREINFORCEMENT

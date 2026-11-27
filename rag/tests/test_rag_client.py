@@ -28,17 +28,21 @@ def add(collection, similarities):
 
 
 class FakeLlm:
-    def __init__(self, failing_word=None):
+    def __init__(self, failing_word=None, retry_method=None):
         self.failing_word = failing_word
+        self.retry_method = retry_method
         self.generated = []
+        self.retried = []
 
-    def build_search_query(self, word, meaning):
-        return f"query for {word}"
+    def build_search_queries(self, word, meaning, method=None):
+        return [f"query for {word}"] if method is None else [f"{method} query for {word}"]
 
-    def generate(self, word, meaning, text_results, image_results):
+    def generate(self, word, meaning, text_results, image_results, retrieve_for_method=None):
         if word == self.failing_word:
             raise RuntimeError("Gemini is down")
         self.generated.append((word, meaning, text_results, image_results))
+        if self.retry_method is not None:
+            self.retried.append(retrieve_for_method(self.retry_method))
         return f'{{"method":"story","title":"{word}"}}'
 
 
@@ -103,13 +107,13 @@ def test_each_collection_returns_at_most_top_k(chroma_path, embedders):
     # F3
     client = make_client(chroma_path, embedders)
     collections = client.init()
-    add(collections.text, [0.9] * 25)
+    add(collections.text, [0.9] * 45)
     add(collections.image, [0.9] * 3)
 
     texts, images = client.retrieve("q")
 
-    assert TOP_K == 20
-    assert len(texts) == 20
+    assert TOP_K == 40
+    assert len(texts) == 40
     assert len(images) == 3
 
 
@@ -223,3 +227,55 @@ def test_movie_results_above_the_text_threshold_hold_their_text_and_metadata(chr
     texts, _ = client.retrieve("q")
 
     assert texts == [RetrievedItem(document=movie_text, metadata=metadata, similarity=pytest.approx(0.7))]
+
+
+def test_every_query_is_embedded_and_the_results_are_merged_without_repeats(chroma_path, embedders):
+    # F9
+    client = make_client(chroma_path, embedders, settings=Settings(text_threshold=0.5))
+    add(client.init().text, [0.9, 0.7, 0.6])
+
+    texts, _ = client.retrieve_many(["first", "second", "third"])
+
+    assert embedders.text.queries == ["first", "second", "third"]
+    assert embedders.image.text_queries == ["first", "second", "third"]
+    assert [item.similarity for item in texts] == pytest.approx([0.9, 0.7, 0.6])
+
+
+def test_merged_results_hold_at_most_top_k(chroma_path, embedders):
+    # F9
+    client = make_client(chroma_path, embedders)
+    add(client.init().text, [0.9] * 45)
+
+    texts, _ = client.retrieve_many(["first", "second"])
+
+    assert len(texts) == TOP_K
+
+
+def test_a_best_result_just_below_the_threshold_keeps_its_close_neighbours(chroma_path, embedders):
+    # F10
+    client = make_client(chroma_path, embedders, settings=Settings(text_threshold=0.5))
+    add(client.init().text, [0.46, 0.45, 0.3])
+
+    texts, _ = client.retrieve("q")
+
+    assert [item.similarity for item in texts] == pytest.approx([0.46, 0.45])
+
+
+def test_results_far_below_the_threshold_are_still_dropped(chroma_path, embedders):
+    # F10
+    client = make_client(chroma_path, embedders, settings=Settings(text_threshold=0.5))
+    add(client.init().text, [0.4, 0.39])
+
+    assert client.retrieve("q") == ([], [])
+
+
+def test_the_retry_searches_again_with_queries_written_for_its_method(chroma_path, embedders):
+    # F11
+    llm = FakeLlm(retry_method="quote")
+    client = make_client(chroma_path, embedders, llm=llm, settings=Settings(text_threshold=0.5))
+    add(client.init().text, [0.8])
+
+    client.generate([Word("alpha", "a")])
+
+    assert embedders.text.queries == ["query for alpha", "quote query for alpha"]
+    assert [item.document for item in llm.retried[0][0]] == ["doc 0.8"]

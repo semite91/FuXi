@@ -14,7 +14,9 @@ export type IconName =
   | 'plus'
   | 'info'
   | 'save'
-  | 'upload';
+  | 'upload'
+  | 'music'
+  | 'external';
 
 const VIEW_BOX = '0 0 24 24';
 const DEFAULT_SIZE = 24;
@@ -36,6 +38,14 @@ const PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  music: (
+    <>
+      <path d="M9 18V6l11-2v12" />
+      <circle cx="6.5" cy="18" r="3" />
+      <circle cx="17.5" cy="16" r="3" />
+    </>
+  ),
+  external: <path d="M7 17L17 7M9 7h8v8" />,
   info: (
     <>
       <path d="M12 11v7" />
