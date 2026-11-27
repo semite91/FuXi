@@ -16,7 +16,7 @@ from resources.letterboxd_tmdb_resource import LetterboxdTmdbResource
 from resources.notion_resource import create_notion_resource
 from settings import TEST_ENV_PATH, load_settings
 
-TEXT_VECTOR_SIZE = 384
+E5_VECTOR_SIZE = 384
 CLIP_VECTOR_SIZE = 512
 # A public domain photo of a dog on Wikimedia Commons.
 DOG_PICTURE_URL = "https://upload.wikimedia.org/wikipedia/commons/2/26/YellowLabradorLooking_new.jpg"
@@ -41,7 +41,7 @@ def test_real_notion_returns_documents():
 
 def test_real_text_vector_has_384_numbers():
     # D4
-    assert len(TextEmbedder().embed_query("serendipity")) == TEXT_VECTOR_SIZE
+    assert len(TextEmbedder().embed_query("serendipity")) == E5_VECTOR_SIZE
 
 
 def test_real_clip_vector_has_512_numbers():
@@ -52,7 +52,7 @@ def test_real_clip_vector_has_512_numbers():
 def test_real_gemini_gives_valid_content_or_none():
     # G17
     client = LlmClient(LIVE_SETTINGS)
-    query = client.build_search_query("serendipity", "finding something good by chance")
+    query = client.build_search_queries("serendipity", "finding something good by chance")
 
     content = client.generate("serendipity", "finding something good by chance", [], [])
 
@@ -67,7 +67,10 @@ def cosine_similarity(first: list[float], second: list[float]) -> float:
 
 def test_real_google_drive_returns_picture_documents():
     # Phase 5b C21, Phase 6c I4 (reads the chosen folder of the connected account, from the Settings table)
-    documents = create_google_drive_resource(LIVE_SETTINGS).read_documents()
+    try:
+        documents = create_google_drive_resource(LIVE_SETTINGS).read_documents()
+    except ResourceSkipped:
+        pytest.skip("Google Drive is not connected on the Settings page")
 
     assert len(documents) >= 1
     assert all(document.metadata["type"] == "picture" for document in documents)

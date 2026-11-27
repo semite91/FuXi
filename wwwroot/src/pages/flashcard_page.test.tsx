@@ -158,12 +158,11 @@ test('F3 HTML in the content is shown as text', async () => {
   expect(document.querySelector('b')).toBeNull();
 });
 
-test('F4 one dot per card, the current one is marked', async () => {
+test('F4 the back side shows no dots, however many cards there are', async () => {
   await toBack(THREE_CARDS);
 
-  const dots = document.querySelectorAll('.flashcard-back__dot');
-  expect(dots).toHaveLength(3);
-  expect([...dots].map((dot) => dot.getAttribute('data-current'))).toEqual(['true', 'false', 'false']);
+  expect(document.querySelector('.flashcard-back__dots')).toBeNull();
+  expect(document.querySelector('.flashcard-back__dot')).toBeNull();
 });
 
 test('F5 the back side has no image area, link or caption line', async () => {
@@ -307,7 +306,7 @@ test('H2 next shows the next front side and H3 the first back side has no previo
   expect(await word('Serendipity')).toBeInTheDocument();
 });
 
-test('H4 previous shows the back side again, H5 without Yes and No, H6 next returns to the side it had', async () => {
+test('H4 previous opens the previous card on its front side, H5 with Yes and No, H6 next opens the next card on its front side', async () => {
   await toBack(THREE_CARDS);
   fireEvent.click(button('Next word'));
   await word('Serendipity');
@@ -315,21 +314,29 @@ test('H4 previous shows the back side again, H5 without Yes and No, H6 next retu
   await translation('Serendipity translation');
 
   fireEvent.click(button('Previous word'));
-  expect(await translation('Ephemeral translation')).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Yes' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'No' })).not.toBeInTheDocument();
+  expect(await word('Ephemeral')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Yes' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'No' })).toBeInTheDocument();
+  expect(screen.queryByText('Ephemeral translation')).not.toBeInTheDocument();
 
+  answerYes();
+  await translation('Ephemeral translation');
   fireEvent.click(button('Next word'));
-  expect(await translation('Serendipity translation')).toBeInTheDocument();
-  fireEvent.click(button('Next word'));
-  expect(await word('Ubiquitous')).toBeInTheDocument();
+  expect(await word('Serendipity')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Yes' })).toBeInTheDocument();
 });
 
-test('H7 the last back side has no next arrow and a Done button; H8 Done shows the Done screen', async () => {
+test('the back side shows the name small under the translation', async () => {
+  await toBack();
+
+  expect(screen.getByText('Ephemeral')).toHaveClass('flashcard-back__name');
+});
+
+test('H7 the last back side has no Done button; H8 its next edge shows the Done screen', async () => {
   await toBack([TWO_CARDS[0]]);
 
-  expect(screen.queryByRole('button', { name: 'Next word' })).not.toBeInTheDocument();
-  fireEvent.click(button('Done'));
+  expect(screen.queryByRole('button', { name: 'Done' })).not.toBeInTheDocument();
+  fireEvent.click(button('Next word'));
 
   expect(screen.getByRole('status')).toHaveTextContent('Done');
   expect(screen.queryByText('Ephemeral translation')).not.toBeInTheDocument();
@@ -442,4 +449,40 @@ test('review: new wordIds on an open /flashcard start again at the first card', 
   });
 
   expect(await word('Serendipity')).toBeInTheDocument();
+});
+
+test('H9 a swipe to the left on the back side opens the next card and a swipe to the right the previous one', async () => {
+  await toBack(THREE_CARDS);
+  const back = document.querySelector('.flashcard-back') as HTMLElement;
+
+  fireEvent.touchStart(back, { touches: [{ clientX: 300 }] });
+  fireEvent.touchEnd(back, { changedTouches: [{ clientX: 100 }] });
+  expect(await word('Serendipity')).toBeInTheDocument();
+  answerYes();
+  await translation('Serendipity translation');
+
+  const secondBack = document.querySelector('.flashcard-back') as HTMLElement;
+  fireEvent.touchStart(secondBack, { touches: [{ clientX: 100 }] });
+  fireEvent.touchEnd(secondBack, { changedTouches: [{ clientX: 300 }] });
+  expect(await word('Ephemeral')).toBeInTheDocument();
+});
+
+test('H10 a short swipe is not a change of word', async () => {
+  await toBack(THREE_CARDS);
+  const back = document.querySelector('.flashcard-back') as HTMLElement;
+
+  fireEvent.touchStart(back, { touches: [{ clientX: 200 }] });
+  fireEvent.touchEnd(back, { changedTouches: [{ clientX: 170 }] });
+
+  expect(screen.getByRole('heading', { level: 2, name: 'Ephemeral translation' })).toBeInTheDocument();
+});
+
+test('H11 the History opens as an unrolling sheet with a roll at its bottom edge', async () => {
+  await toBack();
+
+  fireEvent.click(button('History'));
+
+  expect(await screen.findByRole('table')).toBeInTheDocument();
+  expect(document.querySelector('.disclosure-toggle__sheet')).not.toBeNull();
+  expect(document.querySelector('.disclosure-toggle__roll')).not.toBeNull();
 });

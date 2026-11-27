@@ -2,7 +2,7 @@
 
 import logging
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,10 +13,14 @@ from chroma_store import IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME, open_colle
 from embedding_pipeline import Embedders
 from settings import Settings
 
-TOP_K = 20
+TOP_K = 40
 # Chroma stores float32 vectors; rounding keeps a similarity of exactly the threshold.
 SIMILARITY_DECIMALS = 6
 QUERY_INCLUDE = ["documents", "metadatas", "distances"]
+# A result below the threshold is still kept when it is within this margin of the best result of its query,
+# but never below the threshold minus RELAXED_FLOOR_DROP: a weak best result must not empty the context.
+RELATIVE_MARGIN = 0.02
+RELAXED_FLOOR_DROP = 0.08
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +75,19 @@ class RagClient:
             return self._collections
 
     def retrieve(self, query: str) -> tuple[list[RetrievedItem], list[RetrievedItem]]:
+        return self.retrieve_many([query])
+
+    def retrieve_many(self, queries: Sequence[str]) -> tuple[list[RetrievedItem], list[RetrievedItem]]:
+        """Every query is searched in both collections; the results are merged, the best similarity of a repeated item wins."""
         collections = self.init()
-        texts = _query(collections.text, self._embedders.text.embed_query(query), self._settings.text_threshold)
-        images = _query(collections.image, self._embedders.image.embed_text(query), self._settings.image_threshold)
+        texts = _merge(
+            _query(collections.text, self._embedders.text.embed_query(query), self._settings.text_threshold)
+            for query in queries
+        )
+        images = _merge(
+            _query(collections.image, self._embedders.image.embed_text(query), self._settings.image_threshold)
+            for query in queries
+        )
         return texts, images
 
     def generate(self, words: Sequence[Word]) -> list[WordContent]:
@@ -81,12 +95,18 @@ class RagClient:
 
     def _generate_word(self, word: Word) -> str | None:
         try:
-            query = self._llm_client.build_search_query(word.name, word.translation)
-            texts, images = self.retrieve(query)
-            return self._llm_client.generate(word.name, word.translation, texts, images)
+            queries = self._llm_client.build_search_queries(word.name, word.translation)
+            texts, images = self.retrieve_many(queries)
+            return self._llm_client.generate(
+                word.name, word.translation, texts, images, lambda method: self._retrieve_for_method(word, method)
+            )
         except Exception as error:
             logger.warning("Content for %s failed: %s: %s", word.name, type(error).__name__, error)
             return None
+
+    def _retrieve_for_method(self, word: Word, method: str) -> tuple[list[RetrievedItem], list[RetrievedItem]]:
+        """The retry looks again, with queries written for the method that is tried."""
+        return self.retrieve_many(self._llm_client.build_search_queries(word.name, word.translation, method))
 
     def _open_collections(self) -> Collections:
         if self._chroma_client is None:
@@ -100,10 +120,24 @@ class RagClient:
 def _query(collection: Any, embedding: list[float], threshold: float) -> list[RetrievedItem]:
     # Chroma returns fewer results, or none, when the collection holds fewer than TOP_K.
     answer = collection.query(query_embeddings=[embedding], n_results=TOP_K, include=QUERY_INCLUDE)
-    items = (
-        RetrievedItem(document, metadata or {}, round(1 - distance, SIMILARITY_DECIMALS))
-        for document, metadata, distance in zip(
-            answer["documents"][0], answer["metadatas"][0], answer["distances"][0]
+    items = [
+        (item_id, RetrievedItem(document, metadata or {}, round(1 - distance, SIMILARITY_DECIMALS)))
+        for item_id, document, metadata, distance in zip(
+            answer["ids"][0], answer["documents"][0], answer["metadatas"][0], answer["distances"][0]
         )
-    )
-    return [item for item in items if item.similarity >= threshold]
+    ]
+    if not items:
+        return []
+    best = max(item.similarity for _, item in items)
+    cutoff = min(threshold, max(threshold - RELAXED_FLOOR_DROP, best - RELATIVE_MARGIN))
+    return [(item_id, item) for item_id, item in items if item.similarity >= cutoff]
+
+
+def _merge(results: Iterable[list[tuple[str, RetrievedItem]]]) -> list[RetrievedItem]:
+    """One list, most similar first, at most TOP_K; a stored item found by several queries keeps its best similarity."""
+    best: dict[str, RetrievedItem] = {}
+    for items in results:
+        for item_id, item in items:
+            if item_id not in best or item.similarity > best[item_id].similarity:
+                best[item_id] = item
+    return sorted(best.values(), key=lambda item: item.similarity, reverse=True)[:TOP_K]

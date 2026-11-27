@@ -1,47 +1,111 @@
-"""Text (multilingual-e5-small) and image (CLIP) embedders. Models load lazily, once per process.
-
-The device and precision come from EmbeddingSettings: CUDA is used only when torch can really run on the GPU,
-the weights are loaded in the configured precision (FP32 by default) and the loaded dtype is verified.
-"""
+"""Text (multilingual-e5-small) and image (CLIP) embedders. Models load lazily, once per process, on the GPU when this machine can
+run one and on the CPU otherwise, with the precision and the sequence length of EmbeddingConfig."""
 
 import base64
-import hashlib
 import io
 import logging
 import threading
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from PIL import Image
 
-from settings import (
-    DEVICE_AUTO,
-    DEVICE_CPU,
-    DEVICE_CUDA,
-    PRECISION_BF16,
-    PRECISION_FP16,
-    PRECISION_FP32,
-    EmbeddingSettings,
-)
-
-logger = logging.getLogger(__name__)
-
+# The text model unless RAG_TEXT_MODEL says otherwise: 384 numbers per text and about ten times faster than Qwen3 on a CPU.
 TEXT_MODEL_ID = "intfloat/multilingual-e5-small"
-# 384 dimensions, 12 layers, 512 tokens. E5 was trained with these prefixes; without them quality drops.
-QUERY_PREFIX = "query: "
-DOCUMENT_PREFIX = "passage: "
-TEXT_VECTOR_SIZE = 384
+# The model of a collection built before collections recorded theirs.
+LEGACY_TEXT_MODEL_ID = "Qwen/Qwen3-Embedding-0.6B"
 IMAGE_MODEL_ID = "sentence-transformers/clip-ViT-B-32"
-CPU_DEVICE = DEVICE_CPU
-# Token windows of a long text overlap by this share of the window, so a sentence cut at a border is in both.
-CHUNK_OVERLAP_SHARE = 0.1
+CPU_DEVICE = "cpu"
+CUDA_DEVICE = "cuda"
+AUTO_DEVICE = "auto"
+DEVICE_CHOICES = (AUTO_DEVICE, CPU_DEVICE, CUDA_DEVICE)
+# Precision names (torch.<name>). float32 is the default: the model file asks for bfloat16, which is very slow on a
+# CPU without bfloat16 support.
+FLOAT32 = "float32"
+DTYPE_CHOICES = (FLOAT32, "float16", "bfloat16")
+DEFAULT_MAX_SEQ_LENGTH = 512
+DEFAULT_ENCODE_BATCH_SIZE = 8
+# The text models add a start and an end token to each text; a chunk keeps this many tokens free for them.
+SPECIAL_TOKENS_MARGIN = 2
+QUERY_PROMPT_NAME = "query"
+UNTUNED_TEXT_THRESHOLD = 0.5
 RGB_MODE = "RGB"
 # Pillow raises these for data it cannot open (UnidentifiedImageError is an OSError); bad Base64 is a ValueError.
 PICTURE_ERRORS = (OSError, ValueError, Image.DecompressionBombError)
 
+logger = logging.getLogger(__name__)
+
 Vector = list[float]
-# (model id, device, precision, max sequence length or None for the model's own) -> loaded model
-ModelLoader = Callable[[str, str, str, int | None], Any]
+
+
+@dataclass(frozen=True)
+class EmbeddingConfig:
+    """How the models run. device: auto (GPU when it works, else CPU), cpu or cuda; dtype: a name of DTYPE_CHOICES;
+    max_seq_length: tokens of the text model (longer text is cut, so documents are chunked to fit);
+    batch_size: texts or pictures per forward pass; text_model: the text model's id (another model gives vectors of
+    another size, so every stored text vector must be built again)."""
+
+    device: str = AUTO_DEVICE
+    dtype: str = FLOAT32
+    max_seq_length: int = DEFAULT_MAX_SEQ_LENGTH
+    batch_size: int = DEFAULT_ENCODE_BATCH_SIZE
+    text_model: str = TEXT_MODEL_ID
+
+
+@dataclass(frozen=True)
+class LoadOptions:
+    """What a model loader needs: the device chosen, the precision name and the sequence length (text model only)."""
+
+    device: str
+    dtype: str
+    max_seq_length: int | None = None
+
+
+@dataclass(frozen=True)
+class TextModelSpec:
+    """How a text model wants its input: a prompt name of the model's own config, or a prefix put before the text,
+    for questions and for documents; reserved_tokens is what that adds to every text (chunks leave room for it)."""
+
+    query_prompt_name: str | None = None
+    document_prompt_name: str | None = None
+    query_prefix: str = ""
+    document_prefix: str = ""
+    reserved_tokens: int = 0
+    # The least similarity (1 minus the cosine distance) for a text to be kept. It depends on the model: the cosine of
+    # e5 vectors sits between about 0.7 and 0.9 whatever the question, Qwen3's spreads over the whole range.
+    default_threshold: float = UNTUNED_TEXT_THRESHOLD
+
+
+# Known text models, by a part of the model id. A model that is not listed gets plain text.
+TEXT_MODEL_SPECS = (
+    (("qwen3-embedding",), TextModelSpec(query_prompt_name=QUERY_PROMPT_NAME)),
+    (
+        ("multilingual-e5", "/e5-"),
+        # 0.72 is below the 0.84 that kept 93% of the texts a 12-word quotation finds and let 30% of unrelated questions return something
+        # (measured on 500 real Notion chunks); tune it with RAG_TEXT_THRESHOLD.
+        TextModelSpec(query_prefix="query: ", document_prefix="passage: ", reserved_tokens=4, default_threshold=0.72),
+    ),
+    (
+        ("embeddinggemma",),
+        TextModelSpec(query_prompt_name=QUERY_PROMPT_NAME, document_prompt_name="document", reserved_tokens=16),
+    ),
+)
+
+
+def text_model_spec(model_id: str) -> TextModelSpec:
+    lowered = model_id.lower()
+    for markers, prompts in TEXT_MODEL_SPECS:
+        if any(marker in lowered for marker in markers):
+            return prompts
+    return TextModelSpec()
+
+
+ModelLoader = Callable[[str, LoadOptions], Any]
+
+
+class ModelPrecisionError(RuntimeError):
+    """A model loaded with another precision than the configured one."""
 
 
 class PictureDataError(ValueError):
@@ -60,87 +124,49 @@ class TextQueryEmbedder(Protocol):
     def embed_text(self, text: str) -> Vector: ...
 
 
-def cuda_usable(torch: Any) -> bool:
-    """True only when torch has CUDA, was built for this GPU's architecture and can run an operation on it.
+def select_device(requested: str, torch_module: Any = None) -> str:
+    """The device to use. cpu always; auto and cuda use the GPU only when torch can run a kernel on it (a driver or an
+    nvidia-smi alone proves nothing: the installed torch may be a CPU build or not compiled for this GPU), else cpu."""
+    if requested == CPU_DEVICE:
+        return CPU_DEVICE
+    if torch_module is None:
+        import torch as torch_module  # imported here so the engine starts without loading torch
+    reason = _cuda_problem(torch_module)
+    if reason is None:
+        logger.info("Embedding device: cuda (%s)", torch_module.cuda.get_device_name(0))
+        return CUDA_DEVICE
+    log = logger.warning if requested == CUDA_DEVICE else logger.info
+    log("Embedding device: cpu (%s)", reason)
+    return CPU_DEVICE
 
-    An installed NVIDIA driver alone proves nothing: a CPU-only torch build or a build without kernels for a
-    new GPU reports CUDA as missing or fails on the first kernel.
-    """
+
+def _cuda_problem(torch: Any) -> str | None:
+    """Why the GPU cannot be used, or None when a kernel ran on it."""
+    if not torch.cuda.is_available():
+        return "this torch build has no usable CUDA GPU"
     try:
-        if not torch.cuda.is_available():
-            return False
-        major, minor = torch.cuda.get_device_capability(0)
-        if not _arch_supported(torch.cuda.get_arch_list(), major * 10 + minor):
-            return False
-        torch.zeros(1, device=DEVICE_CUDA).add_(1).item()  # a real kernel launch
-        return True
-    except Exception:  # an old driver, a broken runtime or a missing kernel image: use the CPU
-        return False
+        probe = torch.zeros(1, device=CUDA_DEVICE) + 1
+        torch.cuda.synchronize()
+        probe.item()
+    except Exception as error:  # an unsupported GPU architecture or a broken driver raises many error types
+        return f"the GPU did not run a test kernel: {type(error).__name__}"
+    return None
 
 
-def _arch_supported(arch_list: Sequence[str], capability: int) -> bool:
-    """Binary kernels run on the same major generation with an equal or newer minor; PTX runs on any newer GPU."""
-    for arch in arch_list:
-        kind, _, number = arch.partition("_")
-        digits = "".join(character for character in number if character.isdigit())
-        if not digits:
-            continue
-        value = int(digits)
-        if kind == "sm" and value // 10 == capability // 10 and value <= capability:
-            return True
-        if kind == "compute" and value <= capability:
-            return True
-    return False
-
-
-def resolve_device(requested: str, torch: Any) -> str:
-    """The device to load on: the requested one when usable, otherwise the CPU (with a warning for cuda)."""
-    if requested == DEVICE_CPU:
-        return DEVICE_CPU
-    if cuda_usable(torch):
-        return DEVICE_CUDA
-    if requested == DEVICE_CUDA:
-        logger.warning("RAG_EMBEDDING_DEVICE=cuda but CUDA is not usable with this torch and GPU; using the CPU")
-    return DEVICE_CPU
-
-
-def resolve_precision(requested: str, device: str) -> str:
-    """The precision to load in; FP16 is not run on the CPU, where it is slow or unsupported."""
-    if requested == PRECISION_FP16 and device == DEVICE_CPU:
-        logger.warning("RAG_EMBEDDING_PRECISION=fp16 is not used on the CPU; using fp32")
-        return PRECISION_FP32
-    return requested
-
-
-def _torch_dtype(torch: Any, precision: str) -> Any:
-    return {PRECISION_FP32: torch.float32, PRECISION_FP16: torch.float16, PRECISION_BF16: torch.bfloat16}[precision]
-
-
-def parameter_dtypes(model: Any) -> set[Any]:
-    """Every dtype among the model's parameters."""
-    return {parameter.dtype for parameter in model.parameters()}
-
-
-def load_sentence_transformer(
-    model_id: str, device: str, precision: str = PRECISION_FP32, max_seq_length: int | None = None
-) -> Any:
+def load_sentence_transformer(model_id: str, options: LoadOptions) -> Any:
+    """Loads with the configured precision (not the one the model file asks for) and checks what was loaded."""
     # Imported here so the engine starts without loading torch.
     import torch
     from sentence_transformers import SentenceTransformer
 
-    target_device = resolve_device(device, torch)
-    target_precision = resolve_precision(precision, target_device)
-    dtype = _torch_dtype(torch, target_precision)
-    # dtype is passed explicitly: without it the checkpoint's own dtype (a model may be stored in BF16) is loaded, which is slow on the CPU.
-    model = SentenceTransformer(model_id, device=target_device, model_kwargs={"dtype": dtype})
-    if parameter_dtypes(model) != {dtype}:
-        model.to(dtype)
-    loaded = parameter_dtypes(model)
-    if loaded != {dtype}:
-        raise RuntimeError(f"{model_id} loaded as {sorted(str(item) for item in loaded)}, expected {dtype}")
-    if max_seq_length is not None:
-        model.max_seq_length = max_seq_length
-    logger.info("loaded %s on %s as %s (max_seq_length=%s)", model_id, target_device, dtype, model.max_seq_length)
+    dtype = getattr(torch, options.dtype)
+    model = SentenceTransformer(model_id, device=options.device, model_kwargs={"dtype": dtype})
+    actual = next(model.parameters()).dtype
+    if actual != dtype:
+        raise ModelPrecisionError(f"{model_id} loaded as {actual}, not {dtype}")
+    if options.max_seq_length is not None:
+        model.max_seq_length = options.max_seq_length
+    logger.info("Loaded %s on %s as %s, max sequence length %s", model_id, options.device, actual, model.max_seq_length)
     return model
 
 
@@ -148,23 +174,32 @@ class ModelCache:
     """Loads each model once and shares it between embedders and threads."""
 
     def __init__(
-        self, loader: ModelLoader = load_sentence_transformer, settings: EmbeddingSettings = EmbeddingSettings()
+        self,
+        loader: ModelLoader = load_sentence_transformer,
+        config: EmbeddingConfig = EmbeddingConfig(),
+        device_selector: Callable[[str], str] = select_device,
     ) -> None:
         self._loader = loader
-        self.settings = settings
+        self.config = config
+        self._device_selector = device_selector
+        self._device: str | None = None
         self._models: dict[str, Any] = {}
         self._lock = threading.Lock()
 
     def get(self, model_id: str) -> Any:
         with self._lock:
             if model_id not in self._models:
-                if model_id == TEXT_MODEL_ID:
-                    self._models[model_id] = self._loader(
-                        model_id, self.settings.device, self.settings.precision, self.settings.max_seq_length
-                    )
-                else:  # CLIP keeps its own 77-token text limit and always runs in FP32
-                    self._models[model_id] = self._loader(model_id, self.settings.device, PRECISION_FP32, None)
+                if self._device is None:
+                    self._device = self._device_selector(self.config.device)
+                max_seq_length = self.config.max_seq_length if model_id == self.config.text_model else None
+                options = LoadOptions(self._device, self.config.dtype, max_seq_length)
+                self._models[model_id] = self._loader(model_id, options)
             return self._models[model_id]
+
+    @property
+    def text_identity(self) -> str:
+        """Names the vectors the text model gives: another model gives other vectors, perhaps of another size."""
+        return self.config.text_model
 
 
 DEFAULT_MODEL_CACHE = ModelCache()
@@ -175,80 +210,36 @@ class TextEmbedder:
         self._model_cache = model_cache
 
     @property
-    def fingerprint(self) -> str:
-        """Changes when stored vectors would differ for the same text; stored with each collection for reuse."""
-        return f"{TEXT_MODEL_ID}|max_seq_length={self._model_cache.settings.max_seq_length}"
+    def identity(self) -> str:
+        return self._model_cache.text_identity
 
     def embed_query(self, text: str) -> Vector:
-        return _encode(
-            self._model_cache.get(TEXT_MODEL_ID), [QUERY_PREFIX + text], normalize_embeddings=True
-        )[0]
+        config = self._model_cache.config
+        prompts = text_model_spec(config.text_model)
+        options = {"prompt_name": prompts.query_prompt_name} if prompts.query_prompt_name else {}
+        return _encode(self._model_cache.get(config.text_model), [prompts.query_prefix + text], config, **options)[0]
 
     def embed_documents(self, texts: list[str]) -> list[Vector]:
-        """Vectors in the order of texts; a text that appears more than once is embedded once.
-
-        Documents get the "passage: " prefix; vectors are normalized to unit length for the cosine collections.
-        """
-        unique = list(dict.fromkeys(texts))
-        vectors = _encode(
-            self._model_cache.get(TEXT_MODEL_ID),
-            [DOCUMENT_PREFIX + text for text in unique],
-            batch_size=self._model_cache.settings.batch_size,
-            normalize_embeddings=True,
-        )
-        by_text = dict(zip(unique, vectors))
-        return [list(by_text[text]) for text in texts]
-
-    def split_text(self, text: str) -> list[str]:
-        """The text as pieces that each fit max_seq_length tokens; a text that fits is returned whole.
-
-        Long texts are cut into overlapping token windows instead of being truncated, so no content is lost.
-        """
-        tokenizer = self._model_cache.get(TEXT_MODEL_ID).tokenizer
-        # Every embedded document is "passage: " + window, plus the tokenizer's special tokens: measure both.
-        special_tokens = len(tokenizer("")["input_ids"])
-        prefix_tokens = len(tokenizer(DOCUMENT_PREFIX, add_special_tokens=False)["input_ids"])
-        limit = self._model_cache.settings.max_seq_length - special_tokens - prefix_tokens
-        return split_by_tokens(text, tokenizer, limit)
-
-
-def split_by_tokens(text: str, tokenizer: Any, limit: int) -> list[str]:
-    """Overlapping windows of at most limit tokens, cut at token borders of the original text."""
-    encoded = tokenizer(text, add_special_tokens=False, return_offsets_mapping=True, truncation=False)
-    offsets = encoded["offset_mapping"]
-    if len(offsets) <= limit:
-        return [text]
-    overlap = max(1, int(limit * CHUNK_OVERLAP_SHARE))
-    pieces: list[str] = []
-    start = 0
-    while True:
-        end = min(start + limit, len(offsets))
-        pieces.append(text[offsets[start][0]:offsets[end - 1][1]])
-        if end == len(offsets):
-            return pieces
-        start = end - overlap
-
-
-def text_digest(text: str) -> str:
-    """A short stable key of a document's text, for finding unchanged documents."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+        config = self._model_cache.config
+        prompts = text_model_spec(config.text_model)
+        options = {"prompt_name": prompts.document_prompt_name} if prompts.document_prompt_name else {}
+        inputs = [prompts.document_prefix + text for text in texts] if prompts.document_prefix else texts
+        return _encode(self._model_cache.get(config.text_model), inputs, config, **options)
 
 
 class ImageEmbedder:
+    identity = IMAGE_MODEL_ID
+
     def __init__(self, model_cache: ModelCache = DEFAULT_MODEL_CACHE) -> None:
         self._model_cache = model_cache
 
-    @property
-    def fingerprint(self) -> str:
-        return IMAGE_MODEL_ID
-
     def embed_text(self, text: str) -> Vector:
         """CLIP text encoder, for searching the image collection."""
-        return _encode(self._model_cache.get(IMAGE_MODEL_ID), [text])[0]
+        return _encode(self._model_cache.get(IMAGE_MODEL_ID), [text], self._model_cache.config)[0]
 
     def embed_images(self, images: Sequence[Image.Image]) -> list[Vector]:
         """CLIP image encoder; picture documents are decoded with decode_picture first."""
-        return _encode(self._model_cache.get(IMAGE_MODEL_ID), list(images))
+        return _encode(self._model_cache.get(IMAGE_MODEL_ID), list(images), self._model_cache.config)
 
 
 def decode_picture(text: str) -> Image.Image:
@@ -260,5 +251,34 @@ def decode_picture(text: str) -> Image.Image:
         raise PictureDataError("the text is not Base64 picture data") from error
 
 
-def _encode(model: Any, inputs: list[Any], **options: Any) -> list[Vector]:
-    return model.encode(inputs, **options).tolist()
+def _encode(model: Any, inputs: list[Any], config: EmbeddingConfig, **options: Any) -> list[Vector]:
+    return model.encode(inputs, batch_size=config.batch_size, **options).tolist()
+
+
+# Larger than any text counted; only the counting tokenizer is given it, never the model.
+COUNTING_MAX_LENGTH = 10**9
+
+
+class TokenCounter:
+    """Tokens of a text for the text model, so chunks can be cut to fit its sequence length. The tokenizer (not the
+    model) loads at the first count."""
+
+    def __init__(self, model_id: str = TEXT_MODEL_ID) -> None:
+        self._model_id = model_id
+        self._tokenizer: Any = None
+        self._lock = threading.Lock()
+
+    def __call__(self, text: str) -> int:
+        return len(self._get_tokenizer()(text, add_special_tokens=False)["input_ids"])
+
+    def _get_tokenizer(self) -> Any:
+        with self._lock:
+            if self._tokenizer is None:
+                from transformers import AutoTokenizer  # a dependency of sentence-transformers
+
+                tokenizer = AutoTokenizer.from_pretrained(self._model_id)
+                # Texts are counted before they are cut to fit the model, so a long one is expected here; without
+                # this the tokenizer warns about every text longer than the model's limit.
+                tokenizer.model_max_length = COUNTING_MAX_LENGTH
+                self._tokenizer = tokenizer
+            return self._tokenizer

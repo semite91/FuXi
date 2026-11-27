@@ -1,25 +1,27 @@
-"""Gemini calls: the retrieval search query and the Word Content for one word."""
+"""Gemini calls: the retrieval search queries and the Word Content for one word."""
 
 import json
 import logging
 import random
 import re
 import threading
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 
 from base import METADATA_NAME, METADATA_PATH, RetrievedItem
+from resources.http_retry import MIN_SERVER_ERROR_STATUS, RATE_LIMITED_STATUS, ReadStats, Wait, backoff_seconds, call_with_retry
 from settings import REPO_ROOT, Settings
+from web_finders import OpenverseImageFinder, SpotifySongFinder
 
 PROMPTS_DIR = REPO_ROOT / "prompts"
 RETRIEVAL_PROMPT_FILE = "retrieval.txt"
 TEXT_PROMPT_FILE = "llm.txt"
-WEB_PROMPT_FILE = "llm_web.txt"
+SUGGEST_PROMPT_FILE = "llm_suggest.txt"
 PROMPT_ENCODING = "utf-8"
 
 STORY = "story"
@@ -35,7 +37,6 @@ MAX_METHOD_ATTEMPTS = 2
 JSON_MIME_TYPE = "application/json"
 COMPACT_JSON_SEPARATORS = (",", ":")
 SUCCESS_STATUS = "success"
-HTTPS_SCHEME = "https"
 # Drive images are sent to Gemini with the image_url "drive:<n>", n being the image's 1-based place in the results.
 DRIVE_IMAGE_URL_FORMAT = "drive:{position}"
 DRIVE_IMAGE_URL_PATTERN = re.compile(r"drive:(\d+)")
@@ -46,14 +47,37 @@ CODE_FENCE_PATTERN = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 METHOD_SEPARATOR_PATTERN = re.compile(r"[\s_\-]+")
 
 TEXT_FIELDS = ("title", "content")
-MUSIC_TEXT_FIELDS = ("song_title", "artist", "lyrics_excerpt")
 SOURCE_REFERENCE_FIELD = "source_reference"
+TARGET_METHOD_FIELD = "target_method"
+QUERIES_FIELD = "queries"
+QUERY_FIELD = "query"
+MAX_QUERIES = 4
 IMAGE_URL_FIELD = "image_url"
 SONG_URL_FIELD = "song_url"
+IMAGE_QUERY_FIELD = "image_query"
+SONG_TITLE_FIELD = "song_title"
+ARTIST_FIELD = "artist"
 
 logger = logging.getLogger(__name__)
 
 GeminiClientFactory = Callable[[], Any]
+RetrievedResults = tuple[Sequence[RetrievedItem], Sequence[RetrievedItem]]
+RetrieveForMethod = Callable[[str], RetrievedResults]
+CLOSED_CLIENT_MESSAGE = "client has been closed"
+
+
+def gemini_retry_wait(error: Exception, attempt: int) -> Wait | None:
+    """Gemini answers 429 (quota) and 5xx (503 high demand) for a moment only: wait, backing off, and ask again."""
+    if isinstance(error, errors.APIError) and (error.code == RATE_LIMITED_STATUS or error.code >= MIN_SERVER_ERROR_STATUS):
+        return Wait(backoff_seconds(attempt), rate_limited=error.code == RATE_LIMITED_STATUS)
+    if _is_closed_client(error):
+        return Wait(backoff_seconds(attempt), rate_limited=False)
+    return None
+
+
+def _is_closed_client(error: Exception) -> bool:
+    """httpx raises this RuntimeError for every call on a client that was closed."""
+    return isinstance(error, RuntimeError) and CLOSED_CLIENT_MESSAGE in str(error)
 
 
 class MethodFailedError(Exception):
@@ -67,7 +91,13 @@ class LlmClient:
         gemini_client_factory: GeminiClientFactory | None = None,
         random_source: Any = None,
         prompts_dir: Path = PROMPTS_DIR,
+        sleep: Callable[[float], None] = time.sleep,
+        song_finder: Any = None,
+        image_finder: Any = None,
     ) -> None:
+        self._sleep = sleep
+        self._song_finder = song_finder or SpotifySongFinder(settings)
+        self._image_finder = image_finder or OpenverseImageFinder()
         self._settings = settings
         self._gemini_client_factory = gemini_client_factory or (
             lambda: genai.Client(api_key=settings.require_gemini_api_key())
@@ -91,15 +121,18 @@ class LlmClient:
                 self._prompts[prompt_file] = (self._prompts_dir / prompt_file).read_text(encoding=PROMPT_ENCODING)
             return self._prompts[prompt_file]
 
-    def build_search_query(self, word: str, meaning: str) -> str:
-        fallback = QUERY_FALLBACK_FORMAT.format(word=word, meaning=meaning)
+    def build_search_queries(self, word: str, meaning: str, method: str | None = None) -> list[str]:
+        """Several search queries for the word; with a method they look for material that suits it. One fallback query when Gemini's answer is unusable."""
+        fallback = [QUERY_FALLBACK_FORMAT.format(word=word, meaning=meaning)]
+        payload = {"word": word, "meaning": meaning}
+        if method is not None:
+            payload[TARGET_METHOD_FIELD] = method
         try:
-            answer = self._ask(RETRIEVAL_PROMPT_FILE, {"word": word, "meaning": meaning}, use_search=False)
-            query = answer.get("query")
+            answer = self._ask(RETRIEVAL_PROMPT_FILE, payload)
         except Exception as error:
-            logger.warning("Search query for %s failed: %s", word, _describe(error))
+            logger.warning("Search queries for %s failed: %s", word, _describe(error))
             return fallback
-        return query.strip() if isinstance(query, str) and query.strip() else fallback
+        return _queries(answer) or fallback
 
     def generate(
         self,
@@ -107,14 +140,19 @@ class LlmClient:
         meaning: str,
         text_results: Sequence[RetrievedItem],
         image_results: Sequence[RetrievedItem],
+        retrieve_for_method: RetrieveForMethod | None = None,
     ) -> str | None:
-        """Word Content as a compact JSON string, or None when two methods fail."""
-        context = _build_context(text_results, image_results)
+        """Word Content as a compact JSON string, or None when two methods fail.
+
+        The first method uses the given results. The retry asks retrieve_for_method for results that suit its own method."""
         remaining = list(METHODS)
-        for _ in range(MAX_METHOD_ATTEMPTS):
+        for attempt in range(MAX_METHOD_ATTEMPTS):
             method = self._random.choice(remaining)
             remaining.remove(method)
             try:
+                if attempt > 0 and retrieve_for_method is not None:
+                    text_results, image_results = retrieve_for_method(method)
+                context = _build_context(text_results, image_results)
                 content = self._generate_with_method(word, meaning, method, context, image_results)
                 return json.dumps(content, ensure_ascii=False, separators=COMPACT_JSON_SEPARATORS)
             except Exception as error:
@@ -129,29 +167,64 @@ class LlmClient:
         context: dict[str, Any],
         image_results: Sequence[RetrievedItem],
     ) -> dict[str, Any]:
-        is_web = method in WEB_METHODS
         payload = {"word": word, "meaning": meaning, "available_methods": [method], "retrieved_context": context}
-        answer = self._ask(WEB_PROMPT_FILE if is_web else TEXT_PROMPT_FILE, payload, use_search=is_web)
-        return _build_content(method, answer, image_results)
+        answer = self._ask(SUGGEST_PROMPT_FILE if method in WEB_METHODS else TEXT_PROMPT_FILE, payload)
+        memory_aid = _checked_memory_aid(method, answer)
+        if method == PHOTO:
+            return {"method": method, IMAGE_URL_FIELD: self._photo_url(memory_aid, image_results)}
+        if method == MUSIC:
+            return self._music_content(memory_aid)
+        return _text_content(method, memory_aid)
 
-    def _ask(self, prompt_file: str, payload: dict[str, Any], use_search: bool) -> dict[str, Any]:
-        response = self.gemini_client().models.generate_content(
-            model=self._settings.gemini_model,
-            contents=json.dumps(payload, ensure_ascii=False),
-            config=self._config(prompt_file, use_search),
+    def _photo_url(self, memory_aid: dict[str, Any], image_results: Sequence[RetrievedItem]) -> str:
+        """The Learner's own Drive image when Gemini chose one; otherwise the first web image found for its phrase."""
+        reference = memory_aid.get(IMAGE_URL_FIELD)
+        if isinstance(reference, str) and DRIVE_IMAGE_URL_PATTERN.fullmatch(reference.strip()):
+            return _drive_image(reference.strip(), image_results)
+        url = self._image_finder.find_image(_text(memory_aid, IMAGE_QUERY_FIELD))
+        if url is None:
+            raise MethodFailedError("no web image was found")
+        return url
+
+    def _music_content(self, memory_aid: dict[str, Any]) -> dict[str, Any]:
+        """A song Gemini named, as Spotify has it; the lyrics are never quoted."""
+        song = self._song_finder.find_song(_text(memory_aid, SONG_TITLE_FIELD), _text(memory_aid, ARTIST_FIELD))
+        if song is None:
+            raise MethodFailedError("the song was not found on Spotify")
+        return {
+            "method": MUSIC,
+            "song_title": song.title,
+            "artist": song.artist,
+            SONG_URL_FIELD: song.url,
+            "lyrics_excerpt": None,
+        }
+
+    def _ask(self, prompt_file: str, payload: dict[str, Any]) -> dict[str, Any]:
+        config = self._config(prompt_file)
+        contents = json.dumps(payload, ensure_ascii=False)
+        response = call_with_retry(
+            lambda: self._generate_content(contents, config),
+            gemini_retry_wait,
+            ReadStats(),
+            self._sleep,
         )
         return _parse_json_object(response.text)
 
-    def _config(self, prompt_file: str, use_search: bool) -> types.GenerateContentConfig:
-        system_instruction = self.prompt(prompt_file)
-        if use_search:
-            # A JSON mime type is not combined with tools; the JSON text is parsed instead.
-            return types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                tools=[types.Tool(google_search=types.GoogleSearch())],
+    def _generate_content(self, contents: str, config: types.GenerateContentConfig) -> Any:
+        """A closed client is dropped, so the retry of this call builds a new one."""
+        try:
+            return self.gemini_client().models.generate_content(
+                model=self._settings.gemini_model, contents=contents, config=config
             )
+        except RuntimeError as error:
+            if _is_closed_client(error):
+                logger.warning("The Gemini client was closed; a new one is made for the next try")
+                self._gemini_client = None
+            raise
+
+    def _config(self, prompt_file: str) -> types.GenerateContentConfig:
         return types.GenerateContentConfig(
-            system_instruction=system_instruction, response_mime_type=JSON_MIME_TYPE
+            system_instruction=self.prompt(prompt_file), response_mime_type=JSON_MIME_TYPE
         )
 
 
@@ -175,6 +248,14 @@ def _build_context(
     }
 
 
+def _queries(answer: dict[str, Any]) -> list[str]:
+    """The distinct, non-empty queries of Gemini's answer; a single "query" text is accepted too."""
+    raw = answer.get(QUERIES_FIELD, answer.get(QUERY_FIELD))
+    candidates = [raw] if isinstance(raw, str) else raw if isinstance(raw, list) else []
+    cleaned = [item.strip() for item in candidates if isinstance(item, str) and item.strip()]
+    return list(dict.fromkeys(cleaned))[:MAX_QUERIES]
+
+
 def _parse_json_object(text: str | None) -> dict[str, Any]:
     cleaned = CODE_FENCE_PATTERN.sub("", (text or "").strip())
     if not cleaned:
@@ -188,7 +269,7 @@ def _parse_json_object(text: str | None) -> dict[str, Any]:
     return answer
 
 
-def _build_content(method: str, answer: dict[str, Any], image_results: Sequence[RetrievedItem]) -> dict[str, Any]:
+def _checked_memory_aid(method: str, answer: dict[str, Any]) -> dict[str, Any]:
     if answer.get("status") != SUCCESS_STATUS:
         raise MethodFailedError(f"status {answer.get('status')}")
     if _normalize_method(answer.get("method")) != _normalize_method(method):
@@ -196,17 +277,10 @@ def _build_content(method: str, answer: dict[str, Any], image_results: Sequence[
     memory_aid = answer.get("memory_aid")
     if not isinstance(memory_aid, dict):
         raise MethodFailedError("memory_aid is missing")
-    if method == PHOTO:
-        return {"method": method, IMAGE_URL_FIELD: _photo_url(memory_aid, image_results)}
-    if method == MUSIC:
-        fields = {name: _text(memory_aid, name) for name in MUSIC_TEXT_FIELDS}
-        return {
-            "method": method,
-            "song_title": fields["song_title"],
-            "artist": fields["artist"],
-            SONG_URL_FIELD: _https_url(memory_aid, SONG_URL_FIELD),
-            "lyrics_excerpt": fields["lyrics_excerpt"],
-        }
+    return memory_aid
+
+
+def _text_content(method: str, memory_aid: dict[str, Any]) -> dict[str, Any]:
     reference = memory_aid.get(SOURCE_REFERENCE_FIELD)
     return {
         "method": method,
@@ -229,23 +303,13 @@ def _text(memory_aid: dict[str, Any], name: str) -> str:
     return value.strip()
 
 
-def _photo_url(memory_aid: dict[str, Any], image_results: Sequence[RetrievedItem]) -> str:
-    """A "drive:<n>" reference becomes that sent image's JPEG data URL; anything else must be an https URL."""
-    reference = DRIVE_IMAGE_URL_PATTERN.fullmatch(_text(memory_aid, IMAGE_URL_FIELD))
-    if reference is None:
-        return _https_url(memory_aid, IMAGE_URL_FIELD)
-    position = int(reference.group(1))
+def _drive_image(reference: str, image_results: Sequence[RetrievedItem]) -> str:
+    """A "drive:<n>" reference becomes that sent image's JPEG data URL."""
+    match = DRIVE_IMAGE_URL_PATTERN.fullmatch(reference)
+    position = int(match.group(1)) if match else 0
     if not FIRST_IMAGE_POSITION <= position <= len(image_results):
         raise MethodFailedError(f"{IMAGE_URL_FIELD} refers to an image that was not sent")
     return JPEG_DATA_URL_FORMAT.format(data=image_results[position - FIRST_IMAGE_POSITION].document)
-
-
-def _https_url(memory_aid: dict[str, Any], name: str) -> str:
-    url = _text(memory_aid, name)
-    parsed = urlparse(url)
-    if parsed.scheme != HTTPS_SCHEME or not parsed.netloc:
-        raise MethodFailedError(f"{name} is not an https URL")
-    return url
 
 
 def _describe(error: Exception) -> str:

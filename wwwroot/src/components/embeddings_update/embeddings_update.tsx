@@ -15,8 +15,6 @@ interface EmbeddingsUpdateProps {
   confirmNotice: string;
   confirmLabel: string;
   closeLabel: string;
-  /** The title of the result dialog. Without it no result is shown. */
-  resultTitle?: string;
   isConfirmOpen: boolean;
   onAsk: () => void;
   onConfirm: () => void;
@@ -31,7 +29,6 @@ const EmbeddingsUpdate = ({
   confirmNotice,
   confirmLabel,
   closeLabel,
-  resultTitle,
   isConfirmOpen,
   onAsk,
   onConfirm,
@@ -60,10 +57,6 @@ const EmbeddingsUpdate = ({
           {confirmLabel}
         </button>
       </Dialog>
-    )}
-
-    {resultTitle !== undefined && (
-      <Dialog label={resultTitle} closeLabel={closeLabel} onClose={onClose} isTitleCentered isTitleStatus />
     )}
   </div>
 );

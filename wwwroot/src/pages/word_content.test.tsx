@@ -1,8 +1,9 @@
 // Phase 5a section I: the Word Content from the RAG engine on the Flashcard.
 import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { deferred, mockApi, problem, type Answer, type RecordedCall } from '../test/api_mock';
 import { WORD_ONE_ID, WORD_TWO_ID, cardWord } from '../test/data';
+import { ENGINE_BUSY_RETRY_MILLISECONDS } from '../hooks/use_flashcard_deck';
 import { renderApp } from '../test/render_app';
 
 const NO_CONTENT = { status: 204 };
@@ -62,7 +63,7 @@ test('5a I1 two cards with empty Content are one group: POST /GetWordContent is 
 });
 
 test('5a I3 a 503 from GetWordContent makes the waiting cards say "Content is not available."', async () => {
-  openActive(WITHOUT_CONTENT, { 'POST /GetWordContent': problem(503, 'Not ready.') });
+  openActive(WITHOUT_CONTENT, { 'POST /GetWordContent': problem(500, 'Not ready.') });
   await screen.findByRole('heading', { level: 1, name: 'Ephemeral' });
 
   fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
@@ -104,13 +105,13 @@ test('5a I7 music with a lyric excerpt shows the song title, artist, the lyric e
   expect(screen.getByText('Yesterday')).toBeInTheDocument();
   expect(screen.getByText('The Beatles')).toBeInTheDocument();
   expect(screen.getByText('All my troubles seemed so far away').tagName).toBe('Q');
-  expect(screen.getByRole('link', { name: 'Listen' })).toHaveAttribute('href', 'https://music.test/yesterday');
+  expect(screen.getByRole('link', { name: 'Yesterday The Beatles' })).toHaveAttribute('href', 'https://music.test/yesterday');
 });
 
 test('5a I8 the music link opens in a new tab with rel "noopener noreferrer"', async () => {
   await backWith(MUSIC);
 
-  const link = screen.getByRole('link', { name: 'Listen' });
+  const link = screen.getByRole('link', { name: 'Yesterday The Beatles' });
   expect(link).toHaveAttribute('target', '_blank');
   expect(link).toHaveAttribute('rel', 'noopener noreferrer');
 });
@@ -167,7 +168,7 @@ test('5a I19 music without a lyric excerpt shows the title, artist and link with
 
   expect(screen.getByText('Yesterday')).toBeInTheDocument();
   expect(screen.getByText('The Beatles')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Listen' })).toHaveAttribute('href', 'https://music.test/yesterday');
+  expect(screen.getByRole('link', { name: 'Yesterday The Beatles' })).toHaveAttribute('href', 'https://music.test/yesterday');
   expect(document.querySelector('.flashcard-back__content q')).toBeNull();
   expect(screen.queryByText(UNAVAILABLE)).not.toBeInTheDocument();
 });
@@ -229,35 +230,31 @@ const showBack = async (name: string) => {
   await screen.findByRole('heading', { level: 2, name: `${name} translation` });
 };
 
-test('5a I15 given 12 cards without content, 3 requests of 5, 5 and 2 words are sent one after another', async () => {
+test('5a I15 given 12 cards without content, 3 requests of 5, 5 and 2 words are sent together', async () => {
   const groups = pendingGroups();
   const api = openActive(manyCards(GROUP_CARD_COUNT), { 'POST /GetWordContent': groups.route });
   const calls = () => api.callsTo('GetWordContent');
 
-  await waitFor(() => expect(calls()).toHaveLength(1));
-  expect(namesIn(calls()[0])).toEqual([1, 2, 3, 4, 5].map(nameOf));
-  await act(async () => groups.answers[0](storiesFor(calls()[0])));
-
-  await waitFor(() => expect(calls()).toHaveLength(2));
-  expect(namesIn(calls()[1])).toEqual([6, 7, 8, 9, 10].map(nameOf));
-  await act(async () => groups.answers[1](storiesFor(calls()[1])));
-
   await waitFor(() => expect(calls()).toHaveLength(3));
+  expect(namesIn(calls()[0])).toEqual([1, 2, 3, 4, 5].map(nameOf));
+  expect(namesIn(calls()[1])).toEqual([6, 7, 8, 9, 10].map(nameOf));
   expect(namesIn(calls()[2])).toEqual([11, 12].map(nameOf));
-  await act(async () => groups.answers[2](storiesFor(calls()[2])));
+  await act(async () => groups.answers.forEach((answer, position) => answer(storiesFor(calls()[position]))));
 
   await waitFor(() => expect(api.callsTo('UpdateWordContent')).toHaveLength(GROUP_CARD_COUNT));
   expect(calls()).toHaveLength(3);
 });
 
-test('5a I15 while a group is waiting, the next group is not sent', async () => {
+test('5a I15 at most 3 groups wait at once; the fourth is sent when one answers', async () => {
   const groups = pendingGroups();
-  const api = openActive(manyCards(GROUP_CARD_COUNT), { 'POST /GetWordContent': groups.route });
-  await waitFor(() => expect(api.callsTo('GetWordContent')).toHaveLength(1));
+  const api = openActive(manyCards(20), { 'POST /GetWordContent': groups.route });
+  await waitFor(() => expect(api.callsTo('GetWordContent')).toHaveLength(3));
 
   await act(async () => new Promise((done) => setTimeout(done, 20)));
+  expect(api.callsTo('GetWordContent')).toHaveLength(3);
 
-  expect(api.callsTo('GetWordContent')).toHaveLength(1);
+  await act(async () => groups.answers[0](storiesFor(api.callsTo('GetWordContent')[0])));
+  await waitFor(() => expect(api.callsTo('GetWordContent')).toHaveLength(4));
 });
 
 test('5a I21 given two cards with the same name and translation, when content is asked, then the pair is sent once and both cards get the content', async () => {
@@ -334,7 +331,7 @@ test('5a I16 a failed second group makes only its cards say "Content is not avai
     'POST /GetWordContent': (call: RecordedCall) => {
       callCount += 1;
 
-      return callCount === FAILED_GROUP ? problem(503, 'Not ready.') : storiesFor(call);
+      return callCount === FAILED_GROUP ? problem(500, 'Not ready.') : storiesFor(call);
     },
   });
 
@@ -361,10 +358,9 @@ test('5a I16 a failed second group makes only its cards say "Content is not avai
 test('5a I17 the first group answer shows its content before the next group returns', async () => {
   const groups = pendingGroups();
   const api = openActive(manyCards(6), { 'POST /GetWordContent': groups.route });
-  await waitFor(() => expect(api.callsTo('GetWordContent')).toHaveLength(1));
+  await waitFor(() => expect(api.callsTo('GetWordContent')).toHaveLength(2));
 
   await act(async () => groups.answers[0](storiesFor(api.callsTo('GetWordContent')[0])));
-  await waitFor(() => expect(api.callsTo('GetWordContent')).toHaveLength(2));
   await waitFor(() => expect(api.callsTo('UpdateWordContent')).toHaveLength(5));
 
   await showBack(nameOf(1));
@@ -377,14 +373,14 @@ test('5a I17 the first group answer shows its content before the next group retu
 
 test('5a I15 when the deck is closed, the remaining groups are not sent', async () => {
   const groups = pendingGroups();
-  const api = openActive(manyCards(GROUP_CARD_COUNT), { 'POST /GetWordContent': groups.route });
-  await waitFor(() => expect(api.callsTo('GetWordContent')).toHaveLength(1));
+  const api = openActive(manyCards(20), { 'POST /GetWordContent': groups.route });
+  await waitFor(() => expect(api.callsTo('GetWordContent')).toHaveLength(3));
 
   cleanup();
   await act(async () => groups.answers[0](storiesFor(api.callsTo('GetWordContent')[0])));
   await act(async () => new Promise((done) => setTimeout(done, 20)));
 
-  expect(api.callsTo('GetWordContent')).toHaveLength(1);
+  expect(api.callsTo('GetWordContent')).toHaveLength(3);
   expect(api.callsTo('UpdateWordContent')).toHaveLength(0);
 });
 
@@ -434,4 +430,39 @@ test('5b I5 a Drive photo that fails to load is replaced by "Content is not avai
 
   expect(await screen.findByText(UNAVAILABLE)).toBeInTheDocument();
   expect(screen.queryByRole('img', { name: 'Ephemeral' })).not.toBeInTheDocument();
+});
+
+test('a card keeps waiting while the engine builds (503) and shows the content once it answers', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+
+  try {
+    let callCount = 0;
+    const api = openActive(WITHOUT_CONTENT, {
+      'POST /GetWordContent': (call: RecordedCall) => {
+        callCount += 1;
+
+        return callCount === 1 ? problem(503, 'The RAG collections are being built. Try again later.') : storiesFor(call);
+      },
+    });
+    await waitFor(() => expect(api.callsTo('GetWordContent')).toHaveLength(1));
+    await showBack('Ephemeral');
+
+    expect(screen.getByText('Loading content')).toBeInTheDocument();
+    expect(screen.queryByText(UNAVAILABLE)).not.toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTimeAsync(ENGINE_BUSY_RETRY_MILLISECONDS));
+
+    expect(await screen.findByText(storyOf('Ephemeral'))).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('5b the music link is one line: an edition suffix of the title is left out and there is no Listen text', async () => {
+  await backWith(JSON.stringify({ ...JSON.parse(MUSIC), song_title: 'Yesterday - Remastered 2009' }));
+
+  expect(screen.getByText('Yesterday')).toBeInTheDocument();
+  expect(screen.queryByText(/Remastered/)).not.toBeInTheDocument();
+  expect(screen.queryByText('Listen')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Yesterday The Beatles' }).closest('.word-content-music__link')).not.toBeNull();
 });

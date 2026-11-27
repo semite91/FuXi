@@ -46,7 +46,7 @@ This file is initializer instructor of my project.
   - RAG technologies will be defined at next parts.
   - Phase 5 is split: 5a builds the engine core with Notion; Google Drive (5b), letterboxd - TMDB (5c) and Spotify (5d) follow one by one.
   - The engine runs on the Learner's Windows laptop with Python 3.13 and CPU-only PyTorch. It is started from /rag with: uvicorn engine:app --port 8000
-  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_GEMINI_API_KEY, RAG_TMDB_TOKEN, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_EMBEDDING_DEVICE, RAG_EMBEDDING_PRECISION, RAG_MAX_SEQ_LENGTH, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
+  - RAG secrets and settings are RAG_ keys in the root .env, read with python-dotenv: RAG_GEMINI_API_KEY, RAG_TMDB_TOKEN, RAG_GEMINI_MODEL, RAG_TEXT_THRESHOLD, RAG_IMAGE_THRESHOLD, RAG_BATCH_SIZE, RAG_EMBEDDING_DEVICE, RAG_EMBEDDING_DTYPE, RAG_MAX_SEQ_LENGTH, RAG_TEXT_MODEL, RAG_REBUILD_COOLDOWN_MINUTES and RAG_LIVE_TESTS.
 
   -- Words --
   - Words will be added to database manually by the Learner. There is no add word page or api.
@@ -94,9 +94,12 @@ This file is initializer instructor of my project.
     - Back side of card shows a loading state until content arrives. Word Content is a JSON string and is shown by its method: text methods (story, quote, film reference) show title and content as plain text, with the source reference as a small caption; photo shows the image (an https or data:image/jpeg link); music shows song title, artist, the lyric excerpt (when there is one) and a link to the song. Only https image and song links, and data:image/jpeg images, are shown. An old plain-text Content is shown as a story. If it cannot be generated, the card says that content is not available.
     - When the app opens, the frontend calls the RAG engine's Init_RAG once. A failure is not shown.
     - The X button at the top right of the back side is the reinforcement button.
-    - On the last card's back side the right arrow is hidden and a Done button opens the Done screen.
+    - The back side has no dots and no Done button. The two card edges are the arrows: each shows an arrow over a faint tint only while the pointer or the keyboard focus is on it, and a swipe of 60 pixels or more moves to the next or previous word. On the last card's back side the right edge opens the Done screen.
+    - The History toggle sits directly under the Content, not at the bottom of the card. It opens like a parchment unrolling, with a rolled edge that travels down with the sheet; the menu opens the same way.
+    - The music Content is one line, a note, the song title and the artist, and an arrow out; the whole line is the link to the song, and there is no "Listen" text. An edition suffix of the title (for example " - Remastered 2009") is left out of the line.
+    - Design (Phase 6b, chosen by the Learner): every page is a parchment sheet with a torn edge over an ink-wash landscape (mountains and bamboo); the logo keeps its own background because the landscape starts below the header. The accent color is terracotta #b8623f. The menu button has no frame. The Words filter panel, the menu and the History use the same parchment gradient.
     - While user is moving between carousels, user can move forward freely. User can move back, but they can see just back side of card. 
-      If user comes last card, right arrow will be hidden and Done screen will be shown.
+      If user comes last card, its right edge shows the Done screen.
 
     -- active words --
     - When user opens Active Words page Frontend should be called GetWordsByActive api. Content flow is same as flashcard's GetWordContent flow.
@@ -108,7 +111,7 @@ This file is initializer instructor of my project.
     If it is not, UpdateConfig should be called.
 
     -- settings --
-    - When user clicks "Update embeddings" and confirms with Yes, Update_Collections api of the RAG engine is called. The result is shown in a dialog.
+    - When user clicks "Update embeddings" and confirms with Yes, Update_Collections api of the RAG engine is called. The result is shown in a dialog. When it succeeds, ClearWordContent api is called: the stored Content came from the old embeddings, so it is emptied and each card makes it again when it is shown (GetWordContent flow).
     - Settings page has "Enable notifications" button under the "Update embeddings" row. Browser asks notification permission only after this button is clicked. Permission state is visible at Settings page.
     - The "Update embeddings" confirm pop-up shows a big amber i icon above its title and the text "Your info will be synced". The result dialog does not.
     - Settings page has a "Requests" toggle after the "Enable notifications" row and before the Credits block. It is closed every time the page opens.
@@ -376,16 +379,7 @@ This file is initializer instructor of my project.
     - ChromaDB will be used for vector embedding database
     - ChromaDB will use HNSW indexing with cosine distance. Collections are fuxi_text and fuxi_image, stored in rag/chroma_data.
     - ChromaDB is used embedded (PersistentClient) with embeddings computed by FuXi and anonymized telemetry off. No ChromaDB server is run, because ChromaDB 1.5.9 has open CVEs in its HTTP server.
-    - Documents are embedded in batches of RAG_BATCH_SIZE (8).
-    - The text model is intfloat/multilingual-e5-small (Qwen3-Embedding-0.6B before 2026-11-21): 384 numbers per vector, 512 tokens, multilingual, mean pooling and normalized by the model. Documents are embedded as "passage: <text>" and queries as "query: <text>", as E5 was trained. Vectors of the old model have another size, so a text collection without the e5 fingerprint is not ready: Init_RAG builds it again.
-    - RAG_TEXT_THRESHOLD (0.5) was chosen for Qwen similarity scores; E5 scores are higher and closer together, so the threshold must be tuned on real queries after the first build (see rag/benchmarks/RESULTS.md).
-    - Embedding speed settings (all read in rag/settings.py, EmbeddingSettings):
-      + RAG_EMBEDDING_DEVICE: auto (default), cpu or cuda. auto and cuda use the GPU only when torch reports CUDA, the torch build has kernels for the GPU's architecture and a test kernel runs; otherwise the CPU is used (cuda logs a warning). An installed NVIDIA driver alone is not enough.
-      + RAG_EMBEDDING_PRECISION: fp32 (default), bf16 or fp16. The weights are loaded with this dtype explicitly (the checkpoint is BF16, which is slow on the CPU) and every parameter's dtype is verified after loading. fp16 is not used on the CPU (fp32 is used instead).
-      + RAG_MAX_SEQ_LENGTH: 512 (default) tokens per text document. A text document longer than this is split into overlapping token windows (10 percent overlap), one stored document per window with the same metadata, so nothing is truncated. The vector size (1024) and the Chroma schema do not change.
-      + RAG_BATCH_SIZE: documents per embedding call and per Chroma add.
-    - Unchanged documents are not embedded again: each live collection stores the embedder fingerprint (model and RAG_MAX_SEQ_LENGTH) in its metadata; the next build reuses the stored vector of every document whose text is unchanged, and embeds only the rest. A collection without a fingerprint (built before this) is embedded in full once. Identical texts in one batch are embedded once. Changing the precision or the device alone does not re-embed (the vectors differ only by rounding); change RAG_MAX_SEQ_LENGTH or delete the collections to force it.
-    - ONNX Runtime INT8 and OpenVINO are not used: see rag/benchmarks/RESULTS.md. The PyTorch path is the only one.
+    - Documents are embedded in batches of RAG_BATCH_SIZE (8). The text model runs in float32 (RAG_EMBEDDING_DTYPE) on the GPU only when PyTorch can run a kernel on it, else on the CPU (RAG_EMBEDDING_DEVICE), and reads at most RAG_MAX_SEQ_LENGTH (512) tokens; Notion pages are cut into chunks of that many tokens (no overlap; a page with under 10 characters is not embedded). RAG_TEXT_MODEL chooses the text model (intfloat/multilingual-e5-small by default, 384 numbers; Qwen3-Embedding-0.6B gave 1024 and was about 10 times slower on the CPU); the collection records which model made its vectors, and a build or update with another model embeds every text again. A vector is looked up by the hash of its text in the live collection and in a progress collection (fuxi_progress) that a build writes as it goes: a rebuild, a repeated text and a build that stopped partway embed nothing twice; the progress collection is deleted after a successful swap. Texts are embedded longest first, so a batch pads little.
     - All steps will be logged manually to text file. It will be under /logs/embedding path with yyyy_MM_dd_HH_mm date formatted file name.
     - If data is image. Image's embeds will be stored second collection.
     - Plain data will be used as one of the parameter while adding to collection. If data is image, image will be converted to Base64 and it will be used as collection's data.
@@ -453,13 +447,16 @@ This file is initializer instructor of my project.
           It will take word as parameter
           It will use below methodologies to get better result
             top_k: 20
-            similarity threshold: one per collection, RAG_TEXT_THRESHOLD (0.5) and RAG_IMAGE_THRESHOLD (0.25). Similarity is 1 - cosine distance.
-          /prompts/retrieval.txt file's content is sent to Gemini with { "word", "meaning" }; Gemini writes the search query. If its answer is invalid, "<word>: <meaning>" is used.
-          The query will be embedded twice:
-            Text collection: sentence-transformers library and multilingual-e5-small (the query gets the "query: " prefix).
+            similarity threshold: one per collection, RAG_TEXT_THRESHOLD (0.72 for multilingual-e5-small, whose similarities sit between about 0.7 and 0.9; 0.5 for Qwen3 and unknown models) and RAG_IMAGE_THRESHOLD (0.25). Similarity is 1 - cosine distance.
+          /prompts/retrieval.txt file's content is sent to Gemini with { "word", "meaning" }; Gemini writes 3 to 4 search queries (direct meaning, synonyms, situations, emotions). If its answer is invalid, "<word>: <meaning>" is used as the only query.
+          With a target method ("target_method" is added to the input) the queries look for material that suits that method.
+          Every query will be embedded twice:
+            Text collection: sentence-transformers library and Qwen3-Embedding-0.6B.
             Image collection: CLIP's text encoder.
           Using singleton collection object's query method with each embedded query, it will get related data
-          It will retrieve embeds from both image (CLIP's), text (e5's) collection. It will return 2 collections.
+          Results of the queries are merged by stored item (the best similarity stays), the most similar first, at most top_k.
+          A result below the threshold is kept when it is within 0.02 of the best result of its query, but never below the threshold minus 0.08.
+          It will retrieve embeds from both image (CLIP's), text (Qwen's) collection. It will return 2 collections.
 
         + generate
           It will take words as parameter
@@ -472,14 +469,16 @@ This file is initializer instructor of my project.
     - It will consist of only generate function
     - Response methods will be story, picture, quote, music, movie reference.
     - Response method will be chosen randomly by the code: story, quote, film reference, photo (picture) or music. It is sent to Gemini as "available_methods": ["<chosen>"], so the prompt files are not changed.
-    - If the answer is insufficient_context, invalid or an error, one other random method is tried once. Then the word gets no content.
+    - If the answer is insufficient_context, invalid or an error, one other random method is tried once. Then the word gets no content. The retry searches again with queries written for its own method, so it does not reuse the context that failed.
     - Each prompt file is read once, on its first use. Words are generated one after another, because of the free-tier rate limits.
     - The answer is stored as a JSON string. Text methods: {"method","title","content","source_reference"}. photo: {"method","image_url"}. music: {"method","song_title","artist","song_url","lyrics_excerpt"}. Links must be https, except a Drive photo's data:image/jpeg URL.
-    - In 5a, photo is a web image found by Google Search. From 5b, Gemini may also choose the Learner's own Google Drive image.
+    - Photo is the Learner's own Google Drive image when Gemini chooses one (5b); otherwise a web image found by Openverse for a short English phrase Gemini writes. Gemini does not search the web (amended 2026-11-27: the google_search tool was refused with 429 on the free tier).
     - Drive images above RAG_IMAGE_THRESHOLD are sent to Gemini as {"image_url": "drive:<n>", "name", "path"}, without image data. When Gemini answers image_url "drive:<n>", the content's image_url is that image's JPEG as a data:image/jpeg;base64 URL. Otherwise image_url must be https.
     - Response will create using Google AI Studio API and gemini-3.8-flash model. Model name and search tool name were verified on 2026-11-13: gemini-3.8-flash and google_search.
     - Model will keep as parameter
-    - If response method is picture or music, /prompts/llm_web.txt file's content will be used as prompt and google_search tool will be added to tools option of Google AI Studio API. 
+    - If response method is photo or music, /prompts/llm_suggest.txt file's content will be used as prompt, without tools. Gemini only suggests: photo is {"image_url": "drive:<n>"} or {"image_query": "<short English phrase>"}; music is {"song_title","artist"}, from the retrieved Spotify songs when one fits, otherwise a well-known song. Gemini writes no link and no lyrics.
+      The code finds the real thing: web_finders.OpenverseImageFinder takes the first https image of the phrase from Openverse (openly licensed, no key); web_finders.SpotifySongFinder searches Spotify (client credentials flow, SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET) and accepts a result only when its title and artist contain the suggested ones. No image or no song found, or a missing Spotify client, is a failed method and the retry rule applies.
+      A music Content has lyrics_excerpt null (the card shows it only when there is one).
       If it is not, /prompts/llm.txt file's content will be used.
 
 

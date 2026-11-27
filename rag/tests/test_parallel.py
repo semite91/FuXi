@@ -59,3 +59,21 @@ def test_an_error_is_raised_and_the_waiting_work_is_cancelled():
 def test_no_items_give_no_results():
     # Phase 5c J-DRY
     assert in_parallel(lambda item: item, [], WORKERS) == []
+
+
+def test_results_are_given_as_they_are_ready_in_the_items_order():
+    # Phase 8 overlap of the read and the embedding
+    from resources.parallel import iter_parallel
+
+    last_is_blocked = threading.Event()
+
+    def work(number: int) -> int:
+        if number == WORKERS - 1:
+            assert last_is_blocked.wait(WAIT_SECONDS)
+        return number
+
+    results = iter_parallel(work, range(WORKERS), WORKERS)
+
+    assert [next(results) for _ in range(WORKERS - 1)] == [0, 1, 2]  # given before the last one is done
+    last_is_blocked.set()
+    assert list(results) == [WORKERS - 1]

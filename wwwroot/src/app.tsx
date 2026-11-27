@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useNavigate } from 'react-router';
 import AppHeader from './components/app_header/app_header';
+import ToastRegion from './components/toast/toast';
 import { ROUTES } from './constants/routes';
 import { APP_TEXTS, MENU_TEXTS } from './constants/texts';
 import logo from './image/fuxi_logo.png';
@@ -31,6 +32,7 @@ const App = () => {
         logoText={APP_TEXTS.name}
         menuLabel={APP_TEXTS.openMenu}
         items={MENU_ITEMS}
+        homePath={ROUTES.words}
         onNavigate={(path) => void navigate(path)}
       />
       <main className="app__content">
@@ -44,6 +46,7 @@ const App = () => {
           <Route path={ROUTES.unknown} element={<Navigate to={ROUTES.words} replace />} />
         </Routes>
       </main>
+      <ToastRegion closeLabel={APP_TEXTS.closeDialog} />
     </div>
   );
 };

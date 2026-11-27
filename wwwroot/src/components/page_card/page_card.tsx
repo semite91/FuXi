@@ -15,17 +15,19 @@ interface PageCardProps {
   layout?: keyof typeof LAYOUT_CLASSES;
 }
 
-/** The white rounded container of every page. */
+/** The parchment sheet of every page. The frame carries the shadow, because a torn edge cuts a shadow off. */
 const PageCard = ({ children, title, action, layout = 'page' }: PageCardProps) => (
-  <section className={LAYOUT_CLASSES[layout]}>
-    {title !== undefined && (
-      <div className="page-card__head">
-        <h1 className="page-card__title">{title}</h1>
-        {action}
-      </div>
-    )}
-    {children}
-  </section>
+  <div className="page-card-frame">
+    <section className={LAYOUT_CLASSES[layout]}>
+      {title !== undefined && (
+        <div className="page-card__head">
+          <h1 className="page-card__title">{title}</h1>
+          {action}
+        </div>
+      )}
+      {children}
+    </section>
+  </div>
 );
 
 export default PageCard;

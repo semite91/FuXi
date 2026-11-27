@@ -7,6 +7,17 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
+from embedders import (
+    AUTO_DEVICE,
+    DEFAULT_MAX_SEQ_LENGTH,
+    DEVICE_CHOICES,
+    DTYPE_CHOICES,
+    FLOAT32,
+    SPECIAL_TOKENS_MARGIN,
+    TEXT_MODEL_ID,
+    text_model_spec,
+)
+
 RAG_DIR = Path(__file__).resolve().parent
 REPO_ROOT = RAG_DIR.parent
 ROOT_ENV_PATH = REPO_ROOT / ".env"
@@ -30,8 +41,9 @@ TEXT_THRESHOLD_KEY = "RAG_TEXT_THRESHOLD"
 IMAGE_THRESHOLD_KEY = "RAG_IMAGE_THRESHOLD"
 BATCH_SIZE_KEY = "RAG_BATCH_SIZE"
 EMBEDDING_DEVICE_KEY = "RAG_EMBEDDING_DEVICE"
-EMBEDDING_PRECISION_KEY = "RAG_EMBEDDING_PRECISION"
+EMBEDDING_DTYPE_KEY = "RAG_EMBEDDING_DTYPE"
 MAX_SEQ_LENGTH_KEY = "RAG_MAX_SEQ_LENGTH"
+TEXT_MODEL_KEY = "RAG_TEXT_MODEL"
 LIVE_TESTS_KEY = "RAG_LIVE_TESTS"
 CORS_ORIGINS_KEY = "FUXI_CORS_ORIGINS"
 REBUILD_COOLDOWN_MINUTES_KEY = "RAG_REBUILD_COOLDOWN_MINUTES"
@@ -41,22 +53,10 @@ DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 DEFAULT_TEXT_THRESHOLD = 0.5
 DEFAULT_IMAGE_THRESHOLD = 0.25
 DEFAULT_BATCH_SIZE = 8
-# "auto" uses CUDA only when the installed torch and the GPU can really run it, otherwise the CPU.
-DEVICE_AUTO = "auto"
-DEVICE_CPU = "cpu"
-DEVICE_CUDA = "cuda"
-DEVICES = (DEVICE_AUTO, DEVICE_CPU, DEVICE_CUDA)
-DEFAULT_EMBEDDING_DEVICE = DEVICE_AUTO
-PRECISION_FP32 = "fp32"
-PRECISION_FP16 = "fp16"
-PRECISION_BF16 = "bf16"
-PRECISIONS = (PRECISION_FP32, PRECISION_FP16, PRECISION_BF16)
-DEFAULT_EMBEDDING_PRECISION = PRECISION_FP32
-DEFAULT_MAX_SEQ_LENGTH = 512
-MIN_MAX_SEQ_LENGTH = 16
 MIN_THRESHOLD = 0.0
 MAX_THRESHOLD = 1.0
 MIN_BATCH_SIZE = 1
+MIN_MAX_SEQ_LENGTH = 16
 DEFAULT_REBUILD_COOLDOWN_MINUTES = 10.0
 MIN_REBUILD_COOLDOWN_MINUTES = 0.0
 
@@ -85,24 +85,18 @@ class DatabaseSettings:
 
 
 @dataclass(frozen=True)
-class EmbeddingSettings:
-    """How the text embedding model runs; every value comes from a RAG_EMBEDDING_* / RAG_MAX_SEQ_LENGTH / RAG_BATCH_SIZE key."""
-
-    device: str = DEFAULT_EMBEDDING_DEVICE
-    precision: str = DEFAULT_EMBEDDING_PRECISION
-    max_seq_length: int = DEFAULT_MAX_SEQ_LENGTH
-    batch_size: int = DEFAULT_BATCH_SIZE
-
-
-@dataclass(frozen=True)
 class Settings:
     gemini_model: str = DEFAULT_GEMINI_MODEL
     text_threshold: float = DEFAULT_TEXT_THRESHOLD
     image_threshold: float = DEFAULT_IMAGE_THRESHOLD
+    # Documents per embedding batch, and texts per forward pass of the models.
     batch_size: int = DEFAULT_BATCH_SIZE
-    embedding_device: str = DEFAULT_EMBEDDING_DEVICE
-    embedding_precision: str = DEFAULT_EMBEDDING_PRECISION
+    # auto (GPU only when torch can run it, else CPU), cpu or cuda; float32, float16 or bfloat16; tokens of the text model.
+    embedding_device: str = AUTO_DEVICE
+    embedding_dtype: str = FLOAT32
     max_seq_length: int = DEFAULT_MAX_SEQ_LENGTH
+    # The text model (another model changes the vector size: every stored text vector is built again).
+    text_model: str = TEXT_MODEL_ID
     live_tests: bool = False
     cors_origins: tuple[str, ...] = ()
     # After a failed or empty build, Init_RAG answers empty for this long before it builds again.
@@ -116,15 +110,6 @@ class Settings:
     spotify_client_id: str | None = field(default=None, repr=False)
     spotify_client_secret: str | None = field(default=None, repr=False)
     tmdb_token: str | None = field(default=None, repr=False)
-
-    @property
-    def embedding(self) -> EmbeddingSettings:
-        return EmbeddingSettings(
-            device=self.embedding_device,
-            precision=self.embedding_precision,
-            max_seq_length=self.max_seq_length,
-            batch_size=self.batch_size,
-        )
 
     def require_database(self) -> DatabaseSettings:
         """The FuXi database; it holds the Settings table with the Notion, Google Drive, Spotify and Letterboxd rows."""
@@ -159,6 +144,7 @@ def load_settings(
 ) -> Settings:
     """Read settings; process environment values win over the .env file."""
     values = {**read_env_file(env_path), **(os.environ if environ is None else environ)}
+    text_model = _text(values, TEXT_MODEL_KEY) or TEXT_MODEL_ID
     return Settings(
         database_values={key: _text(values, key) for key in DB_KEYS},
         gemini_api_key=_text(values, GEMINI_API_KEY_KEY),
@@ -168,12 +154,13 @@ def load_settings(
         spotify_client_secret=_text(values, SPOTIFY_CLIENT_SECRET_KEY),
         tmdb_token=_text(values, TMDB_TOKEN_KEY),
         gemini_model=_text(values, GEMINI_MODEL_KEY) or DEFAULT_GEMINI_MODEL,
-        text_threshold=_threshold(values, TEXT_THRESHOLD_KEY, DEFAULT_TEXT_THRESHOLD),
+        text_threshold=_threshold(values, TEXT_THRESHOLD_KEY, text_model_spec(text_model).default_threshold),
         image_threshold=_threshold(values, IMAGE_THRESHOLD_KEY, DEFAULT_IMAGE_THRESHOLD),
         batch_size=_batch_size(values),
-        embedding_device=_choice(values, EMBEDDING_DEVICE_KEY, DEVICES, DEFAULT_EMBEDDING_DEVICE),
-        embedding_precision=_choice(values, EMBEDDING_PRECISION_KEY, PRECISIONS, DEFAULT_EMBEDDING_PRECISION),
+        embedding_device=_choice(values, EMBEDDING_DEVICE_KEY, DEVICE_CHOICES, AUTO_DEVICE),
+        embedding_dtype=_choice(values, EMBEDDING_DTYPE_KEY, DTYPE_CHOICES, FLOAT32),
         max_seq_length=_max_seq_length(values),
+        text_model=text_model,
         live_tests=(_text(values, LIVE_TESTS_KEY) or "").lower() == TRUE_VALUE,
         cors_origins=_list(values, CORS_ORIGINS_KEY),
         rebuild_cooldown_minutes=_rebuild_cooldown_minutes(values),
@@ -225,25 +212,23 @@ def _batch_size(values: Mapping[str, str]) -> int:
     return batch_size
 
 
-def _choice(values: Mapping[str, str], key: str, allowed: tuple[str, ...], default: str) -> str:
-    raw = _text(values, key)
-    if raw is None:
-        return default
-    if raw.lower() not in allowed:
-        raise SettingsError(f"{key} must be one of: {', '.join(allowed)}")
-    return raw.lower()
+def _choice(values: Mapping[str, str], key: str, choices: tuple[str, ...], default: str) -> str:
+    raw = (_text(values, key) or default).lower()
+    if raw not in choices:
+        raise SettingsError(f"{key} must be one of: {', '.join(choices)}")
+    return raw
 
 
 def _max_seq_length(values: Mapping[str, str]) -> int:
+    message = f"{MAX_SEQ_LENGTH_KEY} must be a whole number of tokens, at least {MIN_MAX_SEQ_LENGTH}"
     raw = _text(values, MAX_SEQ_LENGTH_KEY)
     if raw is None:
         return DEFAULT_MAX_SEQ_LENGTH
-    message = f"{MAX_SEQ_LENGTH_KEY} must be a whole number of at least {MIN_MAX_SEQ_LENGTH}"
     try:
         length = int(raw)
     except ValueError as error:
         raise SettingsError(message) from error
-    if length < MIN_MAX_SEQ_LENGTH:
+    if length < MIN_MAX_SEQ_LENGTH + SPECIAL_TOKENS_MARGIN:
         raise SettingsError(message)
     return length
 

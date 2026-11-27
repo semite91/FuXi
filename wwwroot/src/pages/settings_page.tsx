@@ -36,11 +36,6 @@ import exportStepTwo from '../image/letterboxd_export_step_2.svg';
 import exportStepThree from '../image/letterboxd_export_step_3.svg';
 import tmdbLogo from '../image/tmdb_logo.svg';
 
-const RESULT_TITLES: Partial<Record<EmbeddingsStep, string>> = {
-  updated: SETTINGS_TEXTS.updated,
-  failed: SETTINGS_TEXTS.failed,
-};
-
 const CONFIRM_STEP: EmbeddingsStep = 'confirm';
 const NEW_TAB = '_blank';
 const NEW_TAB_REL = 'noopener noreferrer';
@@ -121,7 +116,6 @@ const SettingsPage = () => {
         confirmNotice={SETTINGS_TEXTS.syncNotice}
         confirmLabel={APP_TEXTS.yes}
         closeLabel={APP_TEXTS.closeDialog}
-        resultTitle={RESULT_TITLES[embeddings.step]}
         isConfirmOpen={embeddings.step === CONFIRM_STEP}
         onAsk={embeddings.ask}
         onConfirm={() => void embeddings.update()}

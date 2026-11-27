@@ -12,11 +12,13 @@ interface AppHeaderProps {
   logoText: string;
   menuLabel: string;
   items: readonly MenuItem[];
+  /** Where the logo leads: the dashboard. */
+  homePath: string;
   onNavigate: (path: string) => void;
 }
 
-/** The logo and the menu button. The menu closes on a choice, on Escape and on a click outside it. */
-const AppHeader = ({ logoSource, logoText, menuLabel, items, onNavigate }: AppHeaderProps) => {
+/** The logo, which opens the dashboard, and the menu button. The menu closes on a choice, on Escape and on a click outside it. */
+const AppHeader = ({ logoSource, logoText, menuLabel, items, homePath, onNavigate }: AppHeaderProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuAreaRef = useRef<HTMLDivElement>(null);
 
@@ -51,11 +53,13 @@ const AppHeader = ({ logoSource, logoText, menuLabel, items, onNavigate }: AppHe
 
   return (
     <header className="app-header">
-      <img className="app-header__logo" src={logoSource} alt={logoText} />
+      <button type="button" className="app-header__home" onClick={() => select(homePath)}>
+        <img className="app-header__logo" src={logoSource} alt={logoText} />
+      </button>
       <div className="app-header__menu" ref={menuAreaRef}>
         <IconButton
           icon="menu"
-          shape="square"
+          shape="plain"
           label={menuLabel}
           aria-haspopup="true"
           aria-expanded={isMenuOpen}

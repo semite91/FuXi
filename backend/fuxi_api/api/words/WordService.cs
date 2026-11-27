@@ -102,6 +102,14 @@ public sealed class WordService(FuXiDbContext database, TimeProvider timeProvide
         }
     }
 
+    /// <summary>Empties the Word Content of every Word, so each one is generated again from the new embeddings when its card is shown.</summary>
+    public async Task ClearWordContentAsync(CancellationToken cancellationToken)
+    {
+        await database.Words
+            .Where(word => word.Content != null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(word => word.Content, (string?)null), cancellationToken);
+    }
+
     /// <summary>Records one answer of the Learner: Rotation entry, Word counters and Word History, in one transaction.</summary>
     public async Task UpdateWordKnownStatusAsync(Guid wordId, bool isKnown, CancellationToken cancellationToken)
     {

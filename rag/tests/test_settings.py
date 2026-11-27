@@ -67,7 +67,8 @@ def test_missing_numbers_use_defaults(tmp_path):
     # B2
     settings = load_settings(write_env(tmp_path, "RAG_TEXT_THRESHOLD=\n"), environ={})
 
-    assert settings.text_threshold == DEFAULT_TEXT_THRESHOLD == 0.5
+    assert DEFAULT_TEXT_THRESHOLD == 0.5  # Settings() without a model; the default model has its own
+    assert settings.text_threshold == 0.72  # multilingual-e5-small
     assert settings.image_threshold == DEFAULT_IMAGE_THRESHOLD == 0.25
     assert settings.batch_size == DEFAULT_BATCH_SIZE == 8
     assert settings.rebuild_cooldown_minutes == DEFAULT_REBUILD_COOLDOWN_MINUTES == 10  # H18
@@ -289,3 +290,43 @@ def test_the_old_spotify_phase_5d_keys_are_no_settings(tmp_path):
     settings = load_settings(write_env(tmp_path, "RAG_SPOTIFY_TOKEN_FILE=x\n"), environ={})
 
     assert not hasattr(settings, "spotify_token_file")
+
+
+def test_embedding_settings_have_defaults_and_can_be_set(tmp_path):
+    # Phase 8 embedding speed
+    defaults = load_settings(write_env(tmp_path, ""), environ={})
+    chosen = load_settings(
+        write_env(tmp_path, ""),
+        environ={"RAG_EMBEDDING_DEVICE": "CPU", "RAG_EMBEDDING_DTYPE": "bfloat16", "RAG_MAX_SEQ_LENGTH": "384"},
+    )
+
+    assert (defaults.embedding_device, defaults.embedding_dtype, defaults.max_seq_length) == ("auto", "float32", 512)
+    assert (chosen.embedding_device, chosen.embedding_dtype, chosen.max_seq_length) == ("cpu", "bfloat16", 384)
+
+
+@pytest.mark.parametrize(
+    "key, value",
+    [("RAG_EMBEDDING_DEVICE", "tpu"), ("RAG_EMBEDDING_DTYPE", "int8"), ("RAG_MAX_SEQ_LENGTH", "0"), ("RAG_MAX_SEQ_LENGTH", "many")],
+)
+def test_invalid_embedding_settings_are_rejected(tmp_path, key, value):
+    # Phase 8 embedding speed
+    with pytest.raises(SettingsError, match=key):
+        load_settings(write_env(tmp_path, ""), environ={key: value})
+
+
+def test_text_model_has_a_default_and_can_be_set(tmp_path):
+    # Phase 8 text model choice
+    defaults = load_settings(write_env(tmp_path, ""), environ={})
+    chosen = load_settings(write_env(tmp_path, ""), environ={"RAG_TEXT_MODEL": "intfloat/multilingual-e5-small"})
+
+    assert defaults.text_model == "intfloat/multilingual-e5-small"
+    assert chosen.text_model == "intfloat/multilingual-e5-small"
+
+
+def test_default_text_threshold_follows_the_model_and_an_explicit_value_wins(tmp_path):
+    # Phase 8 text model choice: the cosine of e5 vectors sits much higher than Qwen3's
+    qwen = load_settings(write_env(tmp_path, ""), environ={"RAG_TEXT_MODEL": "Qwen/Qwen3-Embedding-0.6B"})
+    unknown = load_settings(write_env(tmp_path, ""), environ={"RAG_TEXT_MODEL": "someone/unknown-model"})
+    explicit = load_settings(write_env(tmp_path, ""), environ={"RAG_TEXT_THRESHOLD": "0.9"})
+
+    assert (qwen.text_threshold, unknown.text_threshold, explicit.text_threshold) == (0.5, 0.5, 0.9)

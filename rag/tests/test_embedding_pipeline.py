@@ -1,4 +1,6 @@
 import base64
+import re
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +14,9 @@ from base import Document, Resource, ResourceKind, ResourceSkipped
 from chroma_store import (
     DEFAULT_CHROMA_PATH,
     IMAGE_COLLECTION_NAME,
+    PROGRESS_COLLECTION_NAME,
     TEXT_COLLECTION_NAME,
+    embedding_identity,
     create_chroma_client,
     is_build_complete,
     open_collection,
@@ -157,7 +161,10 @@ def test_collections_use_cosine_space(chroma_client, embedders, tmp_path):
 
 
 def collection_names(chroma_client) -> list[str]:
-    return sorted(collection.name for collection in chroma_client.list_collections())
+    """The collections of a build, without the progress collection (it has tests of its own)."""
+    return sorted(
+        collection.name for collection in chroma_client.list_collections() if collection.name != PROGRESS_COLLECTION_NAME
+    )
 
 
 def stored_documents(chroma_client) -> list[str]:
@@ -203,7 +210,7 @@ def test_update_reads_before_touching_the_stored_collections(chroma_client, embe
     assert stored_documents(chroma_client) == ["fresh note 0", "fresh note 1"]
 
 
-def test_failing_resource_in_update_keeps_the_old_collections(chroma_client, embedders, tmp_path):
+def test_failing_resource_in_update_is_logged_and_the_others_are_stored(chroma_client, embedders, tmp_path):
     # E10
     run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
 
@@ -211,13 +218,13 @@ def test_failing_resource_in_update_keeps_the_old_collections(chroma_client, emb
         Mode.UPDATE, [ListResource("fresh", 3), FailingResource()], chroma_client, embedders, tmp_path
     )
 
-    assert result.complete is False
+    assert result.complete is True
     assert result.failed_resources == ["broken"]
-    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert stored_documents(chroma_client) == ["fresh note 0", "fresh note 1", "fresh note 2"]
     assert is_build_complete(chroma_client)
     assert collection_names(chroma_client) == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
     log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
-    assert "update failed, the old collections are kept" in log
+    assert "resource broken failed: RuntimeError: source is down" in log
 
 
 def test_update_with_zero_documents_keeps_the_old_collections(chroma_client, embedders, tmp_path):
@@ -232,14 +239,15 @@ def test_update_with_zero_documents_keeps_the_old_collections(chroma_client, emb
     assert collection_names(chroma_client) == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
 
 
-def test_build_is_marked_complete_only_when_it_ends_with_documents_and_no_failure(chroma_client, embedders, tmp_path):
+def test_build_is_marked_complete_when_it_ends_with_documents_even_if_a_resource_failed(chroma_client, embedders, tmp_path):
     # H13 H14
     empty = run_pipeline(Mode.CREATE, [], chroma_client, embedders, tmp_path)
     assert (empty.complete, is_build_complete(chroma_client)) == (False, False)
 
     resources = [FailingResource(), ListResource("notion", 1)]
     failed = run_pipeline(Mode.CREATE, resources, chroma_client, embedders, tmp_path)
-    assert (failed.complete, is_build_complete(chroma_client)) == (False, False)
+    assert (failed.complete, is_build_complete(chroma_client)) == (True, True)
+    assert failed.failed_resources == ["broken"]
 
     built = run_pipeline(Mode.CREATE, [ListResource("notion", 1)], chroma_client, embedders, tmp_path)
     assert (built.complete, is_build_complete(chroma_client)) == (True, True)
@@ -254,11 +262,21 @@ def test_every_step_is_logged_to_a_dated_file(chroma_client, embedders, tmp_path
 
     lines = (logs_dir / LOG_FILE_NAME).read_text(encoding="utf-8").splitlines()
     assert "start mode=update" in lines[0]
-    assert any("deleted collections: ['fuxi_image_old', 'fuxi_text_old']" in line for line in lines)
+    assert any("deleted collections: ['fuxi_image_old', 'fuxi_progress', 'fuxi_text_old']" in line for line in lines)
     assert any("notion: 20 documents read" in line for line in lines)
     assert any("batch 2 added 4 documents to fuxi_text" in line for line in lines)
     assert "end" in lines[-1] and "20 documents" in lines[-1]
     assert all(line.startswith("2026-11-13 09:05:42") for line in lines)
+
+
+def test_each_resource_logs_its_step_seconds_document_count_and_data_size(chroma_client, embedders, tmp_path):
+    logs_dir = tmp_path / "logs" / "embedding"
+
+    run_pipeline(Mode.CREATE, [ListResource("notion", 3)], chroma_client, embedders, logs_dir)
+
+    lines = (logs_dir / LOG_FILE_NAME).read_text(encoding="utf-8").splitlines()
+    step_line = next(line for line in lines if "resource notion: steps:" in line)
+    assert re.search(r"read \d+\.\d\ds, embed \d+\.\d\ds, store \d+\.\d\ds; 3 documents, \d+ bytes", step_line)
 
 
 def test_failing_resource_is_logged_and_others_continue(chroma_client, embedders, tmp_path):
@@ -269,8 +287,8 @@ def test_failing_resource_is_logged_and_others_continue(chroma_client, embedders
 
     assert result.failed_resources == ["broken"]
     assert result.added_documents == 4
-    assert result.complete is False
-    assert collection_names(chroma_client) == []  # an incomplete build is not stored
+    assert result.complete is True
+    assert stored_documents(chroma_client) == [f"notion note {i}" for i in range(4)]
     log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
     assert "broken failed: RuntimeError: source is down" in log
 
@@ -298,7 +316,7 @@ def test_skipped_resource_is_logged_and_the_build_still_completes(chroma_client,
     assert "notion failed" not in log
 
 
-def test_rejected_notion_token_is_logged_with_the_reconnect_message_and_the_build_is_incomplete(
+def test_rejected_notion_token_is_logged_with_the_reconnect_message_and_the_build_goes_on(
     chroma_client, embedders, tmp_path
 ):
     # Phase 6b D7
@@ -310,7 +328,7 @@ def test_rejected_notion_token_is_logged_with_the_reconnect_message_and_the_buil
     result = run_pipeline(Mode.CREATE, [notion, ListResource("movies", 3)], chroma_client, embedders, tmp_path)
 
     assert result.failed_resources == ["notion"]
-    assert result.complete is False
+    assert result.complete is True
     log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
     assert "resource notion failed: NotionTokenRejected: Notion token rejected: connect Notion again on the Settings page" in log
 
@@ -333,7 +351,7 @@ def test_chroma_client_is_persistent_without_telemetry(monkeypatch, tmp_path):
     assert DEFAULT_CHROMA_PATH == Path(chroma_store.__file__).resolve().parent / "chroma_data"
 
 
-def test_failed_create_keeps_the_existing_collections(chroma_client, embedders, tmp_path):
+def test_failed_resource_in_create_does_not_stop_the_others_from_replacing_the_old_collections(chroma_client, embedders, tmp_path):
     # E12
     run_pipeline(Mode.CREATE, [ListResource("stale", 2)], chroma_client, embedders, tmp_path)
 
@@ -341,11 +359,11 @@ def test_failed_create_keeps_the_existing_collections(chroma_client, embedders, 
         Mode.CREATE, [ListResource("fresh", 3), FailingResource()], chroma_client, embedders, tmp_path
     )
 
-    assert result.complete is False
-    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert result.complete is True
+    assert result.failed_resources == ["broken"]
+    assert stored_documents(chroma_client) == ["fresh note 0", "fresh note 1", "fresh note 2"]
     assert is_build_complete(chroma_client)
     assert collection_names(chroma_client) == [IMAGE_COLLECTION_NAME, TEXT_COLLECTION_NAME]
-    assert "create failed, the old collections are kept" in (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
 
 
 def test_create_reads_before_touching_the_stored_collections(chroma_client, embedders, tmp_path):
@@ -525,7 +543,7 @@ def test_twenty_images_are_embedded_with_clip_in_batches_of_16_and_4(chroma_clie
     assert open_collection(chroma_client, IMAGE_COLLECTION_NAME).count() == 20
 
 
-def test_failing_drive_keeps_notion_embedding_but_the_build_is_incomplete_and_old_collections_stay(
+def test_failing_drive_is_logged_and_notion_is_still_embedded_and_stored(
     chroma_client, embedders, tmp_path
 ):
     # Phase 5b E4
@@ -536,8 +554,8 @@ def test_failing_drive_keeps_notion_embedding_but_the_build_is_incomplete_and_ol
 
     assert result.failed_resources == ["google_drive"]
     assert result.added_documents > 0  # Notion was still embedded
-    assert result.complete is False
-    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert result.complete is True
+    assert "stale note 0" not in stored_documents(chroma_client)
     assert is_build_complete(chroma_client)
 
 
@@ -590,7 +608,7 @@ def test_notion_drive_and_movies_are_all_read_and_movie_documents_go_to_fuxi_tex
     assert any(text in batch for batch in embedders.text.document_batches)  # embedded by the text embedder
 
 
-def test_failing_movies_keep_the_other_sources_embedding_but_the_build_is_incomplete_and_old_collections_stay(
+def test_failing_movies_are_logged_and_the_other_sources_are_still_embedded_and_stored(
     chroma_client, embedders, tmp_path
 ):
     # Phase 5c F2
@@ -604,8 +622,8 @@ def test_failing_movies_keep_the_other_sources_embedding_but_the_build_is_incomp
     assert result.failed_resources == ["letterboxd_tmdb"]
     assert result.added_documents > len(DRIVE_PICTURE_IDS)  # Notion and Drive were still embedded
     assert embedders.image.document_batches  # Drive, read after the failed movies
-    assert result.complete is False
-    assert stored_documents(chroma_client) == ["stale note 0", "stale note 1"]
+    assert result.complete is True
+    assert "stale note 0" not in stored_documents(chroma_client)
     assert is_build_complete(chroma_client)
 
 
@@ -632,3 +650,256 @@ def test_failed_movie_read_summary_is_written_to_the_embedding_log(chroma_client
     assert "resource letterboxd_tmdb: read summary: 4 rows, 3 movies," in log
     assert "toiles" not in log
     assert MOVIE_TEST_TOKEN not in log
+
+
+def test_update_keeps_the_id_and_embedding_of_unchanged_notion_pages_and_embeds_only_changed_ones(
+    chroma_client, embedders, tmp_path
+):
+    # Phase 8 #68
+    run_pipeline(Mode.CREATE, [notion_resource()], chroma_client, embedders, tmp_path)
+    before = open_collection(chroma_client, TEXT_COLLECTION_NAME).get(include=["embeddings", "metadatas"])
+    data = load_fixture("notion_recorded.json")
+    for result in data["search"].values():
+        for page in result["results"]:
+            if page["properties"]["title"]["title"][0]["plain_text"] == "Lisbon":
+                page["last_edited_time"] = "2026-11-18T08:00:00.000Z"
+                data["markdown"] = {page["id"]: {"markdown": "Lisbon after the edit.", "truncated": False, "unknown_block_ids": []}}
+    client = FakeNotionClient(data)
+    new_embedder = FakeEmbedder([2.0] * 8)
+
+    result = run_pipeline(
+        Mode.UPDATE,
+        [NotionResource(client_factory=lambda: client, sleep=lambda _: None)],
+        chroma_client,
+        Embedders(text=new_embedder, image=embedders.image),
+        tmp_path,
+    )
+
+    after = open_collection(chroma_client, TEXT_COLLECTION_NAME).get(include=["embeddings", "metadatas"])
+    assert result.complete is True
+    assert len(new_embedder.document_batches) == 1 and len(new_embedder.document_batches[0]) == 1
+    by_name_after = dict(zip(after["ids"], zip(after["metadatas"], after["embeddings"])))
+    kept = [i for i in after["ids"] if i in set(before["ids"])]
+    assert len(kept) == len(before["ids"]) - 1
+    for stored_id in kept:
+        assert list(by_name_after[stored_id][1]) == pytest.approx([1.0] * 8, abs=1e-3)
+    assert {m["name"] for m, _ in by_name_after.values()} == {m["name"] for m in before["metadatas"]}
+
+
+def test_create_reads_every_notion_page_again_but_embeds_a_text_it_has_a_vector_for_only_once(
+    chroma_client, embedders, tmp_path
+):
+    # Phase 8 #68, embedding cache
+    run_pipeline(Mode.CREATE, [notion_resource()], chroma_client, embedders, tmp_path)
+    first_embedded = sum(len(batch) for batch in embedders.text.document_batches)
+    new_embedder = FakeEmbedder([2.0] * 8)
+
+    run_pipeline(Mode.CREATE, [notion_resource()], chroma_client, Embedders(text=new_embedder, image=embedders.image), tmp_path)
+
+    assert first_embedded > 0
+    assert new_embedder.document_batches == []  # the vectors of the live collection were used
+    stored = open_collection(chroma_client, TEXT_COLLECTION_NAME).get(include=["embeddings"])
+    assert all(list(vector) == pytest.approx([1.0] * 8, abs=1e-3) for vector in stored["embeddings"])
+
+
+class NamedEmbedder(FakeEmbedder):
+    def __init__(self, identity: str, vector: list[float] | None = None):
+        super().__init__(vector)
+        self.identity = identity
+
+
+def named_embedders(identity: str, image: FakeEmbedder, vector: list[float] | None = None) -> Embedders:
+    return Embedders(text=NamedEmbedder(identity, vector), image=image)
+
+
+def test_the_embedding_model_is_recorded_on_the_live_text_collection(chroma_client, embedders, tmp_path):
+    # Phase 8 embedding cache
+    run_pipeline(Mode.CREATE, [ListResource("notion", 2)], chroma_client, named_embedders("model-a", embedders.image), tmp_path)
+
+    assert embedding_identity(chroma_client, TEXT_COLLECTION_NAME) == "model-a"
+    assert is_build_complete(chroma_client)  # the marker keeps its place next to the model
+
+
+def test_another_text_model_embeds_everything_again_in_create_and_update(chroma_client, embedders, tmp_path):
+    # Phase 8 embedding cache: vectors of another model are never reused (they may even have another size)
+    run_pipeline(Mode.CREATE, [ListResource("notion", 3)], chroma_client, named_embedders("model-a", embedders.image), tmp_path)
+
+    for mode in (Mode.CREATE, Mode.UPDATE):
+        other = named_embedders("model-b", embedders.image, [2.0] * 16)  # another vector size
+        run_pipeline(mode, [ListResource("notion", 3)], chroma_client, other, tmp_path)
+
+        assert sum(len(batch) for batch in other.text.document_batches) == 3
+        stored = open_collection(chroma_client, TEXT_COLLECTION_NAME).get(include=["embeddings"])
+        assert {len(vector) for vector in stored["embeddings"]} == {16}
+        assert embedding_identity(chroma_client, TEXT_COLLECTION_NAME) == "model-b"
+        run_pipeline(Mode.CREATE, [ListResource("notion", 3)], chroma_client, named_embedders("model-a", embedders.image), tmp_path)
+    assert "the text model is now model-b: every text vector is built again" in (
+        tmp_path / LOG_FILE_NAME
+    ).read_text(encoding="utf-8")
+
+
+def test_a_collection_without_a_recorded_model_counts_as_the_default_text_model(chroma_client, embedders, tmp_path):
+    # Phase 8 embedding cache: collections built before the model was recorded
+    run_pipeline(Mode.CREATE, [ListResource("notion", 2)], chroma_client, embedders, tmp_path)  # records nothing
+
+    same = named_embedders("Qwen/Qwen3-Embedding-0.6B", embedders.image)
+    other = named_embedders("model-b", embedders.image)
+    run_pipeline(Mode.CREATE, [ListResource("notion", 2)], chroma_client, same, tmp_path)
+    assert same.text.document_batches == []
+
+    chroma_client.get_collection(TEXT_COLLECTION_NAME, embedding_function=None).modify(metadata={"fuxi_build": "complete"})
+    run_pipeline(Mode.CREATE, [ListResource("notion", 2)], chroma_client, other, tmp_path)
+    assert sum(len(batch) for batch in other.text.document_batches) == 2
+
+
+class StopAfterResource(Resource):
+    """A resource that stops the whole process (like Ctrl+C or a power cut), unlike a failed read, which is only logged."""
+
+    name = "stopper"
+    kind = ResourceKind.TEXT
+
+    def read_documents(self) -> list[Document]:
+        raise KeyboardInterrupt("the machine stopped")
+
+
+def test_an_interrupted_build_keeps_its_vectors_and_the_next_build_starts_from_them(chroma_client, embedders, tmp_path):
+    # Phase 8 embedding cache: resume
+    first = named_embedders("model-a", embedders.image)
+
+    with pytest.raises(KeyboardInterrupt):
+        run_pipeline(Mode.CREATE, [ListResource("notion", 5), StopAfterResource()], chroma_client, first, tmp_path)
+
+    assert not is_build_complete(chroma_client)  # nothing of the build is live
+    assert open_collection(chroma_client, PROGRESS_COLLECTION_NAME).count() == 5  # but its vectors are kept
+    resumed = named_embedders("model-a", embedders.image)
+    result = run_pipeline(Mode.CREATE, [ListResource("notion", 5)], chroma_client, resumed, tmp_path)
+
+    assert result.complete is True
+    assert resumed.text.document_batches == []  # nothing was embedded again
+    assert open_collection(chroma_client, TEXT_COLLECTION_NAME).count() == 5
+    assert PROGRESS_COLLECTION_NAME not in {c.name for c in chroma_client.list_collections()}  # cleaned after the swap
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert "embedding cache: 5 vectors from an interrupted build, 0 from the live collection" in log
+
+
+def test_progress_of_another_model_is_not_used_by_the_next_build(chroma_client, embedders, tmp_path):
+    # Phase 8 embedding cache
+    with pytest.raises(KeyboardInterrupt):
+        run_pipeline(
+            Mode.CREATE, [ListResource("notion", 3), StopAfterResource()], chroma_client,
+            named_embedders("model-a", embedders.image), tmp_path,
+        )
+    other = named_embedders("model-b", embedders.image, [2.0] * 16)
+
+    run_pipeline(Mode.CREATE, [ListResource("notion", 3)], chroma_client, other, tmp_path)
+
+    assert sum(len(batch) for batch in other.text.document_batches) == 3
+
+
+class RepeatingResource(ListResource):
+    def read_documents(self) -> list[Document]:
+        return [Document("the same words", {"name": f"copy-{index}", "type": "text"}) for index in range(self.count)] + [
+            Document("other words that are longer than the others", {"name": "long", "type": "text"}),
+            Document("short", {"name": "short", "type": "text"}),
+        ]
+
+
+def test_a_repeated_text_is_embedded_once_and_texts_are_embedded_longest_first(chroma_client, embedders, tmp_path):
+    # Phase 8 embedding speed
+    result = run_pipeline(Mode.CREATE, [RepeatingResource("copies", 3)], chroma_client, embedders, tmp_path, batch_size=2)
+
+    assert result.added_documents == 5  # every copy is stored with its own metadata
+    embedded = [text for batch in embedders.text.document_batches for text in batch]
+    assert embedded == ["other words that are longer than the others", "the same words", "short"]
+    assert open_collection(chroma_client, TEXT_COLLECTION_NAME).count() == 5
+
+
+class StreamingResource(Resource):
+    """Gives its documents one by one; before the last one it waits for `before_last` (when given) and records the
+    answer, and it can fail after them."""
+
+    name = "streamer"
+    kind = ResourceKind.TEXT
+    streams = True
+
+    def __init__(self, texts: list[str], fails_after: bool = False, before_last=None):
+        self.texts = texts
+        self.fails_after = fails_after
+        self.before_last = before_last
+        self.before_last_answer = None
+        self.finished = False
+
+    def read_documents(self) -> list[Document]:
+        return list(self.stream_documents())
+
+    def stream_documents(self):
+        try:
+            for index, text in enumerate(self.texts):
+                if self.before_last and index == len(self.texts) - 1:
+                    self.before_last_answer = self.before_last()
+                yield Document(text, {"name": f"s-{index}", "type": "text"})
+            if self.fails_after:
+                raise RuntimeError("the source stopped")
+        finally:
+            self.finished = True
+
+
+def test_a_streaming_resource_is_embedded_while_it_is_still_being_read(chroma_client, embedders, tmp_path):
+    # Phase 8 overlap of the read and the embedding
+    first_batch_embedded = threading.Event()
+    real_embed = embedders.text.embed_documents
+
+    def embed(batch):
+        first_batch_embedded.set()
+        return real_embed(batch)
+
+    embedders.text.embed_documents = embed
+    # 40 documents with batches of 1 fill two windows of 16, so the first window is embedded before the read ends
+    resource = StreamingResource(
+        [f"page {index}" for index in range(40)], before_last=lambda: first_batch_embedded.wait(10.0)
+    )
+
+    result = run_pipeline(Mode.CREATE, [resource], chroma_client, embedders, tmp_path, batch_size=1)
+
+    assert resource.before_last_answer is True  # a batch was embedded before the last document was read
+    assert result.complete is True and result.added_documents == 40
+    assert open_collection(chroma_client, TEXT_COLLECTION_NAME).count() == 40
+
+
+def test_a_streaming_resource_is_embedded_in_windows_sorted_longest_first_and_logged_once_read(
+    chroma_client, embedders, tmp_path
+):
+    # Phase 8 overlap of the read and the embedding
+    texts = ["aa", "a", "aaaa", "aaa"]
+
+    run_pipeline(Mode.CREATE, [StreamingResource(texts)], chroma_client, embedders, tmp_path, batch_size=1)
+
+    embedded = [text for batch in embedders.text.document_batches for text in batch]
+    assert embedded[:4] == ["aaaa", "aaa", "aa", "a"]  # one window of 16 batches: sorted as a whole
+    log = (tmp_path / LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert "resource streamer: 4 documents read" in log
+
+
+def test_a_streaming_resource_that_fails_is_logged_and_the_build_is_incomplete(chroma_client, embedders, tmp_path):
+    # Phase 8 overlap of the read and the embedding
+    resource = StreamingResource(["one", "two"], fails_after=True)
+
+    result = run_pipeline(Mode.CREATE, [resource], chroma_client, embedders, tmp_path)
+
+    assert result.failed_resources == ["streamer"]
+    assert result.complete is False
+    assert resource.finished is True  # the read thread is done when the build goes on
+    assert "resource streamer failed: RuntimeError: the source stopped" in (tmp_path / LOG_FILE_NAME).read_text(
+        encoding="utf-8"
+    )
+
+
+def test_the_read_of_a_streaming_resource_stops_when_the_embedding_fails(chroma_client, embedders, tmp_path):
+    # Phase 8 overlap of the read and the embedding
+    resource = StreamingResource([f"page {index}" for index in range(1000)])
+    embedders.text.embed_documents = lambda batch: (_ for _ in ()).throw(RuntimeError("the model broke"))
+
+    result = run_pipeline(Mode.CREATE, [resource], chroma_client, embedders, tmp_path, batch_size=2)
+
+    assert result.failed_resources == ["streamer"]
+    assert resource.finished is True

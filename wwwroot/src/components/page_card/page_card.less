@@ -1,6 +1,16 @@
 @import (reference) '../../css/tokens.less';
 
+.page-card-frame {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  filter: drop-shadow(0 10px 14px var(--color-shadow));
+}
+
 .page-card {
+  .parchment-paper();
+  .torn-edge();
   position: relative;
   flex: 1;
   min-width: 0;
@@ -10,10 +20,6 @@
   padding: @space-page @space-large @space-large;
   display: flex;
   flex-direction: column;
-  background: var(--color-surface);
-  border: @border-card;
-  border-radius: @border-radius-card;
-  box-shadow: @box-shadow-card;
 
   &--centered {
     align-items: center;

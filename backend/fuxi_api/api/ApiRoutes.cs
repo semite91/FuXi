@@ -10,6 +10,7 @@ public static class ApiRoutes
     public const string GET_WORD_HISTORY = PREFIX + "/GetWordHistory";
     public const string GET_WORDS_BY_FILTER = PREFIX + "/GetWordsByFilter";
     public const string UPDATE_WORD_CONTENT = PREFIX + "/UpdateWordContent";
+    public const string CLEAR_WORD_CONTENT = PREFIX + "/ClearWordContent";
     public const string UPDATE_WORD_KNOWN_STATUS = PREFIX + "/UpdateWordKnownStatus";
     public const string UPDATE_IS_REINFORCEMENT = PREFIX + "/UpdateIsReinforcement";
 

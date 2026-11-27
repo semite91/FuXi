@@ -37,7 +37,6 @@ const renderReadyContent = (card: Flashcard, onPictureError: () => void) => {
           artist={parsed.artist}
           lyricsExcerpt={parsed.lyricsExcerpt}
           songUrl={parsed.songUrl}
-          linkLabel={FLASHCARD_TEXTS.listen}
         />
       );
     default:
@@ -103,18 +102,15 @@ const FlashcardDeck = ({ wordIds }: FlashcardDeckProps) => {
         {card.isAnswered ? (
           <FlashcardBack
             translation={card.word.translation}
+            name={card.word.name}
             content={renderContent(card, () => deck.markContentUnavailable(card.word.id))}
-            cardCount={deck.cardCount}
-            cardIndex={deck.index}
             reinforcementLabel={FLASHCARD_TEXTS.reinforcement}
             previousLabel={FLASHCARD_TEXTS.previous}
             nextLabel={FLASHCARD_TEXTS.next}
-            doneLabel={FLASHCARD_TEXTS.done}
             historyLabel={HISTORY_TEXTS.title}
             onReinforce={deck.reinforce}
             onPrevious={deck.index > 0 ? deck.goPrevious : undefined}
-            onNext={deck.isLast ? undefined : deck.goNext}
-            onDone={deck.isLast ? deck.finish : undefined}
+            onNext={deck.isLast ? deck.finish : deck.goNext}
             isHistoryOpen={deck.isHistoryOpen}
             onToggleHistory={deck.toggleHistory}
             history={renderWordHistory(deck.history)}

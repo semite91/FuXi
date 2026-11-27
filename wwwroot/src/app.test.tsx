@@ -114,3 +114,13 @@ test('B17 a click outside the menu closes it', () => {
 
   expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 });
+
+test('B-logo clicking the logo opens the dashboard, the Words page', async () => {
+  renderApp('/settings');
+  await heading('Settings');
+
+  fireEvent.click(screen.getByRole('button', { name: /fuxi/i }));
+
+  expect(await heading('Words')).toBeInTheDocument();
+  expect(location()).toBe('/words');
+});

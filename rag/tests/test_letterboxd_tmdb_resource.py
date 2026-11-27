@@ -255,12 +255,20 @@ def test_empty_tmdb_token_fails_before_any_call_and_names_the_setting():
 
 def test_unset_settings_fail_only_when_the_movies_are_read():
     # Phase 5c B3
-    resource = create_letterboxd_tmdb_resource(Settings())  # creating does not fail
+    resource = create_letterboxd_tmdb_resource(Settings(), read_csv=lambda settings: LIKED_CSV)  # creating does not fail
 
     with pytest.raises(MissingSettingError, match="RAG_TMDB_TOKEN"):
         resource.read_documents()
     with pytest.raises(ResourceSkipped, match=NO_LIKED_MOVIES):
         create_letterboxd_tmdb_resource(Settings(tmdb_token=TMDB_TOKEN), read_csv=lambda settings: None).read_documents()
+
+
+def test_no_uploaded_list_and_no_token_is_skipped_not_failed():
+    # #63: the uploaded CSV is read before the token
+    resource = create_letterboxd_tmdb_resource(Settings(), read_csv=lambda settings: None)
+
+    with pytest.raises(ResourceSkipped, match=NO_LIKED_MOVIES):
+        resource.read_documents()
 
 
 def test_every_call_sends_the_bearer_token_and_never_puts_it_in_the_url():
