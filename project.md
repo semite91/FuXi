@@ -415,7 +415,7 @@ This file is initializer instructor of my project.
           timestamp
         }
         chunk type: per song. One document per song, no splitter.
-        transformer: Qwen3-Embedding-0.6B
+        transformer: multilingual-e5-small
       + letterboxd, TMDB
         metadata: {
           name,
@@ -426,7 +426,7 @@ This file is initializer instructor of my project.
           type: text
         }
         chunk type: per movie. One document per movie, no splitter.
-        transformer: Qwen3-Embedding-0.6B
+        transformer: multilingual-e5-small
       + Notion
         metadata: {
           name,
@@ -436,7 +436,7 @@ This file is initializer instructor of my project.
         }
         chunk type: per note. Only long notes are split: notes over 2000 characters, with 200 characters overlap.
         chunk tool: LangChainTextSplitter
-        transformer: Qwen3-Embedding-0.6B
+        transformer: multilingual-e5-small
 
     # rag_client
       - Functions described as below
